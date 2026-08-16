@@ -1,0 +1,2357 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Domination — Chinh Phục Bản Đồ</title>
+<style>
+:root{
+  --bg:#0f1420;
+  --panel:#161d2e;
+  --panel2:#1d2740;
+  --border:#2a3552;
+  --text:#eef1f8;
+  --muted:#8a93ab;
+  --accent:#5b8def;
+  --accent2:#3fd0c9;
+  --danger:#ef5b6b;
+  --warn:#f2b84b;
+  --good:#4ac97e;
+  --radius:14px;
+  font-family:'Segoe UI',Inter,system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);height:100%;}
+body{display:flex;flex-direction:column;min-height:100vh;}
+button{
+  font-family:inherit;cursor:pointer;border:none;border-radius:10px;
+  padding:10px 16px;font-size:14px;font-weight:600;background:var(--panel2);
+  color:var(--text);transition:transform .08s ease, background .15s ease, box-shadow .15s ease;
+}
+button:hover{background:#26325a;}
+button:active{transform:scale(.96);}
+button.primary{background:linear-gradient(135deg,var(--accent),#4a6fd6);color:#fff;}
+button.primary:hover{box-shadow:0 4px 16px rgba(91,141,239,.4);}
+button.danger{background:linear-gradient(135deg,var(--danger),#c94656);color:#fff;}
+button.good{background:linear-gradient(135deg,var(--good),#2fa864);color:#fff;}
+button:disabled{opacity:.4;cursor:not-allowed;transform:none;}
+button.ghost{background:transparent;border:1px solid var(--border);}
+button.small{padding:6px 10px;font-size:12px;border-radius:8px;}
+button.icon-btn{padding:8px 10px;}
+input[type=text],input[type=number],select{
+  background:var(--panel);border:1px solid var(--border);color:var(--text);
+  border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13px;
+}
+input[type=color]{width:36px;height:32px;border:1px solid var(--border);border-radius:8px;background:none;padding:2px;}
+h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
+.hidden{display:none !important;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#33406a;border-radius:6px;}
+::-webkit-scrollbar-track{background:transparent;}
+
+/* ---------- Top bar ---------- */
+#topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+#topbar .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:18px;letter-spacing:.3px;}
+#topbar .brand .dot{width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 0 12px var(--accent);}
+#topbar .actions{display:flex;gap:8px;align-items:center;}
+
+/* ---------- Screens ---------- */
+.screen{flex:1;display:none;min-height:0;}
+.screen.active{display:flex;flex-direction:column;}
+
+/* ---------- Menu ---------- */
+#screen-menu{align-items:center;justify-content:center;padding:40px 20px;}
+.menu-wrap{max-width:720px;width:100%;text-align:center;}
+.menu-wrap p.sub{color:var(--muted);margin-bottom:32px;font-size:15px;}
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+@media (max-width:600px){.menu-grid{grid-template-columns:1fr;}}
+.menu-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:22px;text-align:left;cursor:pointer;transition:.15s ease;
+}
+.menu-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3);}
+.menu-card h3{font-size:16px;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+.menu-card p{color:var(--muted);font-size:13px;margin:0;line-height:1.5;}
+.menu-card .emoji{font-size:22px;}
+
+/* ---------- Editor ---------- */
+#screen-editor{flex-direction:row;overflow:hidden;}
+#editor-sidebar{
+  width:300px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
+  overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:16px;
+}
+#editor-main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#0a0e18;}
+#editor-toolbar{
+  display:flex;gap:8px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border);
+  flex-wrap:wrap;align-items:center;
+}
+#editor-toolbar .grp{display:flex;gap:6px;border-right:1px solid var(--border);padding-right:10px;margin-right:4px;}
+#editor-toolbar .grp:last-child{border-right:none;}
+#editor-canvas-wrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:20px;}
+#editorCanvas{background:#1a2136;border-radius:8px;box-shadow:0 0 0 1px var(--border);cursor:crosshair;max-width:100%;height:auto;touch-action:none;}
+.tool-btn.active{background:var(--accent);color:#fff;}
+.panel-block{background:var(--panel2);border-radius:10px;padding:10px;}
+.panel-block h4{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0;}
+.panel-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;}
+.panel-header .chev{color:var(--muted);font-size:10px;transition:transform .15s ease;flex-shrink:0;margin-left:8px;}
+.panel-header.collapsed .chev{transform:rotate(-90deg);}
+.panel-content{margin-top:10px;}
+.panel-content.collapsed{display:none;}
+.terr-row{
+  display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:8px;margin-bottom:4px;
+  background:var(--panel);cursor:pointer;border:1px solid transparent;font-size:12.5px;
+}
+.terr-row.selected{border-color:var(--accent);background:#1f2c4e;}
+.terr-row .swatch{width:14px;height:14px;border-radius:4px;flex-shrink:0;}
+.terr-row input[type=text]{flex:1;min-width:0;padding:4px 6px;font-size:12px;}
+.name-input.terr-name{text-transform:lowercase;}
+.name-input.cont-name{text-transform:uppercase;}
+.cont-row{
+  display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;border-radius:8px;margin-bottom:6px;
+  background:var(--panel);border:1px solid transparent;font-size:12.5px;
+}
+.cont-row-top{display:flex;align-items:center;gap:6px;}
+.cont-row-top input[type=text]{flex:1;min-width:0;padding:4px 6px;font-size:12px;}
+.cont-row-bonus{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;}
+.cont-row-bonus .bonus-label{white-space:nowrap;}
+.cont-row-bonus input{width:100%;flex:1;min-width:56px;}
+.row-actions{display:flex;gap:2px;}
+.mini-btn{background:transparent;border:none;color:var(--muted);padding:2px 5px;font-size:13px;border-radius:5px;}
+.mini-btn:hover{background:#2a3552;color:var(--text);}
+.field-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:12.5px;color:var(--muted);}
+.field-row select,.field-row input{width:110px;}
+#validateMsg{font-size:12px;padding:8px;border-radius:8px;margin-top:6px;}
+#validateMsg.ok{background:rgba(74,201,126,.15);color:var(--good);}
+#validateMsg.err{background:rgba(239,91,107,.15);color:var(--danger);}
+.switch-row{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text);cursor:pointer;user-select:none;}
+.switch-row input{cursor:pointer;width:15px;height:15px;}
+
+/* ---------- Setup screen ---------- */
+#screen-setup{align-items:center;justify-content:center;padding:30px;overflow-y:auto;}
+.setup-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;}
+.setup-row{margin-bottom:18px;}
+.setup-row label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600;}
+.player-config{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel2);border-radius:10px;margin-bottom:6px;}
+.player-config .pdot{width:16px;height:16px;border-radius:50%;flex-shrink:0;}
+.player-config span{flex:1;font-size:13px;}
+.player-config select{width:100px;}
+
+/* ---------- Game screen ---------- */
+#screen-game{flex-direction:column;overflow:hidden;}
+#gameTopbar{
+  display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
+  border-bottom:1px solid var(--border);flex-wrap:wrap;
+}
+#gameTopbar .turn-indicator{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;}
+#gameTopbar .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;}
+#gameTopbar .phase-badge{
+  padding:4px 12px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.5px;color:var(--accent2);
+}
+#gameTopbar .spacer{flex:1;}
+#reinforceCounter{font-size:13px;color:var(--warn);font-weight:700;}
+#gameBody{flex:1;display:flex;overflow:hidden;}
+#gameSidebar{
+  width:270px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
+  overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;
+}
+#gameCanvasWrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;position:relative;background:#0a0e18;}
+#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;max-width:100%;height:auto;}
+#gameLogPanel{
+  width:280px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;padding:12px;overflow:hidden;
+}
+#combatLog{flex:1;overflow-y:auto;font-size:12px;display:flex;flex-direction:column-reverse;gap:5px;padding-top:6px;}
+.log-entry{padding:6px 8px;border-radius:8px;background:var(--panel2);line-height:1.4;}
+.log-entry.attack{border-left:3px solid var(--danger);}
+.log-entry.capture{border-left:3px solid var(--good);}
+.log-entry.info{border-left:3px solid var(--accent);}
+.player-card{background:var(--panel2);border-radius:10px;padding:10px;border:2px solid transparent;}
+.player-card.active-turn{border-color:var(--accent);box-shadow:0 0 12px rgba(91,141,239,.3);}
+.player-card .pname{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px;}
+.player-card .pdot{width:12px;height:12px;border-radius:50%;}
+.player-card .pstats{display:flex;gap:12px;font-size:11px;color:var(--muted);}
+.player-card.eliminated{opacity:.35;}
+#actionHint{font-size:12.5px;color:var(--muted);background:var(--panel2);padding:10px;border-radius:10px;min-height:20px;}
+#phaseActions{display:flex;gap:8px;flex-wrap:wrap;padding:10px 16px;background:var(--panel);border-top:1px solid var(--border);}
+
+/* dice */
+#diceBox{display:flex;gap:16px;align-items:center;justify-content:center;padding:10px;}
+.dice-group{display:flex;gap:6px;}
+.die{
+  width:34px;height:34px;border-radius:8px;background:#fff;color:#222;font-weight:800;
+  display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 3px 8px rgba(0,0,0,.4);
+  animation:pop .35s ease;
+}
+.die.lose{background:#3a3a3a;color:#ff8f8f;}
+.die.win{background:#fff;color:#1a1a1a;box-shadow:0 0 10px var(--good);}
+@keyframes pop{0%{transform:scale(0) rotate(-30deg);}70%{transform:scale(1.15) rotate(8deg);}100%{transform:scale(1) rotate(0);}}
+
+/* modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(4,7,14,.7);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px);}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;}
+.modal h3{margin-bottom:12px;}
+.card-item{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);padding:10px 14px;border-radius:10px;margin:4px;font-size:24px;border:2px solid transparent;cursor:pointer;}
+.card-item.selected{border-color:var(--accent);}
+.card-item .label{font-size:11px;color:var(--muted);}
+
+#gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;}
+#gameOverOverlay h1{font-size:36px;}
+#gameOverOverlay p{color:var(--muted);}
+
+/* ==========================================================================
+   MOBILE / SMALL SCREENS
+   Below this width: stack side panels above/below the map instead of beside
+   it, make tap targets bigger, and let the map shrink to fit (pinch-zoom /
+   scroll still work for precision) instead of overflowing the viewport.
+   ========================================================================== */
+@media (max-width: 860px){
+  #topbar{padding:10px 14px;}
+  #topbar .brand{font-size:16px;}
+  button{padding:11px 15px;} /* bigger tap targets */
+  button.small{padding:9px 12px;}
+
+  .menu-wrap h1{font-size:26px;}
+  .menu-wrap p.sub{font-size:13px;margin-bottom:22px;}
+
+  /* Map editor: canvas first, controls stacked below in a scrollable column */
+  #screen-editor{flex-direction:column;overflow-y:auto;overflow-x:hidden;}
+  #editor-sidebar{width:100%;order:2;border-right:none;border-top:1px solid var(--border);overflow-y:visible;}
+  #editor-main{order:1;overflow:visible;}
+  #editor-canvas-wrap{overflow:auto;padding:10px;}
+  #editor-toolbar{position:sticky;top:0;z-index:5;}
+
+  /* Game: sidebar, map, log stacked vertically instead of three columns */
+  #screen-game{overflow-y:auto;}
+  #gameBody{flex-direction:column;overflow:visible;}
+  #gameSidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);max-height:none;}
+  #gameCanvasWrap{overflow:auto;padding:10px;}
+  #gameLogPanel{width:100%;border-left:none;border-top:1px solid var(--border);max-height:220px;}
+
+  #gameTopbar{gap:8px 10px;padding:8px 10px;}
+  #gameTopbar .turn-indicator{font-size:13px;}
+  #gameTopbar .phase-badge{font-size:11px;padding:4px 10px;}
+  .switch-row{font-size:11.5px;}
+
+  #phaseActions{padding:10px;gap:6px;position:sticky;bottom:0;z-index:6;box-shadow:0 -4px 12px rgba(0,0,0,.3);}
+  #phaseActions button{flex:1 1 auto;min-width:130px;}
+  #gameTopbar{position:sticky;top:0;z-index:6;}
+
+  .setup-card{padding:20px;width:100%;}
+  #screen-setup{padding:16px;}
+
+  .modal{padding:18px;}
+}
+
+@media (max-width: 480px){
+  #topbar .brand{font-size:14px;}
+  .menu-grid{gap:10px;}
+  .menu-card{padding:16px;}
+  .menu-card h3{font-size:14.5px;}
+  .menu-card p{font-size:12px;}
+  #gameTopbar .turn-indicator span:last-child{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .player-card .pstats{flex-wrap:wrap;row-gap:2px;}
+}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand"><span class="dot"></span> Domination</div>
+  <div class="actions" id="topbarActions"></div>
+</div>
+
+<!-- ============ MENU ============ -->
+<div class="screen active" id="screen-menu">
+  <div class="menu-wrap">
+    <h1>Domination</h1>
+    <p class="sub">Chinh phục bản đồ do chính bạn tạo ra — chơi một mình với AI.</p>
+    <div class="menu-grid">
+      <div class="menu-card" id="btnQuickPlay">
+        <h3><span class="emoji">🎲</span> Chơi nhanh</h3>
+        <p>Tạo một bản đồ ngẫu nhiên mới và bắt đầu chơi ngay với AI.</p>
+      </div>
+      <div class="menu-card" id="btnOpenEditor">
+        <h3><span class="emoji">🖌️</span> Trình tạo bản đồ</h3>
+        <p>Tự vẽ bản đồ riêng của bạn: tô vùng lãnh thổ, đặt tên, chia châu lục.</p>
+      </div>
+      <div class="menu-card" id="btnLoadMap">
+        <h3><span class="emoji">📂</span> Tải bản đồ đã lưu</h3>
+        <p>Nhập file bản đồ JSON đã xuất trước đó để chỉnh sửa hoặc chơi lại.</p>
+      </div>
+      <div class="menu-card" id="btnHowTo">
+        <h3><span class="emoji">📖</span> Luật chơi</h3>
+        <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
+      </div>
+    </div>
+    <input type="file" id="loadMapInput" accept=".json" class="hidden">
+  </div>
+</div>
+
+<!-- ============ EDITOR ============ -->
+<div class="screen" id="screen-editor">
+  <div id="editor-sidebar">
+    <div class="panel-block">
+      <div class="panel-header"><h4>Bản đồ</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <input type="text" id="mapNameInput" value="Bản đồ của tôi" style="width:100%;margin-bottom:8px;">
+        <div class="field-row"><span>Tỷ lệ mặt nước</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="waterRatioInput" min="0" max="55" value="28" style="width:100px;">
+            <span id="waterRatioLabel" style="min-width:30px;color:var(--text);">28%</span>
+          </span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="small ghost" id="btnRandomGen">🎲 Ngẫu nhiên</button>
+          <button class="small ghost" id="btnClearMap">🗑️ Xoá hết</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header collapsed"><h4>Kích thước lưới</h4><span class="chev">▾</span></div>
+      <div class="panel-content collapsed">
+        <div class="field-row"><span>Cột × Hàng</span>
+          <span style="display:flex;gap:4px;">
+            <input type="number" id="gridCols" value="40" min="10" max="80" style="width:52px;">
+            <input type="number" id="gridRows" value="26" min="8" max="60" style="width:52px;">
+          </span>
+        </div>
+        <button class="small ghost" id="btnApplyGrid" style="width:100%;">Áp dụng lưới mới</button>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header"><h4>Công cụ</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="small tool-btn active" data-tool="paint">✏️ Tô</button>
+          <button class="small tool-btn" data-tool="erase">🧹 Xoá</button>
+          <button class="small tool-btn" data-tool="bucket">🪣 Đổ màu</button>
+          <button class="small tool-btn" data-tool="pick">💧 Chọn vùng</button>
+        </div>
+        <div class="field-row" style="margin-top:8px;"><span>Cỡ cọ</span>
+          <input type="range" id="brushSize" min="1" max="4" value="2" style="width:110px;">
+        </div>
+        <label class="switch-row" style="margin-top:6px;"><input type="checkbox" id="toggleContinentView"> 🌍 Xem theo châu lục</label>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header"><h4>Lãnh thổ (<span id="terrCount">0</span>)</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <button class="small primary" id="btnNewTerr" style="margin-bottom:8px;">+ Lãnh thổ mới</button>
+        <div id="terrList"></div>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header"><h4>Châu lục (<span id="contCount">0</span>)</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <button class="small primary" id="btnNewCont" style="margin-bottom:8px;">+ Châu lục mới</button>
+        <div id="contList"></div>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header collapsed"><h4>Xuất / Nhập</h4><span class="chev">▾</span></div>
+      <div class="panel-content collapsed">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="small ghost" id="btnExportMap">⬇ Xuất JSON</button>
+          <button class="small ghost" id="btnImportMap">⬆ Nhập JSON</button>
+        </div>
+        <input type="file" id="importMapInput" accept=".json" class="hidden">
+        <button class="small ghost" id="btnValidate" style="width:100%;margin-top:6px;">✓ Kiểm tra bản đồ</button>
+        <div id="validateMsg" class="hidden"></div>
+      </div>
+    </div>
+
+    <button class="primary" id="btnPlayThisMap" style="padding:14px;font-size:15px;">▶ Chơi bản đồ này</button>
+  </div>
+  <div id="editor-main">
+    <div id="editor-toolbar">
+      <div class="grp" id="terrInfoBar" style="color:var(--muted);font-size:12.5px;">Chọn hoặc tạo một lãnh thổ để bắt đầu tô.</div>
+    </div>
+    <div id="editor-canvas-wrap">
+      <canvas id="editorCanvas" width="960" height="600"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SETUP ============ -->
+<div class="screen" id="screen-setup">
+  <div class="setup-card">
+    <h2>Thiết lập ván chơi</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:20px;" id="setupMapInfo"></p>
+
+    <div class="setup-row">
+      <label>Số đối thủ AI</label>
+      <select id="aiCountSelect">
+        <option value="1">1 AI (2 người chơi)</option>
+        <option value="2">2 AI (3 người chơi)</option>
+        <option value="3" selected>3 AI (4 người chơi)</option>
+        <option value="4">4 AI (5 người chơi)</option>
+        <option value="5">5 AI (6 người chơi)</option>
+      </select>
+    </div>
+
+    <div class="setup-row">
+      <label>Độ khó AI</label>
+      <select id="aiDifficultySelect">
+        <option value="easy">Dễ</option>
+        <option value="normal" selected>Thường</option>
+        <option value="hard">Khó</option>
+      </select>
+    </div>
+
+    <div class="setup-row" id="playerConfigRow">
+      <label>Người chơi</label>
+      <div id="playerConfigList"></div>
+    </div>
+
+    <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="toggleSpectatorMode"> 👀 Chế độ xem AI đấu với nhau (bạn không điều khiển, mỗi hành động cách nhau 1 giây)</label>
+    </div>
+
+    <button class="primary" id="btnStartGame" style="width:100%;padding:14px;font-size:15px;margin-top:10px;">Bắt đầu chơi</button>
+    <button class="ghost" id="btnBackFromSetup" style="width:100%;margin-top:8px;">← Quay lại</button>
+  </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div class="screen" id="screen-game">
+  <div id="gameTopbar">
+    <div class="turn-indicator"><span class="turn-dot" id="turnDot"></span><span id="turnName">—</span></div>
+    <div class="phase-badge" id="phaseBadge">—</div>
+    <span id="reinforceCounter"></span>
+    <div class="spacer"></div>
+    <label class="switch-row"><input type="checkbox" id="toggleContinentViewGame"> 🌍 Xem châu lục</label>
+    <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
+    <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
+  </div>
+  <div id="gameBody">
+    <div id="gameSidebar">
+      <div id="playerList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+    </div>
+    <div id="gameCanvasWrap">
+      <canvas id="gameCanvas" width="960" height="600"></canvas>
+    </div>
+    <div id="gameLogPanel">
+      <h4 style="font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;">Nhật ký trận đấu</h4>
+      <div id="diceBox"></div>
+      <div id="combatLog"></div>
+    </div>
+  </div>
+  <div id="phaseActions"></div>
+</div>
+
+<div id="modalRoot"></div>
+<script>
+(function(){
+"use strict";
+
+/* ---- src/js/01-utils.js ---- */
+/* =========================================================================
+   UTILITIES
+   ========================================================================= */
+const $ = (id)=>document.getElementById(id);
+function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!==undefined) e.innerHTML=html; return e; }
+function rand(n){ return Math.floor(Math.random()*n); }
+function randChoice(arr){ return arr[rand(arr.length)]; }
+function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=rand(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+function shadeColor(hex, percent){
+  // percent negative = darker/richer, positive = lighter/washed out
+  const num = parseInt(hex.slice(1),16);
+  let r = (num>>16) + Math.round(2.55*percent);
+  let g = ((num>>8)&0xff) + Math.round(2.55*percent);
+  let b = (num&0xff) + Math.round(2.55*percent);
+  r=clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1).toUpperCase();
+}
+let _stripeTileCanvas = null;
+function getStripeTile(){
+  if(_stripeTileCanvas) return _stripeTileCanvas;
+  const size = 12;
+  const c = document.createElement('canvas'); c.width=size; c.height=size;
+  const cx = c.getContext('2d');
+  cx.strokeStyle = 'rgba(255,255,255,0.85)';
+  cx.lineWidth = 3;
+  cx.lineCap = 'square';
+  // three parallel 45-degree segments so the tile wraps seamlessly when repeated
+  [-size, 0, size].forEach(off=>{
+    cx.beginPath();
+    cx.moveTo(off, size);
+    cx.lineTo(off+size, 0);
+    cx.stroke();
+  });
+  _stripeTileCanvas = c;
+  return c;
+}
+function getStripePattern(ctx){ return ctx.createPattern(getStripeTile(), 'repeat'); }
+function rollDie(){ return 1+rand(6); }
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#98c1d9","#c9a0dc","#f4a261","#e76f51",
+  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#00bbf9","#00f5d4",
+  "#fee440","#ff9f1c","#2ec4b6","#e71d36","#8ac926","#1982c4","#6a4c93","#ff595e"];
+const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#3fd0c9","#ff9f5b","#7bd389"];
+const PLAYER_COLORS = [
+  {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
+  {name:"Vàng", hex:"#f2c94c"}, {name:"Tím", hex:"#9b5de5"}, {name:"Cam", hex:"#f2994a"}
+];
+
+/* ---------- Naming rules: territory names always lowercase, continent names always
+   uppercase, no digits or special characters in either. ---------- */
+const TERR_PREFIXES = ["đông","tây","nam","bắc","trung","thượng","hạ","tân","cổ","đại"];
+const TERR_BASES = ["sơn","hà","giang","hải","phong","lâm","thảo","sa","đồng","hồ","vịnh","đảo",
+  "làng","phố","thôn","đèo","gò","bãi","cồn","thung","cao","mộc","thủy","vân","yên","bình","an","khê","trại","doi"];
+const CONT_WORDS = ["úc","phi","âu","á","mỹ","cực bắc","cực nam","hoang mạc","bình nguyên",
+  "cao nguyên","quần đảo","thảo nguyên","đại dương","hải đảo","sơn nguyên"];
+
+function stripInvalidNameChars(str){
+  // Keep unicode letters and spaces only; strip digits, punctuation, symbols.
+  return String(str||'').replace(/[^\p{L}\s]/gu,'').replace(/\s+/g,' ');
+}
+function finalizeTerrName(str){
+  const s = stripInvalidNameChars(str).trim();
+  return s ? s.toLocaleLowerCase('vi') : '';
+}
+function finalizeContName(str){
+  const s = stripInvalidNameChars(str).trim();
+  return s ? s.toLocaleUpperCase('vi') : '';
+}
+function defaultTerrName(id){
+  const idx = id-1;
+  const p = TERR_PREFIXES[idx % TERR_PREFIXES.length];
+  const b = TERR_BASES[Math.floor(idx/TERR_PREFIXES.length) % TERR_BASES.length];
+  return finalizeTerrName(p+' '+b);
+}
+function defaultContName(id){
+  const idx = id-1;
+  return finalizeContName(CONT_WORDS[idx % CONT_WORDS.length]);
+}
+
+/* ---- src/js/02-map-model.js ---- */
+/* =========================================================================
+   MAP DATA MODEL
+   cellTerritory: Int16Array flat, length cols*rows, value = territoryId or -1
+   ========================================================================= */
+let mapData = null;
+let spectatorMode = false; // true = every player is AI-controlled and events are slowed down for watching
+function aiDelay(base){ return spectatorMode ? 1000 : base; }
+
+function newMap(cols, rows, name){
+  return {
+    name: name || "Bản đồ mới",
+    cols, rows,
+    cellSize: Math.floor(Math.min(960/cols, 600/rows)),
+    cellTerritory: new Int16Array(cols*rows).fill(-1),
+    territories: {},   // id -> {id,name,continentId,color,cells:[[c,r]],neighbors:Set,centroid:{x,y}}
+    continents: {},    // id -> {id,name,color,bonus}
+    nextTerrId: 1,
+    nextContId: 1,
+  };
+}
+
+function cellIndex(map,c,r){ return r*map.cols + c; }
+function inBounds(map,c,r){ return c>=0 && c<map.cols && r>=0 && r<map.rows; }
+
+function createTerritory(map, name){
+  const id = map.nextTerrId++;
+  map.territories[id] = {
+    id, name: (name && finalizeTerrName(name)) || defaultTerrName(id), continentId: null,
+    color: PALETTE_TERR[(id-1) % PALETTE_TERR.length],
+    cells: [], neighbors: new Set(), centroid:{x:0,y:0}
+  };
+  return map.territories[id];
+}
+function createContinent(map, name, color){
+  const id = map.nextContId++;
+  map.continents[id] = { id, name: (name && finalizeContName(name)) || defaultContName(id), color: color || PALETTE_CONT[(id-1)%PALETTE_CONT.length], bonus: 2 };
+  return map.continents[id];
+}
+
+function paintCell(map, c, r, terrId){
+  if(!inBounds(map,c,r)) return;
+  const idx = cellIndex(map,c,r);
+  const old = map.cellTerritory[idx];
+  if(old === terrId) return;
+  if(old !== -1 && map.territories[old]){
+    const t = map.territories[old];
+    const i = t.cells.findIndex(cc=>cc[0]===c&&cc[1]===r);
+    if(i>=0) t.cells.splice(i,1);
+  }
+  map.cellTerritory[idx] = terrId;
+  if(terrId !== -1 && map.territories[terrId]){
+    map.territories[terrId].cells.push([c,r]);
+  }
+}
+
+function bucketFill(map, c, r, newId){
+  const idx = cellIndex(map,c,r);
+  const target = map.cellTerritory[idx];
+  if(target === newId) return;
+  const stack = [[c,r]];
+  const visited = new Set();
+  while(stack.length){
+    const [cc,rr] = stack.pop();
+    const key = cc+","+rr;
+    if(visited.has(key)) continue;
+    visited.add(key);
+    if(!inBounds(map,cc,rr)) continue;
+    if(map.cellTerritory[cellIndex(map,cc,rr)] !== target) continue;
+    paintCell(map,cc,rr,newId);
+    stack.push([cc+1,rr],[cc-1,rr],[cc,rr+1],[cc,rr-1]);
+  }
+}
+
+function recomputeGraph(map){
+  // neighbors + centroids
+  Object.values(map.territories).forEach(t=>{ t.neighbors = new Set(); t.centroid={x:0,y:0}; });
+  for(let r=0;r<map.rows;r++){
+    for(let c=0;c<map.cols;c++){
+      const id = map.cellTerritory[cellIndex(map,c,r)];
+      if(id===-1) continue;
+      // right neighbor
+      if(c+1<map.cols){
+        const id2 = map.cellTerritory[cellIndex(map,c+1,r)];
+        if(id2!==-1 && id2!==id){ map.territories[id]?.neighbors.add(id2); map.territories[id2]?.neighbors.add(id); }
+      }
+      // down neighbor
+      if(r+1<map.rows){
+        const id2 = map.cellTerritory[cellIndex(map,c,r+1)];
+        if(id2!==-1 && id2!==id){ map.territories[id]?.neighbors.add(id2); map.territories[id2]?.neighbors.add(id); }
+      }
+    }
+  }
+  Object.values(map.territories).forEach(t=>{
+    if(t.cells.length===0){ t.centroid={x:-1,y:-1}; return; }
+    let sx=0,sy=0;
+    t.cells.forEach(([c,r])=>{ sx += c+0.5; sy += r+0.5; });
+    t.centroid = { x: (sx/t.cells.length)*map.cellSize, y: (sy/t.cells.length)*map.cellSize };
+  });
+}
+
+/* ---------------- Procedural random map generator ---------------- */
+/* Generate an organic water mask (1 = water, 0 = land) covering roughly waterRatio of the grid,
+   grown from a handful of random blobs so coastlines look natural rather than speckled noise. */
+/* Connected components of the territory adjacency graph. Water always breaks graph edges
+   (see recomputeGraph), so each component is exactly one contiguous landmass/island. */
+function findConnectedComponents(map){
+  const seen = new Set();
+  const comps = [];
+  Object.keys(map.territories).map(Number).forEach(start=>{
+    if(seen.has(start)) return;
+    const comp = [];
+    const stack=[start];
+    seen.add(start);
+    while(stack.length){
+      const cur = stack.pop();
+      comp.push(cur);
+      map.territories[cur].neighbors.forEach(n=>{
+        if(!seen.has(n)){ seen.add(n); stack.push(n); }
+      });
+    }
+    comps.push(comp);
+  });
+  return comps;
+}
+
+/* Any whole landmass (one territory or a cluster of several, all cut off from the rest of the
+   map by water) can never be attacked, reinforced into, or attacked FROM by anyone else — it's
+   a dead island. Carve a thin land bridge through water from that island to the nearest other
+   landmass so the entire map ends up as a single connected graph. Repeats since merging two
+   components can occasionally still leave others isolated, and a single guarded pass keeps
+   bridging until only one component remains (or we give up after enough tries). */
+function ensureNoIsolatedTerritories(map){
+  let guard=0;
+  while(guard++<50){
+    const comps = findConnectedComponents(map);
+    if(comps.length<=1) break;
+    // Bridge every component except the largest one out towards the rest of the map — the
+    // largest is treated as "mainland" so smaller islands connect back to it (directly or,
+    // after a later pass, transitively through another island they land next to).
+    comps.sort((a,b)=> b.length-a.length);
+    for(let i=1;i<comps.length;i++){
+      bridgeComponentOut(map, comps[i]);
+    }
+    recomputeGraph(map);
+  }
+}
+
+function bridgeComponentOut(map, compTerrIds){
+  const compSet = new Set(compTerrIds);
+  const cols = map.cols;
+  const visited = new Set();
+  const queue = [];
+  compTerrIds.forEach(tid=>{
+    const t = map.territories[tid];
+    if(!t) return;
+    t.cells.forEach(([c,r])=>{
+      const idx = r*cols+c;
+      if(!visited.has(idx)){ visited.add(idx); queue.push({c,r,parent:null,ownerTid:tid}); }
+    });
+  });
+  // BFS outward from every cell of every territory in this component, travelling only through
+  // water, until we reach a cell that belongs to a territory OUTSIDE this component.
+  let qi = 0, target = null;
+  while(qi<queue.length && !target){
+    const cur = queue[qi++];
+    for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nc=cur.c+dc, nr=cur.r+dr;
+      if(!inBounds(map,nc,nr)) continue;
+      const idx = nr*cols+nc;
+      if(visited.has(idx)) continue;
+      const cellTid = map.cellTerritory[idx];
+      if(cellTid!==-1 && !compSet.has(cellTid)){ target = {c:nc,r:nr,parent:cur,srcTid:cur.ownerTid}; break; }
+      if(cellTid===-1){ visited.add(idx); queue.push({c:nc,r:nr,parent:cur,ownerTid:cur.ownerTid}); }
+    }
+  }
+  if(!target) return; // whole map is this one component — nothing to bridge to
+  // walk back from the target's parent (the water cells forming the shortest path) and claim
+  // them as the source territory's own land, stopping once back at that territory's own cells.
+  const tid = target.srcTid;
+  let cur = target.parent;
+  while(cur && map.cellTerritory[cur.r*cols+cur.c] !== tid){
+    paintCell(map, cur.c, cur.r, tid);
+    cur = cur.parent;
+  }
+}
+
+function generateWaterMask(cols, rows, waterRatio){
+  const total = cols*rows;
+  const water = new Uint8Array(total);
+  const targetWater = Math.round(total*clamp(waterRatio,0,0.7));
+  if(targetWater<=0) return water;
+  const numBlobs = clamp(Math.round(Math.sqrt(cols*rows)/9), 1, 6);
+  const allCells = [];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) allCells.push([c,r]);
+  const seeds = shuffle(allCells).slice(0, numBlobs);
+  let frontier = seeds.map(([c,r])=>({c,r}));
+  let count = 0;
+  seeds.forEach(([c,r])=>{ const idx=r*cols+c; if(!water[idx]){ water[idx]=1; count++; } });
+  let guard=0;
+  while(count<targetWater && guard++<20000){
+    if(frontier.length===0){
+      // stuck (surrounded) - seed a fresh blob elsewhere to keep growing
+      const remaining = allCells.filter(([c,r])=>!water[r*cols+c]);
+      if(remaining.length===0) break;
+      const [c,r] = randChoice(remaining);
+      water[r*cols+c]=1; count++;
+      frontier = [{c,r}];
+      continue;
+    }
+    frontier = shuffle(frontier);
+    const next = [];
+    for(const {c,r} of frontier){
+      if(count>=targetWater) break;
+      const dirs = shuffle([[1,0],[-1,0],[0,1],[0,-1]]);
+      for(const [dc,dr] of dirs){
+        if(count>=targetWater) break;
+        const nc=c+dc, nr=r+dr;
+        if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
+        const idx = nr*cols+nc;
+        if(water[idx]) continue;
+        if(Math.random()<0.82){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
+      }
+    }
+    frontier = next;
+  }
+  return water;
+}
+
+function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio){
+  const map = newMap(cols, rows, name);
+  const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio);
+  map.water = water; // keep for reference/export if needed later
+
+  const landCells = [];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ if(!water[r*cols+c]) landCells.push([c,r]); }
+
+  if(landCells.length===0){
+    // degenerate case (100% water requested) - fall back to a small land patch so the map is playable
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ if(r<Math.max(2,Math.floor(rows/4))){ water[r*cols+c]=0; landCells.push([c,r]); } }
+  }
+
+  const effectiveNumTerr = Math.max(1, Math.min(numTerr, landCells.length));
+  const seeds = shuffle(landCells).slice(0, effectiveNumTerr);
+  const terrs = seeds.map((s)=> createTerritory(map));
+  const frontier = []; // {c,r,terrId}
+  seeds.forEach((s,i)=>{
+    map.cellTerritory[cellIndex(map,s[0],s[1])] = terrs[i].id;
+    terrs[i].cells.push([s[0],s[1]]);
+    frontier.push([s[0],s[1],terrs[i].id]);
+  });
+  // multi-source randomized BFS growth, restricted to land cells
+  let queue = frontier;
+  while(queue.length){
+    queue = shuffle(queue);
+    const next = [];
+    for(const [c,r,tid] of queue){
+      const dirs = shuffle([[1,0],[-1,0],[0,1],[0,-1]]);
+      for(const [dc,dr] of dirs){
+        const nc=c+dc, nr=r+dr;
+        if(!inBounds(map,nc,nr)) continue;
+        const idx = cellIndex(map,nc,nr);
+        if(water[idx]) continue;
+        if(map.cellTerritory[idx] === -1){
+          map.cellTerritory[idx] = tid;
+          map.territories[tid].cells.push([nc,nr]);
+          next.push([nc,nr,tid]);
+        }
+      }
+    }
+    queue = next;
+  }
+  // water can split land into separate islands with no seed of their own — claim any leftover
+  // land cells (as new territories) so the whole coastline ends up owned by someone.
+  let leftoverGuard=0;
+  while(leftoverGuard++<2000){
+    const unfilled = landCells.filter(([c,r])=> map.cellTerritory[cellIndex(map,c,r)]===-1);
+    if(unfilled.length===0) break;
+    const [sc,sr] = randChoice(unfilled);
+    const t = createTerritory(map);
+    let q = [[sc,sr]];
+    map.cellTerritory[cellIndex(map,sc,sr)] = t.id; t.cells.push([sc,sr]);
+    while(q.length){
+      q = shuffle(q);
+      const next=[];
+      for(const [c,r] of q){
+        for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const nc=c+dc, nr=r+dr;
+          if(!inBounds(map,nc,nr)) continue;
+          const idx = cellIndex(map,nc,nr);
+          if(water[idx]) continue;
+          if(map.cellTerritory[idx]===-1){
+            map.cellTerritory[idx]=t.id; t.cells.push([nc,nr]); next.push([nc,nr]);
+          }
+        }
+      }
+      q = next;
+    }
+  }
+  recomputeGraph(map);
+  ensureNoIsolatedTerritories(map);
+
+  // Group territories into continents, preferring continent borders that follow coastlines
+  // (water) rather than cutting through contiguous land. Each connected landmass (component
+  // of the territory graph — water always breaks graph edges) is treated as a unit: small
+  // landmasses are kept whole and merged wholesale into a continent, while only the largest
+  // landmasses get split internally when more continents are requested than there are landmasses.
+  const components = findConnectedComponents(map).map(ids=>({
+    ids, size: ids.reduce((s,id)=> s+map.territories[id].cells.length, 0)
+  }));
+  components.sort((a,b)=> b.size-a.size);
+
+  let contsPerComponent = components.map(()=> components.length<=numCont ? 1 : 0);
+  if(components.length <= numCont){
+    // enough (or more) continents requested than landmasses: everyone gets at least one,
+    // extra continents go to whichever landmass is currently most "crowded" (biggest split need)
+    let remaining = numCont - components.length;
+    while(remaining>0){
+      let bestIdx=0, bestRatio=-1;
+      components.forEach((comp,i)=>{
+        const ratio = comp.size / contsPerComponent[i];
+        if(ratio>bestRatio){ bestRatio=ratio; bestIdx=i; }
+      });
+      contsPerComponent[bestIdx]++;
+      remaining--;
+    }
+  } else {
+    // fewer continents than landmasses: keep the `numCont` largest landmasses as their own
+    // continent, and merge every smaller landmass wholesale into one of those later.
+    for(let i=0;i<Math.min(numCont,components.length);i++) contsPerComponent[i]=1;
+  }
+
+  const contOwnedByComponent = components.map(()=>false);
+  components.forEach((comp, ci)=>{
+    const wantConts = contsPerComponent[ci];
+    if(wantConts<=0) return;
+    contOwnedByComponent[ci] = true;
+    const seedIds = shuffle(comp.ids).slice(0, wantConts);
+    const localConts = seedIds.map(()=> createContinent(map));
+    const assigned = {};
+    let cq = seedIds.map((tid,i)=>({tid, cont: localConts[i].id}));
+    cq.forEach(x=> assigned[x.tid]=x.cont);
+    while(cq.length){
+      cq = shuffle(cq);
+      const next=[];
+      for(const {tid,cont} of cq){
+        for(const nb of shuffle([...map.territories[tid].neighbors])){
+          if(assigned[nb]===undefined){ assigned[nb]=cont; next.push({tid:nb,cont}); }
+        }
+      }
+      cq = next;
+    }
+    comp.ids.forEach(tid=>{ map.territories[tid].continentId = assigned[tid] ?? localConts[0].id; });
+  });
+
+  // merge leftover landmasses (too small to warrant their own continent) wholesale into an
+  // existing continent — never split one, so this never introduces a land border mid-component.
+  const allContIds = Object.values(map.continents).map(c=>c.id);
+  let rr=0;
+  components.forEach((comp, ci)=>{
+    if(contOwnedByComponent[ci] || allContIds.length===0) return;
+    const targetCont = allContIds[rr % allContIds.length]; rr++;
+    comp.ids.forEach(tid=> map.territories[tid].continentId = targetCont);
+  });
+
+  // bonuses based on continent size
+  Object.values(map.continents).forEach(cont=>{
+    const size = Object.values(map.territories).filter(t=>t.continentId===cont.id).length;
+    cont.bonus = Math.max(2, Math.round(size/2)+1);
+  });
+  return map;
+}
+
+/* ---- src/js/03-editor.js ---- */
+/* =========================================================================
+   EDITOR
+   ========================================================================= */
+let editorTool = 'paint';
+let editorCurrentTerrId = null;
+let editorBrush = 2;
+let editorPainting = false;
+let editorShowContinents = false;
+
+/* Compute a label position (cell-weighted centroid) for each continent that has territories. */
+function computeContinentLabelPositions(map){
+  const acc = {};
+  Object.values(map.territories).forEach(t=>{
+    if(t.continentId==null || t.cells.length===0) return;
+    if(!acc[t.continentId]) acc[t.continentId] = {sx:0,sy:0,n:0};
+    const a = acc[t.continentId];
+    a.sx += t.centroid.x*t.cells.length; a.sy += t.centroid.y*t.cells.length; a.n += t.cells.length;
+  });
+  const out = {};
+  Object.entries(acc).forEach(([cid,a])=>{ out[cid] = {x:a.sx/a.n, y:a.sy/a.n}; });
+  return out;
+}
+
+function getWaterRatio(){
+  const el = document.getElementById('waterRatioInput');
+  return el ? Number(el.value)/100 : 0.28;
+}
+
+function initEditorMap(){
+  mapData = generateRandomMap(40, 26, 22, 6, "Bản đồ của tôi", getWaterRatio());
+  $('mapNameInput').value = mapData.name;
+  $('gridCols').value = mapData.cols;
+  $('gridRows').value = mapData.rows;
+  editorCurrentTerrId = null;
+  renderEditorLists();
+  drawEditorCanvas();
+}
+
+function renderEditorLists(){
+  $('terrCount').textContent = Object.keys(mapData.territories).length;
+  $('contCount').textContent = Object.keys(mapData.continents).length;
+
+  const terrList = $('terrList'); terrList.innerHTML='';
+  Object.values(mapData.territories).sort((a,b)=>a.id-b.id).forEach(t=>{
+    const row = el('div','terr-row'+(t.id===editorCurrentTerrId?' selected':''));
+    const sw = el('div','swatch'); sw.style.background = t.color;
+    const nameInput = el('input','name-input terr-name'); nameInput.type='text'; nameInput.value = t.name;
+    nameInput.title='Tên lãnh thổ (chỉ chữ, tự động viết thường)';
+    nameInput.addEventListener('input', ()=>{
+      const pos = nameInput.selectionStart;
+      const cleaned = stripInvalidNameChars(nameInput.value);
+      if(cleaned!==nameInput.value){ nameInput.value = cleaned; try{ nameInput.setSelectionRange(pos-1,pos-1); }catch(e){} }
+    });
+    nameInput.addEventListener('change', ()=>{ t.name = finalizeTerrName(nameInput.value) || t.name; nameInput.value = t.name; updateToolbarInfo(); });
+    nameInput.addEventListener('click', e=>e.stopPropagation());
+    const contSel = el('select'); contSel.style.width='72px'; contSel.style.fontSize='11px';
+    contSel.appendChild(el('option','', '—'));
+    Object.values(mapData.continents).forEach(c=>{
+      const opt = el('option','',c.name); opt.value=c.id;
+      if(t.continentId===c.id) opt.selected=true;
+      contSel.appendChild(opt);
+    });
+    contSel.addEventListener('click', e=>e.stopPropagation());
+    contSel.addEventListener('change', ()=>{ t.continentId = contSel.value? Number(contSel.value): null; });
+    const actions = el('div','row-actions');
+    const delBtn = el('button','mini-btn','✕'); delBtn.title='Xoá lãnh thổ';
+    delBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      t.cells.forEach(([c,r])=>{ mapData.cellTerritory[cellIndex(mapData,c,r)] = -1; });
+      delete mapData.territories[t.id];
+      if(editorCurrentTerrId===t.id) editorCurrentTerrId=null;
+      recomputeGraph(mapData); renderEditorLists(); drawEditorCanvas();
+    });
+    actions.appendChild(delBtn);
+    row.appendChild(sw); row.appendChild(nameInput); row.appendChild(contSel); row.appendChild(actions);
+    row.addEventListener('click', ()=>{ editorCurrentTerrId = t.id; renderEditorLists(); updateToolbarInfo(); });
+    terrList.appendChild(row);
+  });
+
+  const contList = $('contList'); contList.innerHTML='';
+  Object.values(mapData.continents).sort((a,b)=>a.id-b.id).forEach(c=>{
+    const row = el('div','cont-row');
+    const top = el('div','cont-row-top');
+    const colorInput = el('input'); colorInput.type='color'; colorInput.value=c.color;
+    colorInput.style.width='26px'; colorInput.style.height='26px'; colorInput.style.padding='0';
+    colorInput.addEventListener('input', ()=>{ c.color = colorInput.value; drawEditorCanvas(); });
+    const nameInput = el('input','name-input cont-name'); nameInput.type='text'; nameInput.value=c.name;
+    nameInput.title='Tên châu lục (chỉ chữ, tự động viết hoa)';
+    nameInput.addEventListener('input', ()=>{
+      const pos = nameInput.selectionStart;
+      const cleaned = stripInvalidNameChars(nameInput.value);
+      if(cleaned!==nameInput.value){ nameInput.value = cleaned; try{ nameInput.setSelectionRange(pos-1,pos-1); }catch(e){} }
+    });
+    nameInput.addEventListener('change', ()=>{ c.name = finalizeContName(nameInput.value) || c.name; nameInput.value = c.name; drawEditorCanvas(); });
+    const delBtn = el('button','mini-btn','✕'); delBtn.title='Xoá châu lục';
+    delBtn.addEventListener('click', ()=>{
+      Object.values(mapData.territories).forEach(t=>{ if(t.continentId===c.id) t.continentId=null; });
+      delete mapData.continents[c.id];
+      renderEditorLists(); drawEditorCanvas();
+    });
+    top.appendChild(colorInput); top.appendChild(nameInput); top.appendChild(delBtn);
+
+    const bonusRow = el('div','cont-row-bonus');
+    const bonusLabel = el('span','bonus-label','Quân thưởng mỗi lượt');
+    const bonusInput = el('input'); bonusInput.type='number'; bonusInput.min='0'; bonusInput.value=c.bonus;
+    bonusInput.title='Số quân thưởng khi chiếm trọn châu lục này';
+    bonusInput.addEventListener('change', ()=>{ c.bonus = Math.max(0, Number(bonusInput.value)||0); });
+    bonusRow.appendChild(bonusLabel); bonusRow.appendChild(bonusInput);
+
+    row.appendChild(top); row.appendChild(bonusRow);
+    contList.appendChild(row);
+  });
+}
+
+function updateToolbarInfo(){
+  const bar = $('terrInfoBar');
+  if(editorCurrentTerrId && mapData.territories[editorCurrentTerrId]){
+    const t = mapData.territories[editorCurrentTerrId];
+    bar.innerHTML = `Đang tô: <b style="color:${t.color}">${t.name}</b> — ${t.cells.length} ô — công cụ: <b>${editorTool}</b>`;
+  } else {
+    bar.textContent = 'Chọn hoặc tạo một lãnh thổ để bắt đầu tô. Công cụ: ' + editorTool;
+  }
+}
+
+function drawEditorCanvas(){
+  const canvas = $('editorCanvas');
+  const cs = mapData.cellSize;
+  canvas.width = mapData.cols*cs;
+  canvas.height = mapData.rows*cs;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#123a56';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<mapData.rows;r++){
+    for(let c=0;c<mapData.cols;c++){
+      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
+      if(id===-1) continue;
+      const t = mapData.territories[id];
+      if(!t) continue;
+      if(editorShowContinents){
+        const cont = t.continentId!=null ? mapData.continents[t.continentId] : null;
+        ctx.fillStyle = cont ? cont.color : '#3a3f52';
+      } else {
+        ctx.fillStyle = t.color;
+      }
+      ctx.fillRect(c*cs, r*cs, cs, cs);
+    }
+  }
+  // borders: thin between territories, thicker between continents when in continent view
+  for(let r=0;r<mapData.rows;r++){
+    for(let c=0;c<mapData.cols;c++){
+      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
+      const idR = c+1<mapData.cols? mapData.cellTerritory[cellIndex(mapData,c+1,r)] : id;
+      const idD = r+1<mapData.rows? mapData.cellTerritory[cellIndex(mapData,c,r+1)] : id;
+      if(editorShowContinents){
+        const t = mapData.territories[id];
+        const contId = t? t.continentId : null;
+        const tR = mapData.territories[idR]; const contR = tR? tR.continentId : null;
+        const tD = mapData.territories[idD]; const contD = tD? tD.continentId : null;
+        ctx.lineWidth = (idR!==id && contR!==contId) ? 3 : 1;
+        ctx.strokeStyle = (idR!==id && contR!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(10,14,24,0.5)';
+        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+        ctx.lineWidth = (idD!==id && contD!==contId) ? 3 : 1;
+        ctx.strokeStyle = (idD!==id && contD!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(10,14,24,0.5)';
+        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+      } else {
+        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,14,24,0.9)';
+        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+      }
+    }
+  }
+  // labels
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  Object.values(mapData.territories).forEach(t=>{
+    if(t.cells.length===0) return;
+    ctx.fillStyle='rgba(0,0,0,0.55)';
+    ctx.fillText(t.name, t.centroid.x+1, t.centroid.y+1);
+    ctx.fillStyle= editorShowContinents ? 'rgba(255,255,255,0.85)' : '#fff';
+    ctx.fillText(t.name, t.centroid.x, t.centroid.y);
+  });
+  if(editorShowContinents){
+    ctx.font = 'bold 17px sans-serif';
+    const positions = computeContinentLabelPositions(mapData);
+    Object.entries(positions).forEach(([cid,pos])=>{
+      const cont = mapData.continents[cid]; if(!cont) return;
+      const label = cont.name+' (+'+cont.bonus+')';
+      ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillText(label, pos.x+1, pos.y+1);
+      ctx.fillStyle='#fff'; ctx.fillText(label, pos.x, pos.y);
+    });
+  }
+  // highlight current territory selection border
+  if(editorCurrentTerrId && mapData.territories[editorCurrentTerrId]){
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth=1;
+  }
+}
+
+function canvasToCell(canvas, evt){
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
+  const x = (evt.clientX-rect.left)*scaleX;
+  const y = (evt.clientY-rect.top)*scaleY;
+  const c = Math.floor(x/mapData.cellSize), r = Math.floor(y/mapData.cellSize);
+  return [c,r];
+}
+
+function applyBrush(c,r,terrId){
+  const half = Math.floor(editorBrush/2);
+  for(let dr=-half; dr<editorBrush-half; dr++){
+    for(let dc=-half; dc<editorBrush-half; dc++){
+      paintCell(mapData, c+dc, r+dr, terrId);
+    }
+  }
+}
+
+function editorPointerDown(evt){
+  const canvas = $('editorCanvas');
+  const [c,r] = canvasToCell(canvas, evt);
+  if(!inBounds(mapData,c,r)) return;
+  if(editorTool==='pick'){
+    const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
+    if(id!==-1){ editorCurrentTerrId = id; renderEditorLists(); updateToolbarInfo(); }
+    return;
+  }
+  if(editorTool==='bucket'){
+    if(editorCurrentTerrId===null) return;
+    bucketFill(mapData, c, r, editorCurrentTerrId);
+    recomputeGraph(mapData); drawEditorCanvas(); renderEditorLists();
+    return;
+  }
+  editorPainting = true;
+  paintAt(c,r);
+}
+function paintAt(c,r){
+  if(editorTool==='paint'){
+    if(editorCurrentTerrId===null) return;
+    applyBrush(c,r,editorCurrentTerrId);
+  } else if(editorTool==='erase'){
+    applyBrush(c,r,-1);
+  }
+  drawEditorCanvas();
+}
+function editorPointerMove(evt){
+  if(!editorPainting) return;
+  const canvas = $('editorCanvas');
+  const [c,r] = canvasToCell(canvas, evt);
+  if(!inBounds(mapData,c,r)) return;
+  paintAt(c,r);
+}
+function editorPointerUp(){
+  if(editorPainting){ editorPainting=false; recomputeGraph(mapData); renderEditorLists(); drawEditorCanvas(); }
+}
+
+function validateMap(){
+  const msg = $('validateMsg'); msg.classList.remove('hidden');
+  const terrs = Object.values(mapData.territories);
+  const empty = terrs.filter(t=>t.cells.length===0);
+  const noCont = terrs.filter(t=>t.continentId===null);
+  const contsEmpty = Object.values(mapData.continents).filter(c=> !terrs.some(t=>t.continentId===c.id));
+  // islands separated by water are expected/normal now — just count them for information,
+  // don't treat as an error.
+  const numIslands = terrs.length ? findConnectedComponents(mapData).length : 0;
+
+  const problems = [];
+  if(terrs.length < 4) problems.push('Cần ít nhất 4 lãnh thổ.');
+  if(empty.length) problems.push(empty.length+' lãnh thổ chưa được tô (không có ô nào).');
+  if(noCont.length) problems.push(noCont.length+' lãnh thổ chưa gán châu lục.');
+  if(contsEmpty.length) problems.push(contsEmpty.length+' châu lục không có lãnh thổ nào.');
+  if(problems.length===0){
+    msg.className='ok';
+    msg.textContent = '✓ Bản đồ hợp lệ, sẵn sàng để chơi! ('+terrs.length+' lãnh thổ, '+Object.keys(mapData.continents).length+' châu lục'
+      + (numIslands>1 ? ', '+numIslands+' vùng đất tách biệt bởi nước' : '') + ')';
+    return true;
+  } else {
+    msg.className='err'; msg.textContent = '✗ '+problems.join(' ');
+    return false;
+  }
+}
+
+function exportMapJSON(){
+  const out = {
+    name: mapData.name, cols: mapData.cols, rows: mapData.rows, cellSize: mapData.cellSize,
+    cellTerritory: Array.from(mapData.cellTerritory),
+    territories: Object.values(mapData.territories).map(t=>({id:t.id,name:t.name,continentId:t.continentId,color:t.color})),
+    continents: Object.values(mapData.continents).map(c=>({id:c.id,name:c.name,color:c.color,bonus:c.bonus})),
+    nextTerrId: mapData.nextTerrId, nextContId: mapData.nextContId
+  };
+  const blob = new Blob([JSON.stringify(out,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (mapData.name||'map').replace(/[^a-z0-9_\- ]/gi,'')+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importMapJSON(obj){
+  const map = newMap(obj.cols, obj.rows, obj.name);
+  map.cellSize = obj.cellSize || map.cellSize;
+  map.cellTerritory = new Int16Array(obj.cellTerritory);
+  (obj.territories||[]).forEach(t=>{
+    map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
+  });
+  (obj.continents||[]).forEach(c=>{ map.continents[c.id] = {id:c.id,name:c.name,color:c.color,bonus:c.bonus}; });
+  for(let r=0;r<map.rows;r++) for(let c=0;c<map.cols;c++){
+    const id = map.cellTerritory[cellIndex(map,c,r)];
+    if(id!==-1 && map.territories[id]) map.territories[id].cells.push([c,r]);
+  }
+  map.nextTerrId = obj.nextTerrId || (Math.max(0,...Object.keys(map.territories).map(Number))+1);
+  map.nextContId = obj.nextContId || (Math.max(0,...Object.keys(map.continents).map(Number))+1);
+  recomputeGraph(map);
+  mapData = map;
+  $('mapNameInput').value = mapData.name;
+  $('gridCols').value = mapData.cols; $('gridRows').value = mapData.rows;
+  editorCurrentTerrId = null;
+  renderEditorLists(); drawEditorCanvas();
+}
+
+/* ---- src/js/04-game-state.js ---- */
+/* =========================================================================
+   GAME STATE
+   ========================================================================= */
+let game = null; // set on start
+let showContinentsGame = false;
+
+function standardStartingArmies(numPlayers){
+  const table = {2:40,3:35,4:30,5:25,6:20};
+  return table[numPlayers] || 20;
+}
+
+const CARD_TYPES = ['infantry','cavalry','artillery'];
+const CARD_ICON = {infantry:'🪖', cavalry:'🐎', artillery:'💣'};
+const TRADE_VALUES = [4,6,8,10,12,15,20];
+
+function tradeInValue(tradeCount){
+  if(tradeCount < TRADE_VALUES.length) return TRADE_VALUES[tradeCount];
+  return TRADE_VALUES[TRADE_VALUES.length-1] + (tradeCount-TRADE_VALUES.length+1)*5;
+}
+
+function initGame(numAI, difficulty, humanColor, spectator){
+  spectatorMode = !!spectator;
+  const numPlayers = numAI+1;
+  const colors = shuffle(PLAYER_COLORS.filter(c=>c.hex!==humanColor));
+  const players = [];
+  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false});
+  for(let i=0;i<numAI;i++){
+    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false});
+  }
+  const terrIds = shuffle(Object.keys(mapData.territories).map(Number));
+  const owner = {}; const armies = {};
+  terrIds.forEach((id,i)=>{ owner[id] = i % players.length; armies[id] = 1; });
+
+  const pool = {};
+  players.forEach(p=> pool[p.id] = standardStartingArmies(players.length) - terrIds.filter(id=>owner[id]===p.id).length);
+
+  game = {
+    players, owner, armies, pool,
+    turnOrder: shuffle(players.map(p=>p.id)),
+    turnIdx: 0,
+    phase: 'setup-place', // setup-place -> reinforce -> attack -> fortify
+    difficulty,
+    reinforceRemaining: 0,
+    tradeCount: 0,
+    selectedFrom: null, selectedTo: null,
+    log: [],
+    over: false,
+  };
+  logMsg('info', 'Ván chơi bắt đầu! '+players.length+' người chơi trên bản đồ "'+mapData.name+'".');
+}
+
+function currentPlayerId(){ return game.turnOrder[game.turnIdx]; }
+function currentPlayer(){ return game.players[currentPlayerId()]; }
+function ownedTerritories(pid){ return Object.keys(game.owner).map(Number).filter(id=>game.owner[id]===pid); }
+function isAlive(pid){ return game.players[pid].alive; }
+
+function logMsg(type,msg){
+  game.log.push({type,msg});
+  renderCombatLog();
+}
+
+/* ---------------- Setup placement (initial armies) ---------------- */
+function allPoolsEmpty(){ return game.players.every(p=> !p.alive || game.pool[p.id]<=0); }
+
+function setupPlaceNext(){
+  // if human has pool left, wait for click; else auto-place for AI/human w/ 0
+  if(allPoolsEmpty()){
+    beginReinforcePhase();
+    return;
+  }
+  const p = currentPlayer();
+  if(game.pool[p.id] <= 0){
+    advanceSetupTurn();
+    return;
+  }
+  if(!p.isHuman){
+    // AI auto place 1 army on a border territory (or random).
+    // Kept fast (no spectator delay) even in "watch AI" mode — placing armies one at a
+    // time isn't interesting to watch slowly, so this phase always runs at full speed;
+    // the 1s pacing kicks in starting from the reinforce/attack/fortify phases instead.
+    setTimeout(()=>{
+      if(!game || game.over) return;
+      const mine = ownedTerritories(p.id);
+      const target = pickAIReinforceTarget(p.id, mine);
+      game.armies[target]++;
+      game.pool[p.id]--;
+      renderGame();
+      advanceSetupTurn();
+    }, 120);
+  } else {
+    renderGame();
+    setActionHint('Đặt quân ban đầu: nhấp vào lãnh thổ của bạn để đặt 1 quân. Còn lại: '+game.pool[p.id]);
+  }
+}
+function advanceSetupTurn(){
+  game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
+  setupPlaceNext();
+}
+
+function beginReinforcePhase(){
+  game.turnIdx = 0;
+  game.phase = 'reinforce';
+  startReinforce();
+}
+
+/* ---------------- Reinforcement ---------------- */
+function computeReinforcements(pid){
+  const mine = ownedTerritories(pid);
+  let base = Math.max(3, Math.floor(mine.length/3));
+  Object.values(mapData.continents).forEach(cont=>{
+    const contTerrs = Object.values(mapData.territories).filter(t=>t.continentId===cont.id).map(t=>t.id);
+    if(contTerrs.length>0 && contTerrs.every(id=>game.owner[id]===pid)) base += cont.bonus;
+  });
+  return base;
+}
+
+function startReinforce(){
+  const p = currentPlayer();
+  game.phase='reinforce';
+  game.reinforceRemaining = computeReinforcements(p.id);
+  logMsg('info', p.name+' nhận '+game.reinforceRemaining+' quân tăng viện.');
+  if(!p.isHuman){
+    aiRunFullTurn(p.id);
+  } else {
+    // forced trade if 5+ cards
+    if(p.cards.length>=5){ openCardsModal(true); }
+    renderGame();
+    setActionHint('Giai đoạn tăng viện: nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
+  }
+}
+
+function placeReinforcement(terrId){
+  const p = currentPlayer();
+  if(game.owner[terrId]!==p.id) return false;
+  if(game.reinforceRemaining<=0) return false;
+  game.armies[terrId]++;
+  game.reinforceRemaining--;
+  renderGame();
+  if(game.reinforceRemaining<=0){
+    beginAttackPhase();
+  } else {
+    setActionHint('Giai đoạn tăng viện: còn lại '+game.reinforceRemaining+' quân.');
+  }
+  return true;
+}
+
+/* ---------------- Attack ---------------- */
+function beginAttackPhase(){
+  game.phase='attack';
+  game.selectedFrom=null; game.selectedTo=null;
+  renderGame();
+  setActionHint('Giai đoạn tấn công: chọn lãnh thổ của bạn (có ≥2 quân) rồi chọn lãnh thổ địch liền kề để tấn công. Nhấn "Kết thúc tấn công" khi xong.');
+}
+
+function canAttack(fromId,toId,pid){
+  if(game.owner[fromId]!==pid) return false;
+  if(game.owner[toId]===pid) return false;
+  if(game.armies[fromId]<2) return false;
+  return mapData.territories[fromId].neighbors.has(toId);
+}
+
+function doBattle(fromId,toId){
+  const attArmies = game.armies[fromId];
+  const defArmies = game.armies[toId];
+  const attDice = clamp(attArmies-1,1,3);
+  const defDice = clamp(defArmies,1,2);
+  const ad = Array.from({length:attDice},rollDie).sort((a,b)=>b-a);
+  const dd = Array.from({length:defDice},rollDie).sort((a,b)=>b-a);
+  let attLoss=0, defLoss=0;
+  const pairs = Math.min(ad.length,dd.length);
+  const results=[];
+  for(let i=0;i<pairs;i++){
+    if(ad[i]>dd[i]){ defLoss++; results.push({a:ad[i],d:dd[i],win:true}); }
+    else { attLoss++; results.push({a:ad[i],d:dd[i],win:false}); }
+  }
+  game.armies[fromId]-=attLoss;
+  game.armies[toId]-=defLoss;
+  showDice(ad,dd,results);
+  const attP = game.players[game.owner[fromId]];
+  const defP = game.players[game.owner[toId]];
+  logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
+  let captured=false;
+  if(game.armies[toId]<=0){
+    captured=true;
+    // Risk rule: must move at least as many armies as dice used in the winning roll. Apply that
+    // guaranteed minimum immediately so game state is always valid, then — for the human player —
+    // offer a styled modal to move more (up to everything but 1) instead of blocking with a
+    // native browser prompt.
+    const conquerMin = attDice;
+    const maxMovable = game.armies[fromId]-1;
+    const moving = Math.max(1, Math.min(conquerMin, maxMovable));
+    const oldOwner = game.owner[toId];
+    game.owner[toId] = game.owner[fromId];
+    game.armies[toId] = moving;
+    game.armies[fromId] -= moving;
+    attP.capturedThisTurn = true;
+    logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`);
+    checkElimination(oldOwner, attP.id);
+    if(attP.isHuman && maxMovable>moving){
+      openCaptureMoveModal(fromId, toId, moving, maxMovable);
+    }
+  }
+  renderGame();
+  return {attLoss,defLoss,captured};
+}
+
+function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
+  const fromName = mapData.territories[fromId].name;
+  const toName = mapData.territories[toId].name;
+  const extraMax = maxMovable - alreadyMoved; // how many MORE can move beyond the guaranteed minimum
+  const overlay = el('div','modal-overlay');
+  const modal = el('div','modal');
+  modal.appendChild(el('h3','', `🎉 Chiếm được "${toName}"!`));
+  modal.appendChild(el('p','', `Bạn có thể chuyển thêm quân từ "${fromName}" sang "${toName}" (đã chuyển tối thiểu ${alreadyMoved} quân theo luật).`));
+
+  const bigRow = el('div','');
+  bigRow.style.cssText = 'display:flex;justify-content:space-around;align-items:center;margin:18px 0;text-align:center;';
+  const fromBox = el('div','');
+  const fromCount = el('div','', String(game.armies[fromId])); fromCount.style.cssText='font-size:26px;font-weight:800;color:#fff;';
+  fromBox.appendChild(fromCount); fromBox.appendChild(el('div','',fromName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
+  const arrow = el('div','','→'); arrow.style.cssText='font-size:22px;color:var(--muted);';
+  const toBox = el('div','');
+  const toCount = el('div','', String(game.armies[toId])); toCount.style.cssText='font-size:26px;font-weight:800;color:var(--good);';
+  toBox.appendChild(toCount); toBox.appendChild(el('div','',toName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
+  bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
+  modal.appendChild(bigRow);
+
+  if(extraMax>0){
+    const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
+    const slider = document.createElement('input');
+    slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
+    slider.style.flex='1';
+    const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
+    slider.addEventListener('input', ()=>{
+      const extra = Number(slider.value);
+      sliderLabel.textContent = '+'+extra;
+      fromCount.textContent = String(game.armies[fromId]-extra);
+      toCount.textContent = String(game.armies[toId]+extra);
+    });
+    sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
+    modal.appendChild(sliderRow);
+    modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
+
+    const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
+    const quickMin = el('button','ghost','Giữ nguyên (+0)');
+    quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
+    const quickMax = el('button','ghost','Tối đa (+'+extraMax+')');
+    quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
+    const confirmBtn = el('button','primary','Xác nhận');
+    confirmBtn.addEventListener('click', ()=>{
+      const extra = Number(slider.value);
+      game.armies[fromId] -= extra;
+      game.armies[toId] += extra;
+      document.body.removeChild(overlay);
+      renderGame();
+    });
+    btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
+    modal.appendChild(btnRow);
+  }
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function checkElimination(pid, byPid){
+  if(pid===undefined) return;
+  const p = game.players[pid];
+  if(!p.alive) return;
+  if(ownedTerritories(pid).length===0){
+    p.alive=false;
+    logMsg('capture', `${p.name} đã bị loại khỏi ván chơi!`);
+    // transfer cards
+    const byP = game.players[byPid];
+    if(byP && p.cards.length){ byP.cards = byP.cards.concat(p.cards); p.cards=[]; }
+    checkWinCondition();
+  }
+}
+
+function checkWinCondition(){
+  const alivePlayers = game.players.filter(p=>p.alive);
+  if(alivePlayers.length<=1){
+    game.over=true;
+    showGameOver(alivePlayers[0]);
+  }
+}
+
+/* ---------------- Fortify ---------------- */
+function beginFortifyPhase(){
+  game.phase='fortify';
+  game.selectedFrom=null; game.selectedTo=null;
+  renderGame();
+  if(!currentPlayer().isHuman) return; // handled by AI routine
+  setActionHint('Giai đoạn tăng cường: chọn lãnh thổ nguồn rồi lãnh thổ đích (cùng phe, có đường nối) để chuyển quân, hoặc kết thúc lượt.');
+}
+
+function pathExistsOwned(fromId,toId,pid){
+  const seen=new Set([fromId]); const stack=[fromId];
+  while(stack.length){
+    const cur=stack.pop();
+    if(cur===toId) return true;
+    mapData.territories[cur].neighbors.forEach(n=>{
+      if(!seen.has(n) && game.owner[n]===pid){ seen.add(n); stack.push(n); }
+    });
+  }
+  return false;
+}
+
+function endTurn(){
+  const p = currentPlayer();
+  if(p.capturedThisTurn){
+    const type = CARD_TYPES[rand(3)];
+    p.cards.push(type);
+    logMsg('info', p.name+' nhận được 1 thẻ bài '+CARD_ICON[type]+'.');
+  }
+  p.capturedThisTurn=false;
+  do {
+    game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
+  } while(!isAlive(currentPlayerId()));
+  if(game.over) return;
+  startReinforce();
+}
+
+/* ---- src/js/05-ai.js ---- */
+/* =========================================================================
+   AI LOGIC
+   ---------------------------------------------------------------------
+   No external file/spec — this comment block IS the AI's "design doc".
+   Each AI turn runs four steps in sequence (reinforce -> attack -> fortify
+   -> end turn), and every decision is a simple weighted-scoring heuristic,
+   not lookahead/minimax or ML. Three strategic layers on top of the basic
+   "attack the best odds" behavior:
+
+   1. RESERVE AWARENESS ("biết giữ quân"): before attacking FROM a territory,
+      the AI first sets aside a defensive reserve sized to the strongest
+      OTHER enemy neighbor that territory faces (see reserveFor()). Only the
+      surplus above that reserve is considered "usable" for the attack-odds
+      calculation, so a stack sitting next to a second, untouched threat
+      won't get thrown entirely at the first juicy target. The reserve
+      shrinks on Hard and grows on Easy (aggressiveThreshold in
+      difficultyProfile()).
+   2. CONTINENT AWARENESS ("giữ châu lục để ăn điểm"): capturing a territory
+      that completes a continent gets a large score bonus (attackScore()),
+      and reinforcement placement (pickAIReinforceTarget) favors defending
+      the borders of continents the AI already fully owns, or pushing to
+      finish one that's one territory away.
+   3. KILL PRIORITY ("diệt hẳn player ngoắc ngoải"): an opponent reduced to
+      very few territories is a soft target worth going a little out of your
+      way for, because eliminating them transfers their whole card hand to
+      the killer (see checkElimination) — the fewer territories/the more
+      cards they're holding, the bigger the score bonus to finish them off.
+      The AI is also more cautious about picking fights with whoever is
+      currently the strongest player (evaluatePlayerPower), unless it's
+      already comparably strong itself.
+   ========================================================================= */
+
+function difficultyProfile(diff){
+  // baseThreshold: minimum armies-vs-armies ratio required to attack at all.
+  // reserveFactor: how much of a bordering third-party threat to keep in
+  //   reserve rather than throw into an attack (higher = more cautious).
+  if(diff==='easy')  return {baseThreshold:2.0, reserveFactor:1.0};
+  if(diff==='hard')  return {baseThreshold:1.15, reserveFactor:0.3};
+  return {baseThreshold:1.5, reserveFactor:0.6};
+}
+function difficultyThreshold(diff){ return difficultyProfile(diff).baseThreshold; }
+
+function evaluatePlayerPower(pid){
+  const mine = ownedTerritories(pid);
+  const armies = mine.reduce((s,id)=> s+(game.armies[id]||0), 0);
+  return armies + mine.length*2;
+}
+
+// Would owning `terrId` complete every territory of its continent for `pid`?
+function completesContinentFor(pid, terrId){
+  const t = mapData.territories[terrId];
+  if(!t || t.continentId==null) return false;
+  const contTerrs = Object.values(mapData.territories).filter(x=>x.continentId===t.continentId);
+  return contTerrs.every(x=> x.id===terrId || game.owner[x.id]===pid);
+}
+
+function pickAIReinforceTarget(pid, mine){
+  let best=null, bestScore=-Infinity;
+  mine.forEach(id=>{
+    const t = mapData.territories[id];
+    const enemyNb = [...t.neighbors].filter(n=>game.owner[n]!==pid);
+    if(enemyNb.length===0) return; // only border territories are worth reinforcing
+    const maxEnemyArmy = Math.max(...enemyNb.map(n=>game.armies[n]));
+    let score = maxEnemyArmy - game.armies[id];
+    if(t.continentId!=null){
+      const contTerrs = Object.values(mapData.territories).filter(x=>x.continentId===t.continentId);
+      const ownedCount = contTerrs.filter(x=>game.owner[x.id]===pid).length;
+      if(ownedCount===contTerrs.length) score += 1.5;       // defend a continent I already hold
+      else if(ownedCount>=contTerrs.length-1) score += 0.8; // one territory away from completing it
+    }
+    if(score>bestScore){ bestScore=score; best=id; }
+  });
+  if(best===null) best = randChoice(mine);
+  return best;
+}
+
+function aiRunFullTurn(pid){
+  setActionHint(game.players[pid].name+' đang suy nghĩ...');
+  setTimeout(()=>{ aiReinforceStep(pid); }, aiDelay(300));
+}
+
+function aiReinforceStep(pid){
+  const p = game.players[pid];
+  aiTryTradeCards(p);
+  let guard=0;
+  while(game.reinforceRemaining>0 && guard++<200){
+    const mine = ownedTerritories(pid);
+    const target = pickAIReinforceTarget(pid, mine);
+    game.armies[target]++;
+    game.reinforceRemaining--;
+  }
+  renderGame();
+  setTimeout(()=> aiAttackStep(pid), aiDelay(350));
+}
+
+function aiTryTradeCards(p){
+  let guard=0;
+  while(guard++<10){
+    const combo = findTradeCombo(p.cards);
+    const forced = p.cards.length>=5;
+    if(!combo) break;
+    if(!forced && Math.random()<0.4 && p.cards.length<5) break; // sometimes hold cards
+    tradeCards(p, combo);
+  }
+}
+
+function findTradeCombo(cards){
+  if(cards.length<3) return null;
+  for(let i=0;i<cards.length;i++) for(let j=i+1;j<cards.length;j++) for(let k=j+1;k<cards.length;k++){
+    const set=[cards[i],cards[j],cards[k]];
+    const uniq = new Set(set);
+    if(uniq.size===1 || uniq.size===3) return [i,j,k];
+  }
+  return null;
+}
+
+function tradeCards(p, indices){
+  const idxSorted = indices.slice().sort((a,b)=>b-a);
+  const removed = idxSorted.map(i=>p.cards[i]);
+  idxSorted.forEach(i=> p.cards.splice(i,1));
+  game.tradeCount++;
+  const value = tradeInValue(game.tradeCount);
+  if(game.phase==='reinforce' && currentPlayerId()===p.id){
+    game.reinforceRemaining += value;
+  } else {
+    game.pool[p.id] = (game.pool[p.id]||0) + value;
+  }
+  logMsg('info', p.name+' đổi thẻ bài lấy '+value+' quân.');
+  renderGame();
+}
+
+function aiAttackStep(pid){
+  game.phase='attack';
+  const p = game.players[pid];
+  const profile = difficultyProfile(game.difficulty);
+  const opponents = game.players.filter(pl=>pl.alive && pl.id!==pid);
+  const myPower = evaluatePlayerPower(pid);
+  let leaderId = null, leaderPower = -1;
+  opponents.forEach(pl=>{ const pw = evaluatePlayerPower(pl.id); if(pw>leaderPower){ leaderPower=pw; leaderId=pl.id; } });
+
+  // How many armies a territory should keep in reserve, sized to the strongest
+  // enemy neighbor it borders OTHER than the one currently being considered.
+  function reserveFor(fromId, excludeTo){
+    const t = mapData.territories[fromId];
+    let maxOther = 0;
+    t.neighbors.forEach(n=>{
+      if(n===excludeTo) return;
+      if(game.owner[n]!==pid) maxOther = Math.max(maxOther, game.armies[n]);
+    });
+    return Math.ceil(maxOther*profile.reserveFactor);
+  }
+
+  function attackScore(fromId, toId){
+    const usable = Math.max(0, game.armies[fromId]-1-reserveFor(fromId,toId));
+    if(usable<1) return null; // nothing safe to attack with once the reserve is set aside
+    const ratio = (usable+1)/Math.max(1,game.armies[toId]);
+    let bonus = 0;
+    if(completesContinentFor(pid, toId)) bonus += 2.5;
+    const defenderId = game.owner[toId];
+    const defP = defenderId!=null ? game.players[defenderId] : null;
+    if(defP){
+      const defTerrCount = ownedTerritories(defenderId).length;
+      if(defTerrCount<=2) bonus += 1.5 + defP.cards.length*0.4; // finish them off for the cards
+      if(defenderId===leaderId && myPower<leaderPower*1.1) bonus -= 0.6; // wary of picking a fight I can't afford
+    }
+    return {ratio, score:ratio+bonus, bonus};
+  }
+
+  let guard=0;
+  function step(){
+    if(game.over) return;
+    guard++;
+    if(guard>60){ aiFortifyStep(pid); return; }
+    const mine = ownedTerritories(pid);
+    let bestOpt=null, bestEval=null;
+    for(const from of mine){
+      if(game.armies[from]<2) continue;
+      const t = mapData.territories[from];
+      for(const to of t.neighbors){
+        if(game.owner[to]===pid) continue;
+        const ev = attackScore(from, to);
+        if(!ev) continue;
+        if(!bestEval || ev.score>bestEval.score){ bestEval=ev; bestOpt={from,to}; }
+      }
+    }
+    // bonuses (continent completion / finishing off a weak player) justify taking slightly
+    // worse pure odds than the difficulty's base threshold would normally allow.
+    const effectiveThreshold = bestEval ? Math.max(1.05, profile.baseThreshold - bestEval.bonus*0.3) : Infinity;
+    if(!bestOpt || bestEval.ratio<effectiveThreshold){ aiFortifyStep(pid); return; }
+    doBattle(bestOpt.from, bestOpt.to);
+    if(game.over) return;
+    setTimeout(step, aiDelay(260));
+  }
+  step();
+}
+
+function aiFortifyStep(pid){
+  game.phase='fortify';
+  renderGame();
+  const p = game.players[pid];
+  // move armies from a safe interior territory to weakest border territory
+  const mine = ownedTerritories(pid);
+  const interior = mine.filter(id=>{
+    const t = mapData.territories[id];
+    return [...t.neighbors].every(n=>game.owner[n]===pid) && game.armies[id]>1;
+  });
+  const borders = mine.filter(id=>{
+    const t = mapData.territories[id];
+    return [...t.neighbors].some(n=>game.owner[n]!==pid);
+  });
+  if(interior.length && borders.length){
+    const src = interior.sort((a,b)=>game.armies[b]-game.armies[a])[0];
+    let bestDst=null;
+    for(const dst of borders){
+      if(pathExistsOwned(src,dst,pid) && src!==dst){ bestDst=dst; break; }
+    }
+    if(bestDst){
+      const moving = game.armies[src]-1;
+      if(moving>0){
+        game.armies[src]-=moving; game.armies[bestDst]+=moving;
+        logMsg('info', p.name+' tăng cường '+moving+' quân đến '+mapData.territories[bestDst].name+'.');
+      }
+    }
+  }
+  renderGame();
+  setTimeout(()=> endTurn(), aiDelay(400));
+}
+
+/* ---- src/js/06-render-game.js ---- */
+/* =========================================================================
+   RENDERING (GAME)
+   ========================================================================= */
+function playerOf(id){ return game.players[id]; }
+
+function drawGameCanvas(){
+  const canvas = $('gameCanvas');
+  const cs = mapData.cellSize;
+  canvas.width = mapData.cols*cs;
+  canvas.height = mapData.rows*cs;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle='#123a56';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let r=0;r<mapData.rows;r++){
+    for(let c=0;c<mapData.cols;c++){
+      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
+      if(id===-1) continue;
+      let color;
+      if(showContinentsGame){
+        const t = mapData.territories[id];
+        const cont = t && t.continentId!=null ? mapData.continents[t.continentId] : null;
+        color = cont ? cont.color : '#3a3f52';
+      } else {
+        const ownerId = game.owner[id];
+        color = ownerId!==undefined ? playerOf(ownerId).color : '#444';
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(c*cs,r*cs,cs,cs);
+    }
+  }
+  // In continent view, emphasize the viewing (human) player's own territories with a diagonal
+  // white stripe overlay — keeps the true continent colors intact instead of retinting them.
+  if(showContinentsGame){
+    ctx.save();
+    ctx.fillStyle = getStripePattern(ctx);
+    for(let r=0;r<mapData.rows;r++){
+      for(let c=0;c<mapData.cols;c++){
+        const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
+        if(id===-1) continue;
+        if(game.owner[id]===0){ ctx.fillRect(c*cs, r*cs, cs, cs); }
+      }
+    }
+    ctx.restore();
+  }
+  // borders: thin between territories, thicker between continents when in continent view
+  for(let r=0;r<mapData.rows;r++){
+    for(let c=0;c<mapData.cols;c++){
+      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
+      const idR = c+1<mapData.cols? mapData.cellTerritory[cellIndex(mapData,c+1,r)] : id;
+      const idD = r+1<mapData.rows? mapData.cellTerritory[cellIndex(mapData,c,r+1)] : id;
+      if(showContinentsGame){
+        const t = mapData.territories[id]; const contId = t? t.continentId : null;
+        const tR = mapData.territories[idR]; const contR = tR? tR.continentId : null;
+        const tD = mapData.territories[idD]; const contD = tD? tD.continentId : null;
+        ctx.lineWidth = (idR!==id && contR!==contId) ? 3 : 1;
+        ctx.strokeStyle = (idR!==id && contR!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(8,10,18,0.5)';
+        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+        ctx.lineWidth = (idD!==id && contD!==contId) ? 3 : 1;
+        ctx.strokeStyle = (idD!==id && contD!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(8,10,18,0.5)';
+        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+      } else {
+        ctx.lineWidth=2; ctx.strokeStyle='rgba(8,10,18,0.85)';
+        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
+      }
+    }
+  }
+  // selection highlight
+  [['selectedFrom','#fff'],['selectedTo','#f2b84b']].forEach(([key,col])=>{
+    const id = game[key];
+    if(id!=null && mapData.territories[id]){
+      ctx.strokeStyle=col; ctx.lineWidth=3;
+      mapData.territories[id].cells.forEach(([c,r])=>{
+        ctx.strokeRect(c*cs+1.5,r*cs+1.5,cs-3,cs-3);
+      });
+    }
+  });
+  // army badges
+  Object.values(mapData.territories).forEach(t=>{
+    if(t.cells.length===0) return;
+    const armyCount = game.armies[t.id];
+    if(armyCount===undefined) return;
+    const x=t.centroid.x, y=t.centroid.y;
+    ctx.beginPath(); ctx.arc(x,y,13,0,Math.PI*2);
+    ctx.fillStyle='rgba(10,14,24,0.85)'; ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(armyCount, x, y+1);
+    ctx.font='9px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.75)';
+    ctx.fillText(t.name, x, y+22);
+  });
+  if(showContinentsGame){
+    ctx.font = 'bold 17px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    const positions = computeContinentLabelPositions(mapData);
+    Object.entries(positions).forEach(([cid,pos])=>{
+      const cont = mapData.continents[cid]; if(!cont) return;
+      const label = cont.name+' (+'+cont.bonus+')';
+      ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillText(label, pos.x+1, pos.y-19);
+      ctx.fillStyle='#fff'; ctx.fillText(label, pos.x, pos.y-20);
+    });
+  }
+}
+
+function renderPlayerList(){
+  const wrap = $('playerList'); wrap.innerHTML='';
+  game.players.forEach(p=>{
+    const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
+    const name = el('div','pname');
+    name.innerHTML = `<span class="pdot" style="background:${p.color}"></span> ${p.name} ${p.isHuman?'(Bạn)':''}`;
+    const mine = ownedTerritories(p.id);
+    const totalArmies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
+    const contsHeld = Object.values(mapData.continents).filter(cont=>{
+      const ct = Object.values(mapData.territories).filter(t=>t.continentId===cont.id).map(t=>t.id);
+      return ct.length>0 && ct.every(id=>game.owner[id]===p.id);
+    }).length;
+    const stats = el('div','pstats', `🗺️ ${mine.length} vùng &nbsp; ⚔️ ${totalArmies} quân &nbsp; 🌍 ${contsHeld} châu lục &nbsp; 🃏 ${p.cards.length}`);
+    card.appendChild(name); card.appendChild(stats);
+    wrap.appendChild(card);
+  });
+}
+
+function renderCombatLog(){
+  const wrap = $('combatLog');
+  wrap.innerHTML='';
+  game.log.slice(-60).reverse().forEach(entry=>{
+    const d = el('div','log-entry '+entry.type, entry.msg);
+    wrap.appendChild(d);
+  });
+}
+
+function showDice(ad,dd,results){
+  const box = $('diceBox'); box.innerHTML='';
+  const g1 = el('div','dice-group');
+  ad.forEach((v,i)=>{ const win = i<results.length? results[i].win : null; g1.appendChild(el('div','die'+(win===true?' win':win===false?' lose':''), v)); });
+  const g2 = el('div','dice-group');
+  dd.forEach((v,i)=>{ const win = i<results.length? !results[i].win : null; g2.appendChild(el('div','die'+(win===true?' win':win===false?' lose':''), v)); });
+  box.appendChild(g1);
+  box.appendChild(el('div','',' vs '));
+  box.appendChild(g2);
+}
+
+function setActionHint(text){ $('actionHint').textContent = text; }
+
+function renderPhaseActions(){
+  const wrap = $('phaseActions'); wrap.innerHTML='';
+  if(game.over) return;
+  const p = currentPlayer();
+  if(!p.isHuman){ wrap.appendChild(el('div','',''));  return; }
+  if(game.phase==='setup-place'){
+    wrap.appendChild(el('div','', 'Đặt quân ban đầu — nhấp vào bản đồ.'));
+    return;
+  }
+  if(game.phase==='reinforce'){
+    const b = el('button','ghost','🃏 Đổi thẻ bài'); b.addEventListener('click',()=>openCardsModal(false)); wrap.appendChild(b);
+    return;
+  }
+  if(game.phase==='attack'){
+    const atkBtn = el('button','danger','⚔️ Tấn công'); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
+    atkBtn.addEventListener('click', ()=>{
+      if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)){
+        doBattle(game.selectedFrom, game.selectedTo);
+        if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
+        renderGame();
+      }
+    });
+    if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)) atkBtn.disabled=false;
+    wrap.appendChild(atkBtn);
+    const endBtn = el('button','primary','Kết thúc tấn công →');
+    endBtn.addEventListener('click', ()=> beginFortifyPhase());
+    wrap.appendChild(endBtn);
+    return;
+  }
+  if(game.phase==='fortify'){
+    const fortBtn = el('button','good','🚚 Chuyển quân'); fortBtn.id='btnDoFortify'; fortBtn.disabled=true;
+    fortBtn.addEventListener('click', ()=>{
+      if(game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
+         game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
+         pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1){
+        openFortifyModal(game.selectedFrom, game.selectedTo);
+      }
+    });
+    if(game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
+       game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
+       pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1) fortBtn.disabled=false;
+    wrap.appendChild(fortBtn);
+    const endBtn = el('button','primary','Kết thúc lượt →');
+    endBtn.addEventListener('click', ()=> endTurn());
+    wrap.appendChild(endBtn);
+  }
+}
+
+function openFortifyModal(fromId, toId){
+  const p = currentPlayer();
+  const max = game.armies[fromId]-1;
+  if(max<1) return;
+  const fromName = mapData.territories[fromId].name;
+  const toName = mapData.territories[toId].name;
+  const overlay = el('div','modal-overlay');
+  const modal = el('div','modal');
+  modal.appendChild(el('h3','', `🚚 Chuyển quân`));
+  modal.appendChild(el('p','', `Chuyển bao nhiêu quân từ "${fromName}" sang "${toName}"? (Luôn phải giữ lại ít nhất 1 quân ở ${fromName}.)`));
+
+  const bigRow = el('div','');
+  bigRow.style.cssText = 'display:flex;justify-content:space-around;align-items:center;margin:18px 0;text-align:center;';
+  const fromBox = el('div','');
+  const fromCount = el('div','', String(game.armies[fromId])); fromCount.style.cssText='font-size:26px;font-weight:800;color:#fff;';
+  fromBox.appendChild(fromCount); fromBox.appendChild(el('div','',fromName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
+  const arrow = el('div','','→'); arrow.style.cssText='font-size:22px;color:var(--muted);';
+  const toBox = el('div','');
+  const toCount = el('div','', String(game.armies[toId])); toCount.style.cssText='font-size:26px;font-weight:800;color:var(--good);';
+  toBox.appendChild(toCount); toBox.appendChild(el('div','',toName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
+  bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
+  modal.appendChild(bigRow);
+
+  const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 16px;';
+  const slider = document.createElement('input');
+  slider.type='range'; slider.min='1'; slider.max=String(max); slider.value=String(max);
+  slider.style.flex='1';
+  const sliderLabel = el('span','', String(max)); sliderLabel.style.cssText='min-width:40px;text-align:center;font-weight:700;color:var(--good);';
+  slider.addEventListener('input', ()=>{
+    const n = Number(slider.value);
+    sliderLabel.textContent = String(n);
+    fromCount.textContent = String(game.armies[fromId]-n);
+    toCount.textContent = String(game.armies[toId]+n);
+  });
+  sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
+  modal.appendChild(sliderRow);
+
+  const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
+  const cancelBtn = el('button','ghost','Huỷ');
+  cancelBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); });
+  const quickMin = el('button','ghost','Tối thiểu (1)');
+  quickMin.addEventListener('click', ()=>{ slider.value='1'; slider.dispatchEvent(new Event('input')); });
+  const quickMax = el('button','ghost','Tối đa ('+max+')');
+  quickMax.addEventListener('click', ()=>{ slider.value=String(max); slider.dispatchEvent(new Event('input')); });
+  const confirmBtn = el('button','primary','Xác nhận');
+  confirmBtn.addEventListener('click', ()=>{
+    const n = Number(slider.value);
+    game.armies[fromId] -= n; game.armies[toId] += n;
+    logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.');
+    document.body.removeChild(overlay);
+    game.selectedFrom=null; game.selectedTo=null;
+    renderGame();
+  });
+  btnRow.appendChild(cancelBtn); btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
+  modal.appendChild(btnRow);
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function renderTopbar(){
+  const p = currentPlayer();
+  $('turnDot').style.background = p.color;
+  $('turnDot').style.color = p.color;
+  $('turnName').textContent = p.name+(p.isHuman?' (Bạn)':'')+' — lượt chơi';
+  const phaseNames = {'setup-place':'Đặt quân ban đầu','reinforce':'Tăng viện','attack':'Tấn công','fortify':'Tăng cường'};
+  $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
+  $('reinforceCounter').textContent = (game.phase==='reinforce'||game.phase==='setup-place') ?
+    ('Quân cần đặt: ' + (game.phase==='setup-place'? game.pool[p.id] : game.reinforceRemaining)) : '';
+  $('cardCountBadge').textContent = game.players[0].cards.length;
+}
+
+function renderGame(){
+  if(!game) return;
+  renderTopbar();
+  renderPlayerList();
+  drawGameCanvas();
+  renderPhaseActions();
+}
+
+/* ---------------- Game canvas click handling ---------------- */
+function gameCanvasClick(evt){
+  if(game.over) return;
+  const p = currentPlayer();
+  if(!p.isHuman) return;
+  const canvas = $('gameCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
+  const x=(evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
+  const c=Math.floor(x/mapData.cellSize), r=Math.floor(y/mapData.cellSize);
+  if(!inBounds(mapData,c,r)) return;
+  const terrId = mapData.cellTerritory[cellIndex(mapData,c,r)];
+  if(terrId===-1) return;
+
+  if(game.phase==='setup-place'){
+    if(game.owner[terrId]===p.id && game.pool[p.id]>0){
+      game.armies[terrId]++; game.pool[p.id]--;
+      renderGame();
+      if(allPoolsEmpty()){ beginReinforcePhase(); }
+      else { setActionHint('Còn lại: '+game.pool[p.id]+' quân để đặt.'); advanceSetupTurn(); }
+    }
+    return;
+  }
+  if(game.phase==='reinforce'){
+    placeReinforcement(terrId);
+    return;
+  }
+  if(game.phase==='attack'){
+    if(game.owner[terrId]===p.id){
+      game.selectedFrom = terrId; game.selectedTo=null;
+    } else if(game.selectedFrom!=null){
+      game.selectedTo = terrId;
+    }
+    renderGame();
+    return;
+  }
+  if(game.phase==='fortify'){
+    if(game.owner[terrId]===p.id){
+      if(game.selectedFrom===null || game.owner[game.selectedTo]!==p.id) {
+        if(game.selectedFrom===null){ game.selectedFrom=terrId; }
+        else { game.selectedTo=terrId; }
+      } else {
+        game.selectedFrom=terrId; game.selectedTo=null;
+      }
+    }
+    renderGame();
+    return;
+  }
+}
+
+/* ---- src/js/07-cards-modal.js ---- */
+/* =========================================================================
+   CARDS MODAL
+   ========================================================================= */
+function openCardsModal(forced){
+  const p = game.players[0];
+  const root = $('modalRoot');
+  const overlay = el('div','modal-overlay');
+  const modal = el('div','modal');
+  modal.appendChild(el('h3','', forced? '⚠️ Bạn phải đổi thẻ bài (≥5 thẻ)!' : '🃏 Thẻ bài của bạn'));
+  const cardsWrap = el('div','');
+  const selected = new Set();
+  p.cards.forEach((type,i)=>{
+    const item = el('div','card-item', CARD_ICON[type]+`<span class="label">${type}</span>`);
+    item.addEventListener('click', ()=>{
+      if(selected.has(i)){ selected.delete(i); item.classList.remove('selected'); }
+      else if(selected.size<3){ selected.add(i); item.classList.add('selected'); }
+    });
+    cardsWrap.appendChild(item);
+  });
+  modal.appendChild(cardsWrap);
+  const info = el('div','', '<p style="color:var(--muted);font-size:12px;margin-top:10px;">Chọn 3 thẻ giống nhau hoặc 3 loại khác nhau để đổi lấy quân.</p>');
+  modal.appendChild(info);
+  const btnRow = el('div',''); btnRow.style.marginTop='14px'; btnRow.style.display='flex'; btnRow.style.gap='8px';
+  const tradeBtn = el('button','primary','Đổi thẻ');
+  tradeBtn.addEventListener('click', ()=>{
+    const idxs = [...selected];
+    if(idxs.length!==3) return;
+    const types = idxs.map(i=>p.cards[i]);
+    const uniq = new Set(types);
+    if(!(uniq.size===1||uniq.size===3)){ alert('Phải chọn 3 thẻ cùng loại hoặc 3 loại khác nhau.'); return; }
+    tradeCards(p, idxs);
+    document.body.removeChild(overlay);
+    if(p.cards.length>=5) openCardsModal(true);
+    else renderGame();
+  });
+  btnRow.appendChild(tradeBtn);
+  if(!forced){
+    const closeBtn = el('button','ghost','Đóng');
+    closeBtn.addEventListener('click', ()=> document.body.removeChild(overlay));
+    btnRow.appendChild(closeBtn);
+  }
+  modal.appendChild(btnRow);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+function showGameOver(winner){
+  const overlay = el('div',''); overlay.id='gameOverOverlay';
+  overlay.innerHTML = `<h1>${winner? '🏆 '+winner.name+' Chiến Thắng!' : 'Ván chơi kết thúc'}</h1>
+    <p>${winner && winner.isHuman? 'Chúc mừng, bạn đã chinh phục toàn bộ bản đồ!' : winner? 'Đối thủ AI đã chinh phục toàn bộ bản đồ.' : ''}</p>`;
+  const backBtn = el('button','primary','Về Menu chính');
+  backBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); showScreen('screen-menu'); });
+  overlay.appendChild(backBtn);
+  document.body.appendChild(overlay);
+}
+
+/* ---- src/js/08-wiring.js ---- */
+/* =========================================================================
+   NAVIGATION / WIRING
+   ========================================================================= */
+$('btnQuickPlay').addEventListener('click', ()=>{
+  mapData = generateRandomMap(40,26,22,6,'Bản đồ ngẫu nhiên', 0.28);
+  goToSetup();
+});
+$('btnOpenEditor').addEventListener('click', ()=>{
+  initEditorMap();
+  showScreen('screen-editor');
+});
+$('btnLoadMap').addEventListener('click', ()=> $('loadMapInput').click());
+$('loadMapInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{ const obj = JSON.parse(reader.result); importMapJSON(obj); showScreen('screen-editor'); }
+    catch(err){ alert('Không đọc được file bản đồ: '+err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value='';
+});
+$('btnHowTo').addEventListener('click', ()=>{
+  alert(
+`LUẬT CHƠI (Risk cổ điển):
+1. TĂNG VIỆN: Mỗi lượt bạn nhận quân = max(3, số vùng bạn có/3) + điểm thưởng nếu chiếm trọn 1 châu lục.
+2. TẤN CÔNG: Chọn vùng của bạn (≥2 quân) tấn công vùng địch liền kề. Đổ xúc xắc: bên tấn công tối đa 3, bên phòng thủ tối đa 2. So sánh xúc xắc cao nhất, hòa thì phòng thủ thắng.
+3. CHIẾM VÙNG: Nếu quân địch về 0, bạn chiếm vùng và phải chuyển quân sang đó.
+4. TĂNG CƯỜNG: Cuối lượt, di chuyển quân giữa 2 vùng của bạn có đường nối.
+5. THẺ BÀI: Chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài. Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
+6. THẮNG: Người cuối cùng còn lãnh thổ trên bản đồ.`);
+});
+
+function goToSetup(){
+  $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục.`;
+  renderPlayerConfigList();
+  showScreen('screen-setup');
+}
+function renderPlayerConfigList(){
+  const wrap = $('playerConfigList'); wrap.innerHTML='';
+  const row = el('div','player-config');
+  const dot = el('div','pdot'); dot.style.background=PLAYER_COLORS[0].hex;
+  const span = el('span','','Bạn (người chơi)');
+  const sel = el('select'); sel.id='humanColorSelect';
+  PLAYER_COLORS.forEach(c=>{ const opt=el('option','',c.name); opt.value=c.hex; sel.appendChild(opt); });
+  sel.addEventListener('change', ()=>{ dot.style.background = sel.value; });
+  row.appendChild(dot); row.appendChild(span); row.appendChild(sel);
+  wrap.appendChild(row);
+}
+
+// Accordion (collapsible sidebar sections)
+document.querySelectorAll('.panel-header').forEach(h=>{
+  h.addEventListener('click', ()=>{
+    h.classList.toggle('collapsed');
+    const content = h.nextElementSibling;
+    if(content) content.classList.toggle('collapsed');
+  });
+});
+
+// Continent view toggles
+$('toggleContinentView').addEventListener('change', (e)=>{ editorShowContinents = e.target.checked; drawEditorCanvas(); });
+$('toggleContinentViewGame').addEventListener('change', (e)=>{ showContinentsGame = e.target.checked; if(game) drawGameCanvas(); });
+
+// Editor wiring
+document.querySelectorAll('.tool-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tool-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    editorTool = btn.dataset.tool;
+    updateToolbarInfo();
+  });
+});
+$('brushSize').addEventListener('input', (e)=>{ editorBrush = Number(e.target.value); });
+$('btnNewTerr').addEventListener('click', ()=>{
+  const t = createTerritory(mapData);
+  editorCurrentTerrId = t.id;
+  renderEditorLists(); updateToolbarInfo();
+});
+$('btnNewCont').addEventListener('click', ()=>{ createContinent(mapData); renderEditorLists(); });
+$('waterRatioInput').addEventListener('input', (e)=>{ $('waterRatioLabel').textContent = e.target.value+'%'; });
+$('btnRandomGen').addEventListener('click', ()=>{
+  if(!confirm('Tạo bản đồ ngẫu nhiên mới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
+  const cols = Number($('gridCols').value)||40, rows = Number($('gridRows').value)||26;
+  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, $('mapNameInput').value, getWaterRatio());
+  editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
+});
+$('btnClearMap').addEventListener('click', ()=>{
+  if(!confirm('Xoá toàn bộ lãnh thổ trên bản đồ?')) return;
+  const cols=mapData.cols, rows=mapData.rows;
+  mapData = newMap(cols,rows,$('mapNameInput').value);
+  editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
+});
+$('btnApplyGrid').addEventListener('click', ()=>{
+  const cols = clamp(Number($('gridCols').value)||40,10,80);
+  const rows = clamp(Number($('gridRows').value)||26,8,60);
+  if(!confirm('Đổi kích thước lưới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
+  mapData = newMap(cols,rows,$('mapNameInput').value);
+  editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
+});
+$('mapNameInput').addEventListener('change', (e)=>{ mapData.name = e.target.value || mapData.name; });
+$('btnExportMap').addEventListener('click', exportMapJSON);
+$('btnImportMap').addEventListener('click', ()=> $('importMapInput').click());
+$('importMapInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{ try{ importMapJSON(JSON.parse(reader.result)); }catch(err){ alert('Lỗi: '+err.message); } };
+  reader.readAsText(file);
+  e.target.value='';
+});
+$('btnValidate').addEventListener('click', validateMap);
+$('btnPlayThisMap').addEventListener('click', ()=>{
+  if(!validateMap()) { if(!confirm('Bản đồ có vấn đề. Vẫn muốn tiếp tục chơi?')) return; }
+  goToSetup();
+});
+
+const editorCanvas = $('editorCanvas');
+// Pointer events (not mouse-only) so painting works with touch/pen on mobile too.
+editorCanvas.addEventListener('pointerdown', (e)=>{ editorCanvas.setPointerCapture(e.pointerId); editorPointerDown(e); });
+editorCanvas.addEventListener('pointermove', editorPointerMove);
+window.addEventListener('pointerup', editorPointerUp);
+window.addEventListener('pointercancel', editorPointerUp);
+
+// Setup wiring
+$('btnBackFromSetup').addEventListener('click', ()=> showScreen('screen-menu'));
+$('btnStartGame').addEventListener('click', ()=>{
+  const numAI = Number($('aiCountSelect').value);
+  const diff = $('aiDifficultySelect').value;
+  const humanColor = $('humanColorSelect').value;
+  const spectator = $('toggleSpectatorMode').checked;
+  initGame(numAI, diff, humanColor, spectator);
+  showScreen('screen-game');
+  renderGame();
+  setupPlaceNext();
+});
+$('toggleSpectatorMode').addEventListener('change', (e)=>{
+  const on = e.target.checked;
+  $('playerConfigRow').style.display = on ? 'none' : '';
+});
+
+// Game wiring
+$('gameCanvas').addEventListener('click', gameCanvasClick);
+$('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
+$('btnQuitGame').addEventListener('click', ()=>{
+  if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
+});
+
+// Top bar contextual buttons
+function updateTopbarActions(){
+  const wrap = $('topbarActions'); wrap.innerHTML='';
+  const activeScreen = document.querySelector('.screen.active').id;
+  if(activeScreen==='screen-editor'){
+    const b = el('button','ghost small','← Menu'); b.addEventListener('click',()=>showScreen('screen-menu')); wrap.appendChild(b);
+  } else if(activeScreen==='screen-menu'){
+    // nothing
+  }
+}
+new MutationObserver(updateTopbarActions).observe(document.body,{attributes:true,subtree:true,attributeFilter:['class']});
+updateTopbarActions();
+
+// Debug hook (read-only introspection for QA; harmless to leave in production)
+window.__debug = {
+  get game(){ return game; }, get mapData(){ return mapData; },
+  clickTerritory(terrId){ if(!game) return; const t=mapData.territories[terrId]; if(!t) return null; return {x:t.centroid.x,y:t.centroid.y}; },
+  forceFinishSetup(){
+    let guard=0;
+    while(!allPoolsEmpty() && guard++<10000){
+      game.players.forEach(p=>{
+        if(game.pool[p.id]>0){
+          const mine = ownedTerritories(p.id);
+          game.armies[mine[0]]++; game.pool[p.id]--;
+        }
+      });
+    }
+    beginReinforcePhase();
+    renderGame();
+  },
+  forceDumpReinforce(){
+    if(game.phase!=='reinforce') return;
+    const p = currentPlayer();
+    const mine = ownedTerritories(p.id);
+    while(game.reinforceRemaining>0){ game.armies[mine[0]]++; game.reinforceRemaining--; }
+    renderGame();
+  },
+  doBattle, beginFortifyPhase, endTurn, checkElimination, checkWinCondition,
+  generateRandomMap, findConnectedComponents, renderGame, openFortifyModal
+};
+
+})();
+</script>
+</body>
+</html>

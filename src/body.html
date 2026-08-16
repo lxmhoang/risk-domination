@@ -1,0 +1,193 @@
+
+<div id="topbar">
+  <div class="brand"><span class="dot"></span> Domination</div>
+  <div class="actions" id="topbarActions"></div>
+</div>
+
+<!-- ============ MENU ============ -->
+<div class="screen active" id="screen-menu">
+  <div class="menu-wrap">
+    <h1>Domination</h1>
+    <p class="sub">Chinh phục bản đồ do chính bạn tạo ra — chơi một mình với AI.</p>
+    <div class="menu-grid">
+      <div class="menu-card" id="btnQuickPlay">
+        <h3><span class="emoji">🎲</span> Chơi nhanh</h3>
+        <p>Tạo một bản đồ ngẫu nhiên mới và bắt đầu chơi ngay với AI.</p>
+      </div>
+      <div class="menu-card" id="btnOpenEditor">
+        <h3><span class="emoji">🖌️</span> Trình tạo bản đồ</h3>
+        <p>Tự vẽ bản đồ riêng của bạn: tô vùng lãnh thổ, đặt tên, chia châu lục.</p>
+      </div>
+      <div class="menu-card" id="btnLoadMap">
+        <h3><span class="emoji">📂</span> Tải bản đồ đã lưu</h3>
+        <p>Nhập file bản đồ JSON đã xuất trước đó để chỉnh sửa hoặc chơi lại.</p>
+      </div>
+      <div class="menu-card" id="btnHowTo">
+        <h3><span class="emoji">📖</span> Luật chơi</h3>
+        <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
+      </div>
+    </div>
+    <input type="file" id="loadMapInput" accept=".json" class="hidden">
+  </div>
+</div>
+
+<!-- ============ EDITOR ============ -->
+<div class="screen" id="screen-editor">
+  <div id="editor-sidebar">
+    <div class="panel-block">
+      <div class="panel-header"><h4>Bản đồ</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <input type="text" id="mapNameInput" value="Bản đồ của tôi" style="width:100%;margin-bottom:8px;">
+        <div class="field-row"><span>Tỷ lệ mặt nước</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="waterRatioInput" min="0" max="55" value="28" style="width:100px;">
+            <span id="waterRatioLabel" style="min-width:30px;color:var(--text);">28%</span>
+          </span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="small ghost" id="btnRandomGen">🎲 Ngẫu nhiên</button>
+          <button class="small ghost" id="btnClearMap">🗑️ Xoá hết</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header collapsed"><h4>Kích thước lưới</h4><span class="chev">▾</span></div>
+      <div class="panel-content collapsed">
+        <div class="field-row"><span>Cột × Hàng</span>
+          <span style="display:flex;gap:4px;">
+            <input type="number" id="gridCols" value="40" min="10" max="80" style="width:52px;">
+            <input type="number" id="gridRows" value="26" min="8" max="60" style="width:52px;">
+          </span>
+        </div>
+        <button class="small ghost" id="btnApplyGrid" style="width:100%;">Áp dụng lưới mới</button>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header"><h4>Công cụ</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="small tool-btn active" data-tool="paint">✏️ Tô</button>
+          <button class="small tool-btn" data-tool="erase">🧹 Xoá</button>
+          <button class="small tool-btn" data-tool="bucket">🪣 Đổ màu</button>
+          <button class="small tool-btn" data-tool="pick">💧 Chọn vùng</button>
+        </div>
+        <div class="field-row" style="margin-top:8px;"><span>Cỡ cọ</span>
+          <input type="range" id="brushSize" min="1" max="4" value="2" style="width:110px;">
+        </div>
+        <label class="switch-row" style="margin-top:6px;"><input type="checkbox" id="toggleContinentView"> 🌍 Xem theo châu lục</label>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header"><h4>Lãnh thổ (<span id="terrCount">0</span>)</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <button class="small primary" id="btnNewTerr" style="margin-bottom:8px;">+ Lãnh thổ mới</button>
+        <div id="terrList"></div>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header"><h4>Châu lục (<span id="contCount">0</span>)</h4><span class="chev">▾</span></div>
+      <div class="panel-content">
+        <button class="small primary" id="btnNewCont" style="margin-bottom:8px;">+ Châu lục mới</button>
+        <div id="contList"></div>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-header collapsed"><h4>Xuất / Nhập</h4><span class="chev">▾</span></div>
+      <div class="panel-content collapsed">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="small ghost" id="btnExportMap">⬇ Xuất JSON</button>
+          <button class="small ghost" id="btnImportMap">⬆ Nhập JSON</button>
+        </div>
+        <input type="file" id="importMapInput" accept=".json" class="hidden">
+        <button class="small ghost" id="btnValidate" style="width:100%;margin-top:6px;">✓ Kiểm tra bản đồ</button>
+        <div id="validateMsg" class="hidden"></div>
+      </div>
+    </div>
+
+    <button class="primary" id="btnPlayThisMap" style="padding:14px;font-size:15px;">▶ Chơi bản đồ này</button>
+  </div>
+  <div id="editor-main">
+    <div id="editor-toolbar">
+      <div class="grp" id="terrInfoBar" style="color:var(--muted);font-size:12.5px;">Chọn hoặc tạo một lãnh thổ để bắt đầu tô.</div>
+    </div>
+    <div id="editor-canvas-wrap">
+      <canvas id="editorCanvas" width="960" height="600"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SETUP ============ -->
+<div class="screen" id="screen-setup">
+  <div class="setup-card">
+    <h2>Thiết lập ván chơi</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:20px;" id="setupMapInfo"></p>
+
+    <div class="setup-row">
+      <label>Số đối thủ AI</label>
+      <select id="aiCountSelect">
+        <option value="1">1 AI (2 người chơi)</option>
+        <option value="2">2 AI (3 người chơi)</option>
+        <option value="3" selected>3 AI (4 người chơi)</option>
+        <option value="4">4 AI (5 người chơi)</option>
+        <option value="5">5 AI (6 người chơi)</option>
+      </select>
+    </div>
+
+    <div class="setup-row">
+      <label>Độ khó AI</label>
+      <select id="aiDifficultySelect">
+        <option value="easy">Dễ</option>
+        <option value="normal" selected>Thường</option>
+        <option value="hard">Khó</option>
+      </select>
+    </div>
+
+    <div class="setup-row" id="playerConfigRow">
+      <label>Người chơi</label>
+      <div id="playerConfigList"></div>
+    </div>
+
+    <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="toggleSpectatorMode"> 👀 Chế độ xem AI đấu với nhau (bạn không điều khiển, mỗi hành động cách nhau 1 giây)</label>
+    </div>
+
+    <button class="primary" id="btnStartGame" style="width:100%;padding:14px;font-size:15px;margin-top:10px;">Bắt đầu chơi</button>
+    <button class="ghost" id="btnBackFromSetup" style="width:100%;margin-top:8px;">← Quay lại</button>
+  </div>
+</div>
+
+<!-- ============ GAME ============ -->
+<div class="screen" id="screen-game">
+  <div id="gameTopbar">
+    <div class="turn-indicator"><span class="turn-dot" id="turnDot"></span><span id="turnName">—</span></div>
+    <div class="phase-badge" id="phaseBadge">—</div>
+    <span id="reinforceCounter"></span>
+    <div class="spacer"></div>
+    <label class="switch-row"><input type="checkbox" id="toggleContinentViewGame"> 🌍 Xem châu lục</label>
+    <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
+    <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
+  </div>
+  <div id="gameBody">
+    <div id="gameSidebar">
+      <div id="playerList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+    </div>
+    <div id="gameCanvasWrap">
+      <canvas id="gameCanvas" width="960" height="600"></canvas>
+    </div>
+    <div id="gameLogPanel">
+      <h4 style="font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;">Nhật ký trận đấu</h4>
+      <div id="diceBox"></div>
+      <div id="combatLog"></div>
+    </div>
+  </div>
+  <div id="phaseActions"></div>
+</div>
+
+<div id="modalRoot"></div>
+
