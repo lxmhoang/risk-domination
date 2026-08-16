@@ -23,9 +23,9 @@ function initGame(numAI, difficulty, humanColor, spectator){
   const numPlayers = numAI+1;
   const colors = shuffle(PLAYER_COLORS.filter(c=>c.hex!==humanColor));
   const players = [];
-  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false});
+  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false});
   for(let i=0;i<numAI;i++){
-    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false});
+    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false});
   }
   const terrIds = shuffle(Object.keys(mapData.territories).map(Number));
   const owner = {}; const armies = {};
@@ -95,6 +95,19 @@ function setupPlaceNext(){
 function advanceSetupTurn(){
   game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
   setupPlaceNext();
+}
+
+// Alternative to the turn-based setupPlaceNext() flow: dump every player's starting
+// pool onto their own territories at random, all at once, then go straight to
+// reinforce. Used when the "Đặt quân thủ công lúc bắt đầu" setting is off.
+function autoPlaceInitialArmies(){
+  game.players.forEach(p=>{
+    const mine = ownedTerritories(p.id);
+    while(game.pool[p.id]>0){
+      game.armies[randChoice(mine)]++;
+      game.pool[p.id]--;
+    }
+  });
 }
 
 function beginReinforcePhase(){
@@ -178,6 +191,7 @@ function doBattle(fromId,toId){
   showDice(ad,dd,results);
   const attP = game.players[game.owner[fromId]];
   const defP = game.players[game.owner[toId]];
+  if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
   logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
   let captured=false;
   if(game.armies[toId]<=0){
@@ -307,12 +321,20 @@ function pathExistsOwned(fromId,toId,pid){
 
 function endTurn(){
   const p = currentPlayer();
-  if(p.capturedThisTurn){
+  // cardAwardEvent config (Settings screen) picks which of the 3 rules grants a card
+  // at the end of this player's turn. Shared by human and AI turns alike, since both
+  // go through this same function.
+  const mode = RUNTIME_CONFIG.cardAwardEvent;
+  const awardCard = mode==='on_turn_end' ? true
+    : mode==='on_kill' ? p.killedThisTurn
+    : p.capturedThisTurn; // 'on_capture' (default)
+  if(awardCard){
     const type = CARD_TYPES[rand(3)];
     p.cards.push(type);
     logMsg('info', p.name+' nhận được 1 thẻ bài '+CARD_ICON[type]+'.');
   }
   p.capturedThisTurn=false;
+  p.killedThisTurn=false;
   do {
     game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
   } while(!isAlive(currentPlayerId()));

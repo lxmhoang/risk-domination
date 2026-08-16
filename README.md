@@ -31,6 +31,7 @@ src/
   shell.html      the <!DOCTYPE>/<head>/<body> skeleton with __STYLE__/__BODY__/__SCRIPT__ placeholders
   style.css       all CSS
   body.html       the screen markup (menu / editor / setup / game)
+  config.json     runtime-tunable settings (e.g. spectator mode delay), inlined at build time
   js/             game logic, split by feature (see src/js/README.md)
 build.js          build script — concatenates src/ into dist/index.html
 dist/

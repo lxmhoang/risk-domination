@@ -26,8 +26,51 @@
         <h3><span class="emoji">📖</span> Luật chơi</h3>
         <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
       </div>
+      <div class="menu-card" id="btnOpenSettings">
+        <h3><span class="emoji">⚙️</span> Cài đặt</h3>
+        <p>Tốc độ chế độ xem AI đấu AI, cách đặt quân ban đầu, sự kiện phát thẻ bài.</p>
+      </div>
     </div>
     <input type="file" id="loadMapInput" accept=".json" class="hidden">
+  </div>
+</div>
+
+<!-- ============ SETTINGS ============ -->
+<div class="screen" id="screen-settings">
+  <div class="setup-card">
+    <h2>Cài đặt</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">
+      Áp dụng ngay và được ghi nhớ trong trình duyệt này. Dùng "Xuất config.json" để lưu
+      lại thành mặc định gốc cho lần build sau (thay file src/config.json rồi chạy
+      node build.js).
+    </p>
+
+    <div class="setup-row">
+      <label>Độ trễ khi xem AI đấu AI (ms)</label>
+      <input type="number" id="settingSpectatorDelay" min="0" max="10000" step="50" style="width:110px;">
+    </div>
+
+    <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="settingManualPlacement"> Đặt quân thủ công lúc bắt đầu ván (tắt = rải quân ngẫu nhiên, mặc định)</label>
+    </div>
+
+    <div class="setup-row">
+      <label>Sự kiện phát thẻ bài</label>
+      <select id="settingCardAwardEvent">
+        <option value="on_capture">Khi chiếm được 1 lãnh thổ (mặc định)</option>
+        <option value="on_kill">Khi đánh hạ được ít nhất 1 đơn vị địch</option>
+        <option value="on_turn_end">Hết lượt là được phát, không cần điều kiện</option>
+      </select>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <button class="ghost small" id="btnSettingsReset">↺ Khôi phục mặc định</button>
+      <button class="ghost small" id="btnSettingsExport">⬇ Xuất config.json</button>
+      <button class="ghost small" id="btnSettingsImport">⬆ Nhập config.json</button>
+      <input type="file" id="settingsImportInput" accept=".json" class="hidden">
+    </div>
+
+    <button class="ghost" id="btnBackFromSettings" style="width:100%;margin-top:16px;">← Quay lại</button>
   </div>
 </div>
 
@@ -168,7 +211,7 @@
     <div class="phase-badge" id="phaseBadge">—</div>
     <span id="reinforceCounter"></span>
     <div class="spacer"></div>
-    <label class="switch-row"><input type="checkbox" id="toggleContinentViewGame"> 🌍 Xem châu lục</label>
+    <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍 Xem châu lục <span style="opacity:.6;">(Space)</span></label>
     <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
     <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
   </div>

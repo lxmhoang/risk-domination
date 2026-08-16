@@ -19,6 +19,13 @@ const shell = read(path.join(SRC, 'shell.html'));
 const style = read(path.join(SRC, 'style.css'));
 const body = read(path.join(SRC, 'body.html'));
 
+// config.json holds runtime-tunable settings (spectator mode delay, etc). It's inlined
+// as a JS constant at build time — not fetched at runtime — because dist/index.html
+// must stay a single file openable via file:// with no server (fetch() of local JSON
+// is blocked by browsers under file://).
+const config = JSON.parse(read(path.join(SRC, 'config.json')));
+const configScript = `/* ---- src/config.json ---- */\nconst GAME_CONFIG = ${JSON.stringify(config, null, 2)};`;
+
 // JS modules are concatenated in filename order (01-, 02-, ... prefixes make the
 // dependency order explicit and stable — see src/js/README.md for what each does).
 const jsFiles = fs.readdirSync(JS_DIR).filter(f => f.endsWith('.js')).sort();
@@ -26,10 +33,10 @@ if (jsFiles.length === 0) {
   console.error('No JS modules found in ' + JS_DIR);
   process.exit(1);
 }
-const script = jsFiles.map(f => {
+const script = [configScript].concat(jsFiles.map(f => {
   const content = read(path.join(JS_DIR, f)).replace(/\s+$/, '');
   return `/* ---- src/js/${f} ---- */\n${content}`;
-}).join('\n\n');
+})).join('\n\n');
 
 let out = shell
   .replace('__STYLE__', () => style.replace(/\s+$/, ''))

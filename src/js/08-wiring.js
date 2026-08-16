@@ -20,6 +20,51 @@ $('loadMapInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
+$('btnOpenSettings').addEventListener('click', ()=>{ renderSettingsScreen(); showScreen('screen-settings'); });
+$('btnBackFromSettings').addEventListener('click', ()=> showScreen('screen-menu'));
+function renderSettingsScreen(){
+  $('settingSpectatorDelay').value = RUNTIME_CONFIG.spectatorModeDelayMs;
+  $('settingManualPlacement').checked = !!RUNTIME_CONFIG.manualInitialPlacement;
+  $('settingCardAwardEvent').value = RUNTIME_CONFIG.cardAwardEvent;
+}
+$('settingSpectatorDelay').addEventListener('change', (e)=>{
+  const v = clamp(Number(e.target.value)||0, 0, 10000);
+  e.target.value = v;
+  setConfigValue('spectatorModeDelayMs', v);
+});
+$('settingManualPlacement').addEventListener('change', (e)=>{
+  setConfigValue('manualInitialPlacement', e.target.checked);
+});
+$('settingCardAwardEvent').addEventListener('change', (e)=>{
+  setConfigValue('cardAwardEvent', e.target.value);
+});
+$('btnSettingsReset').addEventListener('click', ()=>{
+  resetRuntimeConfig();
+  renderSettingsScreen();
+});
+$('btnSettingsExport').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify(pickConfig(RUNTIME_CONFIG), null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = el('a'); a.href = url; a.download = 'config.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+$('btnSettingsImport').addEventListener('click', ()=> $('settingsImportInput').click());
+$('settingsImportInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const obj = JSON.parse(reader.result);
+      CONFIG_KEYS.forEach(k=>{ if(obj[k]!==undefined) RUNTIME_CONFIG[k]=obj[k]; });
+      saveRuntimeConfig();
+      renderSettingsScreen();
+    }catch(err){ alert('Không đọc được file config: '+err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value='';
+});
+
 $('btnHowTo').addEventListener('click', ()=>{
   alert(
 `LUẬT CHƠI (Risk cổ điển):
@@ -27,7 +72,7 @@ $('btnHowTo').addEventListener('click', ()=>{
 2. TẤN CÔNG: Chọn vùng của bạn (≥2 quân) tấn công vùng địch liền kề. Đổ xúc xắc: bên tấn công tối đa 3, bên phòng thủ tối đa 2. So sánh xúc xắc cao nhất, hòa thì phòng thủ thắng.
 3. CHIẾM VÙNG: Nếu quân địch về 0, bạn chiếm vùng và phải chuyển quân sang đó.
 4. TĂNG CƯỜNG: Cuối lượt, di chuyển quân giữa 2 vùng của bạn có đường nối.
-5. THẺ BÀI: Chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài. Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
+5. THẺ BÀI: Mặc định, chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài (đổi được ở Cài đặt: theo lượt hạ quân địch, hoặc phát tự động mỗi lượt). Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
 6. THẮNG: Người cuối cùng còn lãnh thổ trên bản đồ.`);
 });
 
@@ -130,7 +175,12 @@ $('btnStartGame').addEventListener('click', ()=>{
   initGame(numAI, diff, humanColor, spectator);
   showScreen('screen-game');
   renderGame();
-  setupPlaceNext();
+  if(RUNTIME_CONFIG.manualInitialPlacement){
+    setupPlaceNext();
+  } else {
+    autoPlaceInitialArmies();
+    beginReinforcePhase();
+  }
 });
 $('toggleSpectatorMode').addEventListener('change', (e)=>{
   const on = e.target.checked;
@@ -142,6 +192,21 @@ $('gameCanvas').addEventListener('click', gameCanvasClick);
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
+});
+
+// Space bar toggles continent view while in-game. Ignored when a modal is open or
+// focus is on a form control, so it doesn't hijack normal typing/button activation.
+window.addEventListener('keydown', (e)=>{
+  if(e.code!=='Space' && e.key!==' ') return;
+  const activeScreen = document.querySelector('.screen.active');
+  if(!activeScreen || activeScreen.id!=='screen-game') return;
+  if(document.querySelector('.modal-overlay') || $('gameOverOverlay')) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT' || tag==='BUTTON') return;
+  e.preventDefault();
+  const cb = $('toggleContinentViewGame');
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change'));
 });
 
 // Top bar contextual buttons

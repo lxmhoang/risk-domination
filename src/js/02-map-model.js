@@ -4,7 +4,7 @@
    ========================================================================= */
 let mapData = null;
 let spectatorMode = false; // true = every player is AI-controlled and events are slowed down for watching
-function aiDelay(base){ return spectatorMode ? 1000 : base; }
+function aiDelay(base){ return spectatorMode ? RUNTIME_CONFIG.spectatorModeDelayMs : base; }
 
 function newMap(cols, rows, name){
   return {

@@ -1,4 +1,27 @@
 /* =========================================================================
+   RUNTIME CONFIG (Settings screen)
+   ---------------------------------------------------------------------
+   GAME_CONFIG (defined above, inlined from src/config.json at build time) is the
+   shipped default. RUNTIME_CONFIG is what the game actually reads: GAME_CONFIG
+   overlaid with whatever the player changed on the Settings screen, persisted in
+   localStorage so it survives reloads without needing a rebuild. The Settings
+   screen can also export the current values back out as a config.json file to
+   promote them into the real source-of-truth default for the next build.
+   ========================================================================= */
+const CONFIG_KEYS = ['spectatorModeDelayMs','manualInitialPlacement','cardAwardEvent'];
+const SETTINGS_STORAGE_KEY = 'riskDominationSettings';
+function pickConfig(obj){ const out={}; CONFIG_KEYS.forEach(k=> out[k]=obj[k]); return out; }
+function loadRuntimeConfig(){
+  let stored = {};
+  try{ stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}'); }catch(e){ stored = {}; }
+  return Object.assign({}, GAME_CONFIG, stored);
+}
+let RUNTIME_CONFIG = loadRuntimeConfig();
+function saveRuntimeConfig(){ localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(pickConfig(RUNTIME_CONFIG))); }
+function setConfigValue(key, value){ RUNTIME_CONFIG[key] = value; saveRuntimeConfig(); }
+function resetRuntimeConfig(){ RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG); localStorage.removeItem(SETTINGS_STORAGE_KEY); }
+
+/* =========================================================================
    UTILITIES
    ========================================================================= */
 const $ = (id)=>document.getElementById(id);

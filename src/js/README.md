@@ -5,8 +5,19 @@ order) into one IIFE by `build.js`. They all share the same top-level scope — 
 like the old single-file version — so there's no import/export ceremony, just files
 split at the same logical boundaries the code already had.
 
+- **config.json** (sibling of `js/`, not a `.js` module) — shipped default settings:
+  `spectatorModeDelayMs` (pacing of "watch AI vs AI"), `manualInitialPlacement`
+  (click-to-place vs instant random army placement at game start), `cardAwardEvent`
+  (`on_capture` / `on_kill` / `on_turn_end` — when a player earns a Risk card).
+  `build.js` inlines it as a `GAME_CONFIG` constant at the top of the generated script —
+  not `fetch()`ed at runtime, since `dist/index.html` must stay openable via `file://`
+  with no server. The in-game Settings screen (`screen-settings`, wired in
+  `08-wiring.js`) lets the player override these at runtime; overrides live in
+  `RUNTIME_CONFIG` (see `01-utils.js`), persisted to `localStorage`, and can be
+  exported back out as a new `config.json` to promote into the real default.
 - **01-utils.js** — DOM helpers (`$`, `el`), RNG helpers, Vietnamese name generation
-  (`finalizeTerrName`, `finalizeContName`, prefix/base word lists), string sanitization.
+  (`finalizeTerrName`, `finalizeContName`, prefix/base word lists), string sanitization,
+  and the `RUNTIME_CONFIG` / `localStorage` settings layer described above.
 - **02-map-model.js** — the map data model: `newMap`, `createTerritory`/`createContinent`,
   cell painting/flood-fill, water-mask generation, `generateRandomMap`, connected-component
   analysis, isolated-landmass bridging (`ensureNoIsolatedTerritories`).

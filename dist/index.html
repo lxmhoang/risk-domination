@@ -287,8 +287,51 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
         <h3><span class="emoji">📖</span> Luật chơi</h3>
         <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
       </div>
+      <div class="menu-card" id="btnOpenSettings">
+        <h3><span class="emoji">⚙️</span> Cài đặt</h3>
+        <p>Tốc độ chế độ xem AI đấu AI, cách đặt quân ban đầu, sự kiện phát thẻ bài.</p>
+      </div>
     </div>
     <input type="file" id="loadMapInput" accept=".json" class="hidden">
+  </div>
+</div>
+
+<!-- ============ SETTINGS ============ -->
+<div class="screen" id="screen-settings">
+  <div class="setup-card">
+    <h2>Cài đặt</h2>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">
+      Áp dụng ngay và được ghi nhớ trong trình duyệt này. Dùng "Xuất config.json" để lưu
+      lại thành mặc định gốc cho lần build sau (thay file src/config.json rồi chạy
+      node build.js).
+    </p>
+
+    <div class="setup-row">
+      <label>Độ trễ khi xem AI đấu AI (ms)</label>
+      <input type="number" id="settingSpectatorDelay" min="0" max="10000" step="50" style="width:110px;">
+    </div>
+
+    <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="settingManualPlacement"> Đặt quân thủ công lúc bắt đầu ván (tắt = rải quân ngẫu nhiên, mặc định)</label>
+    </div>
+
+    <div class="setup-row">
+      <label>Sự kiện phát thẻ bài</label>
+      <select id="settingCardAwardEvent">
+        <option value="on_capture">Khi chiếm được 1 lãnh thổ (mặc định)</option>
+        <option value="on_kill">Khi đánh hạ được ít nhất 1 đơn vị địch</option>
+        <option value="on_turn_end">Hết lượt là được phát, không cần điều kiện</option>
+      </select>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <button class="ghost small" id="btnSettingsReset">↺ Khôi phục mặc định</button>
+      <button class="ghost small" id="btnSettingsExport">⬇ Xuất config.json</button>
+      <button class="ghost small" id="btnSettingsImport">⬆ Nhập config.json</button>
+      <input type="file" id="settingsImportInput" accept=".json" class="hidden">
+    </div>
+
+    <button class="ghost" id="btnBackFromSettings" style="width:100%;margin-top:16px;">← Quay lại</button>
   </div>
 </div>
 
@@ -429,7 +472,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <div class="phase-badge" id="phaseBadge">—</div>
     <span id="reinforceCounter"></span>
     <div class="spacer"></div>
-    <label class="switch-row"><input type="checkbox" id="toggleContinentViewGame"> 🌍 Xem châu lục</label>
+    <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍 Xem châu lục <span style="opacity:.6;">(Space)</span></label>
     <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
     <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
   </div>
@@ -455,7 +498,37 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 (function(){
 "use strict";
 
+/* ---- src/config.json ---- */
+const GAME_CONFIG = {
+  "spectatorModeDelayMs": 300,
+  "manualInitialPlacement": false,
+  "cardAwardEvent": "on_capture"
+};
+
 /* ---- src/js/01-utils.js ---- */
+/* =========================================================================
+   RUNTIME CONFIG (Settings screen)
+   ---------------------------------------------------------------------
+   GAME_CONFIG (defined above, inlined from src/config.json at build time) is the
+   shipped default. RUNTIME_CONFIG is what the game actually reads: GAME_CONFIG
+   overlaid with whatever the player changed on the Settings screen, persisted in
+   localStorage so it survives reloads without needing a rebuild. The Settings
+   screen can also export the current values back out as a config.json file to
+   promote them into the real source-of-truth default for the next build.
+   ========================================================================= */
+const CONFIG_KEYS = ['spectatorModeDelayMs','manualInitialPlacement','cardAwardEvent'];
+const SETTINGS_STORAGE_KEY = 'riskDominationSettings';
+function pickConfig(obj){ const out={}; CONFIG_KEYS.forEach(k=> out[k]=obj[k]); return out; }
+function loadRuntimeConfig(){
+  let stored = {};
+  try{ stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}'); }catch(e){ stored = {}; }
+  return Object.assign({}, GAME_CONFIG, stored);
+}
+let RUNTIME_CONFIG = loadRuntimeConfig();
+function saveRuntimeConfig(){ localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(pickConfig(RUNTIME_CONFIG))); }
+function setConfigValue(key, value){ RUNTIME_CONFIG[key] = value; saveRuntimeConfig(); }
+function resetRuntimeConfig(){ RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG); localStorage.removeItem(SETTINGS_STORAGE_KEY); }
+
 /* =========================================================================
    UTILITIES
    ========================================================================= */
@@ -547,7 +620,7 @@ function defaultContName(id){
    ========================================================================= */
 let mapData = null;
 let spectatorMode = false; // true = every player is AI-controlled and events are slowed down for watching
-function aiDelay(base){ return spectatorMode ? 1000 : base; }
+function aiDelay(base){ return spectatorMode ? RUNTIME_CONFIG.spectatorModeDelayMs : base; }
 
 function newMap(cols, rows, name){
   return {
@@ -1258,9 +1331,9 @@ function initGame(numAI, difficulty, humanColor, spectator){
   const numPlayers = numAI+1;
   const colors = shuffle(PLAYER_COLORS.filter(c=>c.hex!==humanColor));
   const players = [];
-  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false});
+  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false});
   for(let i=0;i<numAI;i++){
-    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false});
+    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false});
   }
   const terrIds = shuffle(Object.keys(mapData.territories).map(Number));
   const owner = {}; const armies = {};
@@ -1330,6 +1403,19 @@ function setupPlaceNext(){
 function advanceSetupTurn(){
   game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
   setupPlaceNext();
+}
+
+// Alternative to the turn-based setupPlaceNext() flow: dump every player's starting
+// pool onto their own territories at random, all at once, then go straight to
+// reinforce. Used when the "Đặt quân thủ công lúc bắt đầu" setting is off.
+function autoPlaceInitialArmies(){
+  game.players.forEach(p=>{
+    const mine = ownedTerritories(p.id);
+    while(game.pool[p.id]>0){
+      game.armies[randChoice(mine)]++;
+      game.pool[p.id]--;
+    }
+  });
 }
 
 function beginReinforcePhase(){
@@ -1413,6 +1499,7 @@ function doBattle(fromId,toId){
   showDice(ad,dd,results);
   const attP = game.players[game.owner[fromId]];
   const defP = game.players[game.owner[toId]];
+  if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
   logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
   let captured=false;
   if(game.armies[toId]<=0){
@@ -1542,12 +1629,20 @@ function pathExistsOwned(fromId,toId,pid){
 
 function endTurn(){
   const p = currentPlayer();
-  if(p.capturedThisTurn){
+  // cardAwardEvent config (Settings screen) picks which of the 3 rules grants a card
+  // at the end of this player's turn. Shared by human and AI turns alike, since both
+  // go through this same function.
+  const mode = RUNTIME_CONFIG.cardAwardEvent;
+  const awardCard = mode==='on_turn_end' ? true
+    : mode==='on_kill' ? p.killedThisTurn
+    : p.capturedThisTurn; // 'on_capture' (default)
+  if(awardCard){
     const type = CARD_TYPES[rand(3)];
     p.cards.push(type);
     logMsg('info', p.name+' nhận được 1 thẻ bài '+CARD_ICON[type]+'.');
   }
   p.capturedThisTurn=false;
+  p.killedThisTurn=false;
   do {
     game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
   } while(!isAlive(currentPlayerId()));
@@ -2186,6 +2281,51 @@ $('loadMapInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
+$('btnOpenSettings').addEventListener('click', ()=>{ renderSettingsScreen(); showScreen('screen-settings'); });
+$('btnBackFromSettings').addEventListener('click', ()=> showScreen('screen-menu'));
+function renderSettingsScreen(){
+  $('settingSpectatorDelay').value = RUNTIME_CONFIG.spectatorModeDelayMs;
+  $('settingManualPlacement').checked = !!RUNTIME_CONFIG.manualInitialPlacement;
+  $('settingCardAwardEvent').value = RUNTIME_CONFIG.cardAwardEvent;
+}
+$('settingSpectatorDelay').addEventListener('change', (e)=>{
+  const v = clamp(Number(e.target.value)||0, 0, 10000);
+  e.target.value = v;
+  setConfigValue('spectatorModeDelayMs', v);
+});
+$('settingManualPlacement').addEventListener('change', (e)=>{
+  setConfigValue('manualInitialPlacement', e.target.checked);
+});
+$('settingCardAwardEvent').addEventListener('change', (e)=>{
+  setConfigValue('cardAwardEvent', e.target.value);
+});
+$('btnSettingsReset').addEventListener('click', ()=>{
+  resetRuntimeConfig();
+  renderSettingsScreen();
+});
+$('btnSettingsExport').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify(pickConfig(RUNTIME_CONFIG), null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = el('a'); a.href = url; a.download = 'config.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+$('btnSettingsImport').addEventListener('click', ()=> $('settingsImportInput').click());
+$('settingsImportInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const obj = JSON.parse(reader.result);
+      CONFIG_KEYS.forEach(k=>{ if(obj[k]!==undefined) RUNTIME_CONFIG[k]=obj[k]; });
+      saveRuntimeConfig();
+      renderSettingsScreen();
+    }catch(err){ alert('Không đọc được file config: '+err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value='';
+});
+
 $('btnHowTo').addEventListener('click', ()=>{
   alert(
 `LUẬT CHƠI (Risk cổ điển):
@@ -2193,7 +2333,7 @@ $('btnHowTo').addEventListener('click', ()=>{
 2. TẤN CÔNG: Chọn vùng của bạn (≥2 quân) tấn công vùng địch liền kề. Đổ xúc xắc: bên tấn công tối đa 3, bên phòng thủ tối đa 2. So sánh xúc xắc cao nhất, hòa thì phòng thủ thắng.
 3. CHIẾM VÙNG: Nếu quân địch về 0, bạn chiếm vùng và phải chuyển quân sang đó.
 4. TĂNG CƯỜNG: Cuối lượt, di chuyển quân giữa 2 vùng của bạn có đường nối.
-5. THẺ BÀI: Chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài. Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
+5. THẺ BÀI: Mặc định, chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài (đổi được ở Cài đặt: theo lượt hạ quân địch, hoặc phát tự động mỗi lượt). Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
 6. THẮNG: Người cuối cùng còn lãnh thổ trên bản đồ.`);
 });
 
@@ -2296,7 +2436,12 @@ $('btnStartGame').addEventListener('click', ()=>{
   initGame(numAI, diff, humanColor, spectator);
   showScreen('screen-game');
   renderGame();
-  setupPlaceNext();
+  if(RUNTIME_CONFIG.manualInitialPlacement){
+    setupPlaceNext();
+  } else {
+    autoPlaceInitialArmies();
+    beginReinforcePhase();
+  }
 });
 $('toggleSpectatorMode').addEventListener('change', (e)=>{
   const on = e.target.checked;
@@ -2308,6 +2453,21 @@ $('gameCanvas').addEventListener('click', gameCanvasClick);
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
+});
+
+// Space bar toggles continent view while in-game. Ignored when a modal is open or
+// focus is on a form control, so it doesn't hijack normal typing/button activation.
+window.addEventListener('keydown', (e)=>{
+  if(e.code!=='Space' && e.key!==' ') return;
+  const activeScreen = document.querySelector('.screen.active');
+  if(!activeScreen || activeScreen.id!=='screen-game') return;
+  if(document.querySelector('.modal-overlay') || $('gameOverOverlay')) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT' || tag==='BUTTON') return;
+  e.preventDefault();
+  const cb = $('toggleContinentViewGame');
+  cb.checked = !cb.checked;
+  cb.dispatchEvent(new Event('change'));
 });
 
 // Top bar contextual buttons

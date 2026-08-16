@@ -1,0 +1,5 @@
+{
+  "spectatorModeDelayMs": 300,
+  "manualInitialPlacement": false,
+  "cardAwardEvent": "on_capture"
+}
