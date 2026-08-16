@@ -63,6 +63,8 @@ function rollDie(){ return 1+rand(6); }
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
+  // Lets mobile CSS hide the outer app header while playing, to give the map more room.
+  document.body.classList.toggle('in-game-screen', id==='screen-game');
 }
 
 const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#98c1d9","#c9a0dc","#f4a261","#e76f51",

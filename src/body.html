@@ -207,26 +207,35 @@
 <!-- ============ GAME ============ -->
 <div class="screen" id="screen-game">
   <div id="gameTopbar">
-    <div class="turn-indicator"><span class="turn-dot" id="turnDot"></span><span id="turnName">—</span></div>
-    <div class="phase-badge" id="phaseBadge">—</div>
-    <span id="reinforceCounter"></span>
+    <div id="gtInfo">
+      <div class="turn-indicator"><span class="turn-dot" id="turnDot"></span><span id="turnName">—</span></div>
+      <div class="phase-badge" id="phaseBadge">—</div>
+      <span id="reinforceCounter"></span>
+    </div>
     <div class="spacer"></div>
-    <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍 Xem châu lục <span style="opacity:.6;">(Space)</span></label>
-    <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
-    <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
+    <div id="gtControls">
+      <span class="round-badge" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+      <button class="small ghost icon-btn" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
+      <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍<span class="btn-label"> Xem châu lục <span style="opacity:.6;">(Space)</span></span></label>
+      <button class="small ghost" id="btnToggleLog" aria-label="Thu gọn/mở nhật ký trận đấu">📜</button>
+      <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
+      <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
+    </div>
   </div>
   <div id="gameBody">
     <div id="gameSidebar">
-      <div id="playerList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <div id="playerList"></div>
       <div id="actionHint">Chào mừng đến với ván chơi!</div>
     </div>
     <div id="gameCanvasWrap">
       <canvas id="gameCanvas" width="960" height="600"></canvas>
     </div>
-    <div id="gameLogPanel">
-      <h4 style="font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;">Nhật ký trận đấu</h4>
-      <div id="diceBox"></div>
-      <div id="combatLog"></div>
+    <div id="gameLogPanel" class="collapsed">
+      <h4 id="gameLogTitle" style="font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;">📜 Nhật ký trận đấu</h4>
+      <div id="gameLogContent">
+        <div id="diceBox"></div>
+        <div id="combatLog"></div>
+      </div>
     </div>
   </div>
   <div id="phaseActions"></div>

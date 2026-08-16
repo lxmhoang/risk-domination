@@ -29,6 +29,7 @@ button.danger{background:linear-gradient(135deg,var(--danger),#c94656);color:#ff
 button.good{background:linear-gradient(135deg,var(--good),#2fa864);color:#fff;}
 button:disabled{opacity:.4;cursor:not-allowed;transform:none;}
 button.ghost{background:transparent;border:1px solid var(--border);}
+button.ghost.active{border-color:var(--accent);color:var(--accent2);}
 button.small{padding:6px 10px;font-size:12px;border-radius:8px;}
 button.icon-btn{padding:8px 10px;}
 input[type=text],input[type=number],select{
@@ -139,11 +140,17 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
   border-bottom:1px solid var(--border);flex-wrap:wrap;
 }
+#gtInfo{display:flex;align-items:center;gap:14px;}
+#gtControls{display:flex;align-items:center;gap:14px;}
 #gameTopbar .turn-indicator{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;}
 #gameTopbar .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;}
 #gameTopbar .phase-badge{
   padding:4px 12px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;
   text-transform:uppercase;letter-spacing:.5px;color:var(--accent2);
+}
+.round-badge{
+  padding:4px 10px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;
+  color:var(--warn);white-space:nowrap;
 }
 #gameTopbar .spacer{flex:1;}
 #reinforceCounter{font-size:13px;color:var(--warn);font-weight:700;}
@@ -152,12 +159,17 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   width:270px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
   overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;
 }
+#playerList{display:flex;flex-direction:column;gap:8px;}
 #gameCanvasWrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;position:relative;background:#0a0e18;}
 #gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;max-width:100%;height:auto;}
 #gameLogPanel{
   width:280px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--border);
   display:flex;flex-direction:column;padding:12px;overflow:hidden;
 }
+/* Rarely-looked-at, so it's a toggle (via #btnToggleLog, in the top control row) on every
+   screen size, not just mobile — collapsed by default (see body.html) to give the map (and,
+   on desktop, the sidebar+canvas which get to reclaim the freed flex space) the room instead. */
+#gameLogPanel.collapsed{display:none;}
 #combatLog{flex:1;overflow-y:auto;font-size:12px;display:flex;flex-direction:column-reverse;gap:5px;padding-top:6px;}
 .log-entry{padding:6px 8px;border-radius:8px;background:var(--panel2);line-height:1.4;}
 .log-entry.attack{border-left:3px solid var(--danger);}
@@ -201,8 +213,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    Below this width: stack side panels above/below the map instead of beside
    it, make tap targets bigger, and let the map shrink to fit (pinch-zoom /
    scroll still work for precision) instead of overflowing the viewport.
+   The 980px cutoff (not the more typical ~768px) is deliberate: it needs to still
+   catch phones held in LANDSCAPE orientation (e.g. iPhone Pro Max ~930px, Galaxy
+   S-series ~915px CSS width) — narrower cutoffs let those fall through to the
+   desktop 3-column layout, which is what this whole section exists to avoid.
+   updateGameLayoutOrientation() in 06-render-game.js uses the same 980px number.
    ========================================================================== */
-@media (max-width: 860px){
+@media (max-width: 980px){
   #topbar{padding:10px 14px;}
   #topbar .brand{font-size:16px;}
   button{padding:11px 15px;} /* bigger tap targets */
@@ -218,21 +235,114 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #editor-canvas-wrap{overflow:auto;padding:10px;}
   #editor-toolbar{position:sticky;top:0;z-index:5;}
 
-  /* Game: sidebar, map, log stacked vertically instead of three columns */
-  #screen-game{overflow-y:auto;}
-  #gameBody{flex-direction:column;overflow:visible;}
-  #gameSidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);max-height:none;}
-  #gameCanvasWrap{overflow:auto;padding:10px;}
-  #gameLogPanel{width:100%;border-left:none;border-top:1px solid var(--border);max-height:220px;}
+  /* Game screen: the outer app header is dead weight once you're actually playing —
+     hide it so the map gets the space instead. (body.in-game-screen is set by
+     showScreen() in 01-utils.js.) */
+  body.in-game-screen #topbar{display:none;}
 
-  #gameTopbar{gap:8px 10px;padding:8px 10px;}
+  /* Icon-only chrome: hide the trailing text on toggles/buttons and per-player stat
+     words, keep the emoji/number — the icon already reads as its own label at this size. */
+  .btn-label, .stat-label{display:none;}
+
+  #screen-game{overflow-y:hidden;}
+  #gameBody{overflow:hidden;}
+
+  /* Let the map scale by whichever of width/height is more limiting (not just width),
+     so it actually fills the space it's given instead of sitting pinned to the top with
+     dead space below — this is the "ưu tiên hiển thị map đầy đủ" requirement. */
+  #gameCanvasWrap{align-items:center;}
+  #gameCanvas{max-height:100%;width:auto;height:auto;}
+  /* The icon controls (continent/cards/menu) and the turn/phase info used to share one
+     wrapping row, so whichever grew longer would shove the other off onto an inconsistent
+     second line, making the icon buttons drift and miss-tap. Force two fixed rows instead:
+     controls always on top (thumb-reachable, never moves), turn info always below. */
+  #gameTopbar{flex-direction:column;align-items:stretch;gap:6px;padding:8px 10px;position:sticky;top:0;z-index:6;}
+  #gameTopbar .spacer{display:none;}
+  #gtControls{order:-1;justify-content:flex-end;gap:10px;flex-wrap:nowrap;}
+  #gtInfo{flex-wrap:wrap;gap:8px 10px;}
   #gameTopbar .turn-indicator{font-size:13px;}
   #gameTopbar .phase-badge{font-size:11px;padding:4px 10px;}
   .switch-row{font-size:11.5px;}
 
+  /* Layout direction follows the MAP's own aspect ratio (map-landscape / map-portrait,
+     set by updateGameLayoutOrientation() in 06-render-game.js), not the phone's — a wide
+     map keeps a wide viewport, a tall/square one gets a tall one. */
+
+  /* map wider than tall: map fills the left, a narrow icon rail (player status + the
+     collapsible log) sits on the right within thumb reach. */
+  #screen-game.map-landscape #gameBody{
+    display:grid;
+    grid-template-columns:1fr 150px;
+    grid-template-rows:1fr auto;
+    height:100%;
+  }
+  #screen-game.map-landscape #gameCanvasWrap{grid-column:1;grid-row:1/3;padding:6px;overflow:auto;}
+  #screen-game.map-landscape #gameSidebar{
+    grid-column:2;grid-row:1;width:auto;max-height:none;
+    border-right:none;border-left:1px solid var(--border);border-bottom:1px solid var(--border);
+    padding:8px;gap:8px;
+    scrollbar-gutter:stable; /* reserve the scrollbar's width up front so it never overlaps content */
+  }
+  #screen-game.map-landscape #gameLogPanel{
+    grid-column:2;grid-row:2;width:auto;max-height:40vh;
+    border-left:1px solid var(--border);border-top:none;
+  }
+  /* The rail is too narrow for the auto-fit multi-column grid (its 130px-per-card minimum
+     doesn't fit a 150px rail once padding/scrollbar are subtracted, which forced horizontal
+     overflow) — pin it to a single column here, and keep each player's stat row on one line
+     rather than letting it wrap (per-card icon/number pairs are short enough that they should). */
+  #screen-game.map-landscape #playerList{grid-template-columns:1fr;}
+  #screen-game.map-landscape .pstats{flex-wrap:nowrap;gap:2px 6px;font-size:10.5px;}
+
+  /* The log squeezed into that same 150px rail (stacked under the player list) is basically
+     unreadable — and the player only ever looks at ONE of map/log at a time anyway — so when
+     the log is open, swap them: log takes the big left area, map shrinks into the rail instead.
+     (screen-game.log-open is toggled by #btnToggleLog in 08-wiring.js. map-portrait doesn't
+     need this: there the log already gets its own full-width strip, nothing to swap.) */
+  #screen-game.map-landscape.log-open #gameBody{
+    /* Unlike the default arrangement (where the map spans both rows so row sizing doesn't
+       matter to it), here the map is confined to row 1 alongside a sidebar whose real content
+       height can easily outweigh a plain "1fr" — leaving the map a sliver. Give it a fixed,
+       still-legible minimum instead; the sidebar (row 2) gets the rest and scrolls if needed. */
+    grid-template-rows:110px 1fr;
+  }
+  #screen-game.map-landscape.log-open #gameLogPanel{
+    grid-column:1;grid-row:1/3;width:auto;max-height:none;
+    border-left:none;border-right:1px solid var(--border);
+  }
+  #screen-game.map-landscape.log-open #gameCanvasWrap{grid-column:2;grid-row:1;padding:4px;}
+  #screen-game.map-landscape.log-open #gameSidebar{grid-column:2;grid-row:2;max-height:none;}
+
+  /* map taller than or as tall as wide: map on top (as big as it can be), controls
+     stacked below it — reordered via flex `order`, DOM stays in its normal place. */
+  #screen-game.map-portrait #gameBody{display:flex;flex-direction:column;overflow-y:auto;}
+  #screen-game.map-portrait #gameCanvasWrap{order:0;overflow:auto;padding:10px;}
+  #screen-game.map-portrait #gameSidebar{
+    order:1;width:100%;max-height:none;
+    border-right:none;border-top:1px solid var(--border);
+  }
+  #screen-game.map-portrait #gameLogPanel{
+    order:2;width:100%;max-height:220px;
+    border-left:none;border-top:1px solid var(--border);
+  }
+
+  /* Compact per-player status cards, laid out as a grid instead of one-per-row so a
+     4-6 player game doesn't burn most of the screen just listing everyone's stats.
+     auto-fit + a ~130px minimum means it's 1 column in the narrow side rail (map-landscape)
+     and naturally 2+ columns in the full-width strip (map-portrait). */
+  #playerList{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;}
+  .player-card{padding:6px 8px;}
+  .player-card .pname{font-size:11px;gap:5px;margin-bottom:4px;}
+  .pstats{display:flex;flex-wrap:wrap;gap:3px 8px;font-size:11px;}
+  #actionHint{font-size:11px;padding:8px;}
+
+  /* #gameLogPanel.collapsed{display:none} is a general rule now (applies on desktop too,
+     see near the base #gameLogPanel rule) — #gameLogTitle stays mobile-only hidden since
+     the toggle button already carries that label there; desktop still shows it. */
+  #gameLogTitle{display:none;}
+
   #phaseActions{padding:10px;gap:6px;position:sticky;bottom:0;z-index:6;box-shadow:0 -4px 12px rgba(0,0,0,.3);}
   #phaseActions button{flex:1 1 auto;min-width:130px;}
-  #gameTopbar{position:sticky;top:0;z-index:6;}
 
   .setup-card{padding:20px;width:100%;}
   #screen-setup{padding:16px;}
@@ -246,6 +356,5 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   .menu-card{padding:16px;}
   .menu-card h3{font-size:14.5px;}
   .menu-card p{font-size:12px;}
-  #gameTopbar .turn-indicator span:last-child{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .player-card .pstats{flex-wrap:wrap;row-gap:2px;}
+  #screen-game.map-landscape #gameBody{grid-template-columns:1fr 130px;}
 }

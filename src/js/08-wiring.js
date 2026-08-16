@@ -194,6 +194,36 @@ $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });
 
+// Pause/resume the current AI's turn (disabled during a human turn — see renderTopbar()).
+$('btnPauseAI').addEventListener('click', ()=>{
+  setAIPaused(!aiPaused);
+  renderGame();
+});
+
+// Dice/combat log collapse toggle — collapsed by default on every screen size (see body.html;
+// rarely-looked-at, so it shouldn't cost permanent space even on desktop) and otherwise only
+// changes when the player taps this button — no auto-expand on new rolls.
+$('btnToggleLog').addEventListener('click', ()=>{
+  const collapsed = $('gameLogPanel').classList.toggle('collapsed');
+  $('btnToggleLog').classList.toggle('active', !collapsed);
+  // In the narrow side-rail (map-landscape) mobile layout, opening the log swaps it with the
+  // map (log takes the big area, map shrinks into the rail) — see style.css's .log-open rules.
+  $('screen-game').classList.toggle('log-open', !collapsed);
+});
+
+// updateGameLayoutOrientation() (which decides map-landscape vs map-portrait) only ran as
+// part of renderGame(), i.e. on actual game actions — so resizing/rotating the viewport (or
+// switching device presets in devtools) with no game action in between left the OLD choice
+// applied to the NEW size, producing a visibly broken layout until the next click. Re-run on
+// resize too, debounced since resize fires continuously while dragging a window/devtools pane.
+let _resizeTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(()=>{
+    if(game && document.getElementById('screen-game').classList.contains('active')) renderGame();
+  }, 120);
+});
+
 // Space bar toggles continent view while in-game. Ignored when a modal is open or
 // focus is on a form control, so it doesn't hijack normal typing/button activation.
 window.addEventListener('keydown', (e)=>{

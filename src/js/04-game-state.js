@@ -20,19 +20,23 @@ function tradeInValue(tradeCount){
 
 function initGame(numAI, difficulty, humanColor, spectator){
   spectatorMode = !!spectator;
+  aiPaused = false; pendingAIResume = null;
   const numPlayers = numAI+1;
+  const startArmies = standardStartingArmies(numPlayers);
   const colors = shuffle(PLAYER_COLORS.filter(c=>c.hex!==humanColor));
   const players = [];
-  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false});
+  // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
+  // the per-turn capturedThisTurn/killedThisTurn flags which reset every endTurn().
+  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0});
   for(let i=0;i<numAI;i++){
-    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false});
+    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0});
   }
   const terrIds = shuffle(Object.keys(mapData.territories).map(Number));
   const owner = {}; const armies = {};
   terrIds.forEach((id,i)=>{ owner[id] = i % players.length; armies[id] = 1; });
 
   const pool = {};
-  players.forEach(p=> pool[p.id] = standardStartingArmies(players.length) - terrIds.filter(id=>owner[id]===p.id).length);
+  players.forEach(p=> pool[p.id] = startArmies - terrIds.filter(id=>owner[id]===p.id).length);
 
   game = {
     players, owner, armies, pool,
@@ -40,6 +44,7 @@ function initGame(numAI, difficulty, humanColor, spectator){
     turnIdx: 0,
     phase: 'setup-place', // setup-place -> reinforce -> attack -> fortify
     difficulty,
+    roundNumber: 1, // +1 each time turnIdx wraps back to the start of turnOrder (see endTurn())
     reinforceRemaining: 0,
     tradeCount: 0,
     selectedFrom: null, selectedTo: null,
@@ -78,7 +83,7 @@ function setupPlaceNext(){
     // Kept fast (no spectator delay) even in "watch AI" mode — placing armies one at a
     // time isn't interesting to watch slowly, so this phase always runs at full speed;
     // the 1s pacing kicks in starting from the reinforce/attack/fortify phases instead.
-    setTimeout(()=>{
+    aiSchedule(()=>{
       if(!game || game.over) return;
       const mine = ownedTerritories(p.id);
       const target = pickAIReinforceTarget(p.id, mine);
@@ -131,6 +136,7 @@ function startReinforce(){
   const p = currentPlayer();
   game.phase='reinforce';
   game.reinforceRemaining = computeReinforcements(p.id);
+  p.totalReinforced += game.reinforceRemaining;
   logMsg('info', p.name+' nhận '+game.reinforceRemaining+' quân tăng viện.');
   if(!p.isHuman){
     aiRunFullTurn(p.id);
@@ -192,6 +198,7 @@ function doBattle(fromId,toId){
   const attP = game.players[game.owner[fromId]];
   const defP = game.players[game.owner[toId]];
   if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
+  attP.totalKills += defLoss; // cumulative since game start, shown in the topbar
   logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
   let captured=false;
   if(game.armies[toId]<=0){
@@ -337,6 +344,7 @@ function endTurn(){
   p.killedThisTurn=false;
   do {
     game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
+    if(game.turnIdx===0) game.roundNumber++; // wrapped back to the start of turnOrder = a new round
   } while(!isAlive(currentPlayerId()));
   if(game.over) return;
   startReinforce();

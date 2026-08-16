@@ -76,7 +76,7 @@ function pickAIReinforceTarget(pid, mine){
 
 function aiRunFullTurn(pid){
   setActionHint(game.players[pid].name+' đang suy nghĩ...');
-  setTimeout(()=>{ aiReinforceStep(pid); }, aiDelay(300));
+  aiSchedule(()=>{ aiReinforceStep(pid); }, aiDelay(300));
 }
 
 function aiReinforceStep(pid){
@@ -90,7 +90,7 @@ function aiReinforceStep(pid){
     game.reinforceRemaining--;
   }
   renderGame();
-  setTimeout(()=> aiAttackStep(pid), aiDelay(350));
+  aiSchedule(()=> aiAttackStep(pid), aiDelay(350));
 }
 
 function aiTryTradeCards(p){
@@ -120,6 +120,7 @@ function tradeCards(p, indices){
   idxSorted.forEach(i=> p.cards.splice(i,1));
   game.tradeCount++;
   const value = tradeInValue(game.tradeCount);
+  p.totalReinforced += value;
   if(game.phase==='reinforce' && currentPlayerId()===p.id){
     game.reinforceRemaining += value;
   } else {
@@ -189,7 +190,7 @@ function aiAttackStep(pid){
     if(!bestOpt || bestEval.ratio<effectiveThreshold){ aiFortifyStep(pid); return; }
     doBattle(bestOpt.from, bestOpt.to);
     if(game.over) return;
-    setTimeout(step, aiDelay(260));
+    aiSchedule(step, aiDelay(260));
   }
   step();
 }
@@ -223,6 +224,6 @@ function aiFortifyStep(pid){
     }
   }
   renderGame();
-  setTimeout(()=> endTurn(), aiDelay(400));
+  aiSchedule(()=> endTurn(), aiDelay(400));
 }
 

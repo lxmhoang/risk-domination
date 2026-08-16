@@ -6,6 +6,29 @@ let mapData = null;
 let spectatorMode = false; // true = every player is AI-controlled and events are slowed down for watching
 function aiDelay(base){ return spectatorMode ? RUNTIME_CONFIG.spectatorModeDelayMs : base; }
 
+/* ---------------- Pausable AI turn scheduling ----------------
+   An AI turn is a chain of steps (reinforce -> attack loop -> fortify -> end turn), each one
+   scheduled a bit later via setTimeout so the player can watch it happen. To let the ▶️/⏸️
+   button in the topbar pause that chain, every one of those setTimeout calls goes through
+   aiSchedule() instead of setTimeout directly: if the game is paused by the time a step's
+   timer fires, the step is stashed (not run) instead, and setAIPaused(false) runs it
+   immediately — so resuming continues the exact same chain rather than restarting it. */
+let aiPaused = false;
+let pendingAIResume = null;
+function aiSchedule(fn, delay){
+  setTimeout(()=>{
+    if(aiPaused){ pendingAIResume = fn; return; }
+    fn();
+  }, delay);
+}
+function setAIPaused(paused){
+  aiPaused = paused;
+  if(!paused && pendingAIResume){
+    const fn = pendingAIResume; pendingAIResume = null;
+    if(game && !game.over) fn();
+  }
+}
+
 function newMap(cols, rows, name){
   return {
     name: name || "Bản đồ mới",
