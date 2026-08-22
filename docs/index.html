@@ -510,7 +510,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <div class="panel-block">
       <div class="panel-header"><h4>Châu lục (<span id="contCount">0</span>)</h4><span class="chev">▾</span></div>
       <div class="panel-content">
-        <button class="small primary" id="btnNewCont" style="margin-bottom:8px;">+ Châu lục mới</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="small primary" id="btnNewCont">+ Châu lục mới</button>
+          <button class="small ghost" id="btnReassignConts" title="Chia lại toàn bộ lãnh thổ hiện có cho các châu lục đang có, ưu tiên theo mặt nước">🔄 Tự động chia lại</button>
+        </div>
         <div id="contList"></div>
       </div>
     </div>
@@ -1076,67 +1079,100 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
   recomputeGraph(map);
   ensureNoIsolatedTerritories(map);
 
-  // Group territories into continents, preferring continent borders that follow coastlines
-  // (water) rather than cutting through contiguous land. Each connected landmass (component
-  // of the territory graph — water always breaks graph edges) is treated as a unit: small
-  // landmasses are kept whole and merged wholesale into a continent, while only the largest
-  // landmasses get split internally when more continents are requested than there are landmasses.
+  for(let i=0;i<numCont;i++) createContinent(map);
+  reassignContinents(map);
+  return map;
+}
+
+// Reassigns every territory's continentId across the map's EXISTING continents — never
+// creates or deletes a continent. Used both right after generateRandomMap() seeds fresh
+// continents above, and standalone by the editor's "Tự động chia lại" button to redo this
+// on a map you've already been hand-editing (e.g. after adding a continent by hand, which
+// otherwise starts out with zero territories — see createContinent()).
+//
+// Prefers continent borders that follow coastlines (water) rather than cutting through
+// contiguous land: each connected landmass (component of the territory graph — water always
+// breaks graph edges) is treated as a unit. Small landmasses are kept whole and merged
+// wholesale into a continent; only the largest landmasses get split internally when there
+// are more continents than landmasses.
+function reassignContinents(map){
+  const contIds = Object.keys(map.continents).map(Number);
+  const numCont = contIds.length;
+  if(numCont===0) return;
+
   const components = findConnectedComponents(map).map(ids=>({
     ids, size: ids.reduce((s,id)=> s+map.territories[id].cells.length, 0)
   }));
   components.sort((a,b)=> b.size-a.size);
 
-  let contsPerComponent = components.map(()=> components.length<=numCont ? 1 : 0);
+  // How many continents does each landmass get? Proportional apportionment (the "largest
+  // remainder" method used for seat allocation) rather than "1 baseline each + leftovers to
+  // whoever's biggest" — the baseline approach let two very differently-sized landmasses both
+  // end up as exactly 1 whole continent each whenever there happened to be enough continents
+  // to go around 1-for-1, with no mechanism left to correct the size gap between them.
+  let contsPerComponent;
   if(components.length <= numCont){
-    // enough (or more) continents requested than landmasses: everyone gets at least one,
-    // extra continents go to whichever landmass is currently most "crowded" (biggest split need)
-    let remaining = numCont - components.length;
-    while(remaining>0){
-      let bestIdx=0, bestRatio=-1;
-      components.forEach((comp,i)=>{
-        const ratio = comp.size / contsPerComponent[i];
-        if(ratio>bestRatio){ bestRatio=ratio; bestIdx=i; }
-      });
-      contsPerComponent[bestIdx]++;
-      remaining--;
-    }
+    const totalLand = components.reduce((s,c)=>s+c.size,0);
+    const quotas = components.map(c=> c.size/totalLand*numCont);
+    contsPerComponent = quotas.map(q=> Math.floor(q));
+    let remaining = numCont - contsPerComponent.reduce((a,b)=>a+b,0);
+    // remaining continents (from the fractional part of each quota) go to the landmasses
+    // with the largest leftover remainder first — standard largest-remainder apportionment.
+    const order = components.map((_,i)=>i).sort((a,b)=> (quotas[b]-contsPerComponent[b]) - (quotas[a]-contsPerComponent[a]));
+    for(let k=0;k<remaining;k++) contsPerComponent[order[k]]++;
+    // a landmass whose quota rounds down to 0 continents just falls through to the
+    // leftover-merge step below instead of getting a whole (tiny) continent to itself.
   } else {
     // fewer continents than landmasses: keep the `numCont` largest landmasses as their own
     // continent, and merge every smaller landmass wholesale into one of those later.
-    for(let i=0;i<Math.min(numCont,components.length);i++) contsPerComponent[i]=1;
+    contsPerComponent = components.map((c,i)=> i<numCont ? 1 : 0);
   }
 
+  const pool = shuffle(contIds.slice()); // drained exactly `numCont` times total below
   const contOwnedByComponent = components.map(()=>false);
   components.forEach((comp, ci)=>{
     const wantConts = contsPerComponent[ci];
     if(wantConts<=0) return;
     contOwnedByComponent[ci] = true;
-    const seedIds = shuffle(comp.ids).slice(0, wantConts);
-    const localConts = seedIds.map(()=> createContinent(map));
+    const myContIds = pool.splice(0, wantConts);
+    const seedIds = shuffle(comp.ids).slice(0, myContIds.length);
     const assigned = {};
-    let cq = seedIds.map((tid,i)=>({tid, cont: localConts[i].id}));
-    cq.forEach(x=> assigned[x.tid]=x.cont);
-    while(cq.length){
-      cq = shuffle(cq);
-      const next=[];
-      for(const {tid,cont} of cq){
-        for(const nb of shuffle([...map.territories[tid].neighbors])){
-          if(assigned[nb]===undefined){ assigned[nb]=cont; next.push({tid:nb,cont}); }
+    // Round-robin growth (one claim per continent per pass, not a full-frontier flood) so
+    // continents in the same landmass grow at an even rate — otherwise a seed that happens
+    // to have more open neighbors nearby snowballs into a much bigger share of the landmass.
+    const frontiers = myContIds.map((cont,i)=>{ assigned[seedIds[i]]=cont; return [seedIds[i]]; });
+    let anyMoved = true;
+    while(anyMoved){
+      anyMoved = false;
+      for(let fi=0; fi<frontiers.length; fi++){
+        const q = frontiers[fi], cont = myContIds[fi];
+        while(q.length){
+          const tid = q.shift();
+          const nbs = shuffle([...map.territories[tid].neighbors]).filter(nb=>assigned[nb]===undefined);
+          if(nbs.length===0) continue; // exhausted, try the next queued tile instead
+          assigned[nbs[0]] = cont;
+          q.push(tid); // may still have more unclaimed neighbors later
+          q.push(nbs[0]);
+          anyMoved = true;
+          break; // one claim per continent this pass, then move on to the next continent
         }
       }
-      cq = next;
     }
-    comp.ids.forEach(tid=>{ map.territories[tid].continentId = assigned[tid] ?? localConts[0].id; });
+    comp.ids.forEach(tid=>{ map.territories[tid].continentId = assigned[tid] ?? myContIds[0]; });
   });
 
-  // merge leftover landmasses (too small to warrant their own continent) wholesale into an
-  // existing continent — never split one, so this never introduces a land border mid-component.
-  const allContIds = Object.values(map.continents).map(c=>c.id);
-  let rr=0;
+  // merge leftover landmasses (too small to warrant their own continent) wholesale into
+  // whichever continent is CURRENTLY smallest — never split one (so this never introduces a
+  // land border mid-component), while keeping overall continent sizes from drifting too far
+  // apart from each other.
+  const sizeOf = {}; contIds.forEach(id=> sizeOf[id]=0);
+  Object.values(map.territories).forEach(t=>{ if(t.continentId!=null) sizeOf[t.continentId]++; });
   components.forEach((comp, ci)=>{
-    if(contOwnedByComponent[ci] || allContIds.length===0) return;
-    const targetCont = allContIds[rr % allContIds.length]; rr++;
+    if(contOwnedByComponent[ci]) return;
+    let targetCont = contIds[0];
+    contIds.forEach(id=>{ if(sizeOf[id]<sizeOf[targetCont]) targetCont=id; });
     comp.ids.forEach(tid=> map.territories[tid].continentId = targetCont);
+    sizeOf[targetCont] += comp.ids.length;
   });
 
   // bonuses based on continent size
@@ -1144,7 +1180,6 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
     const size = Object.values(map.territories).filter(t=>t.continentId===cont.id).length;
     cont.bonus = Math.max(2, Math.round(size/2)+1);
   });
-  return map;
 }
 
 /* ---- src/js/03-editor.js ---- */
@@ -1216,7 +1251,7 @@ function renderEditorLists(){
       contSel.appendChild(opt);
     });
     contSel.addEventListener('click', e=>e.stopPropagation());
-    contSel.addEventListener('change', ()=>{ t.continentId = contSel.value? Number(contSel.value): null; });
+    contSel.addEventListener('change', ()=>{ t.continentId = contSel.value? Number(contSel.value): null; drawEditorCanvas(); });
     const actions = el('div','row-actions');
     const delBtn = el('button','mini-btn','✕'); delBtn.title='Xoá lãnh thổ';
     delBtn.addEventListener('click', (e)=>{
@@ -2796,7 +2831,13 @@ $('btnNewTerr').addEventListener('click', ()=>{
   editorCurrentTerrId = t.id;
   renderEditorLists(); updateToolbarInfo();
 });
-$('btnNewCont').addEventListener('click', ()=>{ createContinent(mapData); renderEditorLists(); });
+$('btnNewCont').addEventListener('click', ()=>{ createContinent(mapData); renderEditorLists(); drawEditorCanvas(); });
+$('btnReassignConts').addEventListener('click', ()=>{
+  if(Object.keys(mapData.continents).length===0){ alert('Chưa có châu lục nào để chia vào.'); return; }
+  if(!confirm('Chia lại châu lục sẽ ghi đè mọi gán châu lục thủ công hiện có. Tiếp tục?')) return;
+  reassignContinents(mapData);
+  renderEditorLists(); drawEditorCanvas();
+});
 $('waterRatioInput').addEventListener('input', (e)=>{ $('waterRatioLabel').textContent = e.target.value+'%'; });
 $('waterSpreadInput').addEventListener('input', (e)=>{ $('waterSpreadLabel').textContent = e.target.value+'%'; });
 $('btnRandomGen').addEventListener('click', ()=>{

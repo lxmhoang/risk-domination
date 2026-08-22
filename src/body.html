@@ -134,7 +134,10 @@
     <div class="panel-block">
       <div class="panel-header"><h4>Châu lục (<span id="contCount">0</span>)</h4><span class="chev">▾</span></div>
       <div class="panel-content">
-        <button class="small primary" id="btnNewCont" style="margin-bottom:8px;">+ Châu lục mới</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="small primary" id="btnNewCont">+ Châu lục mới</button>
+          <button class="small ghost" id="btnReassignConts" title="Chia lại toàn bộ lãnh thổ hiện có cho các châu lục đang có, ưu tiên theo mặt nước">🔄 Tự động chia lại</button>
+        </div>
         <div id="contList"></div>
       </div>
     </div>

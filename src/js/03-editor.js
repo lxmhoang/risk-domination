@@ -66,7 +66,7 @@ function renderEditorLists(){
       contSel.appendChild(opt);
     });
     contSel.addEventListener('click', e=>e.stopPropagation());
-    contSel.addEventListener('change', ()=>{ t.continentId = contSel.value? Number(contSel.value): null; });
+    contSel.addEventListener('change', ()=>{ t.continentId = contSel.value? Number(contSel.value): null; drawEditorCanvas(); });
     const actions = el('div','row-actions');
     const delBtn = el('button','mini-btn','✕'); delBtn.title='Xoá lãnh thổ';
     delBtn.addEventListener('click', (e)=>{

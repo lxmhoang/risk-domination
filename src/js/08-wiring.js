@@ -179,7 +179,13 @@ $('btnNewTerr').addEventListener('click', ()=>{
   editorCurrentTerrId = t.id;
   renderEditorLists(); updateToolbarInfo();
 });
-$('btnNewCont').addEventListener('click', ()=>{ createContinent(mapData); renderEditorLists(); });
+$('btnNewCont').addEventListener('click', ()=>{ createContinent(mapData); renderEditorLists(); drawEditorCanvas(); });
+$('btnReassignConts').addEventListener('click', ()=>{
+  if(Object.keys(mapData.continents).length===0){ alert('Chưa có châu lục nào để chia vào.'); return; }
+  if(!confirm('Chia lại châu lục sẽ ghi đè mọi gán châu lục thủ công hiện có. Tiếp tục?')) return;
+  reassignContinents(mapData);
+  renderEditorLists(); drawEditorCanvas();
+});
 $('waterRatioInput').addEventListener('input', (e)=>{ $('waterRatioLabel').textContent = e.target.value+'%'; });
 $('waterSpreadInput').addEventListener('input', (e)=>{ $('waterSpreadLabel').textContent = e.target.value+'%'; });
 $('btnRandomGen').addEventListener('click', ()=>{
