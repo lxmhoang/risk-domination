@@ -178,7 +178,11 @@ function canAttack(fromId,toId,pid){
   return mapData.territories[fromId].neighbors.has(toId);
 }
 
-function doBattle(fromId,toId){
+function doBattle(fromId,toId,opts){
+  // silent: skip dice display/log/render for this single round — used by the AI's
+  // battleBatch() to fight many rounds back-to-back without a render per round, then
+  // the caller shows the dice/log/render once for the whole batch (see 05-ai.js).
+  const silent = !!(opts && opts.silent);
   const attArmies = game.armies[fromId];
   const defArmies = game.armies[toId];
   const attDice = clamp(attArmies-1,1,3);
@@ -194,12 +198,12 @@ function doBattle(fromId,toId){
   }
   game.armies[fromId]-=attLoss;
   game.armies[toId]-=defLoss;
-  showDice(ad,dd,results);
+  if(!silent) showDice(ad,dd,results);
   const attP = game.players[game.owner[fromId]];
   const defP = game.players[game.owner[toId]];
   if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
   attP.totalKills += defLoss; // cumulative since game start, shown in the topbar
-  logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
+  if(!silent) logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
   let captured=false;
   if(game.armies[toId]<=0){
     captured=true;
@@ -215,14 +219,14 @@ function doBattle(fromId,toId){
     game.armies[toId] = moving;
     game.armies[fromId] -= moving;
     attP.capturedThisTurn = true;
-    logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`);
+    if(!silent) logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`);
     checkElimination(oldOwner, attP.id);
     if(attP.isHuman && maxMovable>moving){
       openCaptureMoveModal(fromId, toId, moving, maxMovable);
     }
   }
-  renderGame();
-  return {attLoss,defLoss,captured};
+  if(!silent) renderGame();
+  return {attLoss,defLoss,captured,ad,dd,results};
 }
 
 function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){

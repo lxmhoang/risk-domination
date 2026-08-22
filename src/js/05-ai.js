@@ -167,6 +167,30 @@ function aiAttackStep(pid){
     return {ratio, score:ratio+bonus, bonus};
   }
 
+  // Fights repeated silent rounds against the same target while the attack is still
+  // profitable (reserve/threshold re-checked every round, since armies shrink round by
+  // round), so a huge army-count mismatch resolves in one go instead of needing hundreds
+  // of individually-delayed AI turns. Only the final round's dice are shown, and all the
+  // rounds get folded into one combat-log line, since the in-between rounds have no delay
+  // to actually be seen anyway.
+  const BATCH_GUARD = 5000;
+  function battleBatch(fromId, toId){
+    let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
+    while(rounds<BATCH_GUARD){
+      if(game.armies[fromId]<2) break;
+      const ev = attackScore(fromId, toId);
+      if(!ev) break;
+      const threshold = Math.max(1.05, profile.baseThreshold - ev.bonus*0.3);
+      if(ev.ratio<threshold) break;
+      lastRes = doBattle(fromId, toId, {silent:true});
+      rounds++;
+      attLossTotal += lastRes.attLoss;
+      defLossTotal += lastRes.defLoss;
+      if(lastRes.captured){ captured=true; break; }
+    }
+    return {rounds, attLossTotal, defLossTotal, captured, lastRes};
+  }
+
   let guard=0;
   function step(){
     if(game.over) return;
@@ -188,7 +212,19 @@ function aiAttackStep(pid){
     // worse pure odds than the difficulty's base threshold would normally allow.
     const effectiveThreshold = bestEval ? Math.max(1.05, profile.baseThreshold - bestEval.bonus*0.3) : Infinity;
     if(!bestOpt || bestEval.ratio<effectiveThreshold){ aiFortifyStep(pid); return; }
-    doBattle(bestOpt.from, bestOpt.to);
+
+    const { from, to } = bestOpt;
+    const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
+    const result = battleBatch(from, to);
+    if(result.rounds>0){
+      const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
+      logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`);
+      if(result.lastRes) showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
+      if(result.captured){
+        logMsg('capture', `${p.name} chiếm được ${toName}!`);
+      }
+    }
+    renderGame();
     if(game.over) return;
     aiSchedule(step, aiDelay(260));
   }

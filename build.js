@@ -12,6 +12,11 @@ const SRC = path.join(__dirname, 'src');
 const JS_DIR = path.join(SRC, 'js');
 const OUT_DIR = path.join(__dirname, 'dist');
 const OUT_FILE = path.join(OUT_DIR, 'index.html');
+// docs/index.html is a duplicate copy for GitHub Pages, which (without a workflow-based
+// deploy) can only serve from a branch's root or /docs folder — so we mirror the build
+// output there too, kept in sync automatically on every `npm run build`.
+const PAGES_DIR = path.join(__dirname, 'docs');
+const PAGES_FILE = path.join(PAGES_DIR, 'index.html');
 
 function read(p){ return fs.readFileSync(p, 'utf8'); }
 
@@ -45,4 +50,6 @@ let out = shell
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 fs.writeFileSync(OUT_FILE, out, 'utf8');
-console.log(`Built ${OUT_FILE} from ${jsFiles.length} JS modules (${out.length} bytes).`);
+fs.mkdirSync(PAGES_DIR, { recursive: true });
+fs.writeFileSync(PAGES_FILE, out, 'utf8');
+console.log(`Built ${OUT_FILE} and ${PAGES_FILE} from ${jsFiles.length} JS modules (${out.length} bytes).`);
