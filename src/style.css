@@ -133,6 +133,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .player-config .pdot{width:16px;height:16px;border-radius:50%;flex-shrink:0;}
 .player-config span{flex:1;font-size:13px;}
 .player-config select{width:100px;}
+.player-config input[type=text]{flex:1;min-width:0;padding:4px 6px;font-size:12px;}
 
 /* ---------- Game screen ---------- */
 #screen-game{flex-direction:column;overflow:hidden;}
@@ -204,9 +205,14 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .card-item.selected{border-color:var(--accent);}
 .card-item .label{font-size:11px;color:var(--muted);}
 
-#gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;}
+#gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;padding:20px;text-align:center;}
 #gameOverOverlay h1{font-size:36px;}
 #gameOverOverlay p{color:var(--muted);}
+.summary-table-wrap{max-width:640px;width:92vw;max-height:44vh;overflow:auto;}
+.summary-table{width:100%;border-collapse:collapse;font-size:13px;}
+.summary-table th,.summary-table td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);}
+.summary-table th{color:var(--muted);font-weight:600;}
+.summary-table .pdot{width:12px;height:12px;border-radius:50%;display:inline-block;}
 
 /* ==========================================================================
    MOBILE / SMALL SCREENS

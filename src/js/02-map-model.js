@@ -207,12 +207,20 @@ function bridgeComponentOut(map, compTerrIds){
   }
 }
 
-function generateWaterMask(cols, rows, waterRatio){
+function generateWaterMask(cols, rows, waterRatio, spread){
   const total = cols*rows;
   const water = new Uint8Array(total);
   const targetWater = Math.round(total*clamp(waterRatio,0,0.7));
   if(targetWater<=0) return water;
-  const numBlobs = clamp(Math.round(Math.sqrt(cols*rows)/9), 1, 6);
+  // spread (0-1): how scattered the water is. At 0, few big blobs grow into large lakes/seas
+  // (the original behavior); at 1, the same total water area is seeded from many more, smaller
+  // blobs with a lower per-cell fill chance so the coastline comes out raggeder and more spread
+  // out across the map instead of piling into 1-2 big clumps.
+  const s = clamp(spread===undefined?0.4:spread, 0, 1);
+  const baseBlobs = clamp(Math.round(Math.sqrt(total)/9), 1, 6);
+  const maxBlobs = Math.max(baseBlobs, Math.round(total/120));
+  const numBlobs = clamp(Math.round(baseBlobs + s*(maxBlobs-baseBlobs)), 1, maxBlobs);
+  const fillProb = 0.88 - s*0.33;
   const allCells = [];
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) allCells.push([c,r]);
   const seeds = shuffle(allCells).slice(0, numBlobs);
@@ -241,7 +249,7 @@ function generateWaterMask(cols, rows, waterRatio){
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const idx = nr*cols+nc;
         if(water[idx]) continue;
-        if(Math.random()<0.82){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
+        if(Math.random()<fillProb){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
       }
     }
     frontier = next;
@@ -249,9 +257,9 @@ function generateWaterMask(cols, rows, waterRatio){
   return water;
 }
 
-function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio){
+function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
-  const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio);
+  const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
   map.water = water; // keep for reference/export if needed later
 
   const landCells = [];

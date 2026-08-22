@@ -211,7 +211,11 @@ function renderPhaseActions(){
     const atkBtn = el('button','danger','⚔️ Tấn công'); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
     atkBtn.addEventListener('click', ()=>{
       if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)){
-        doBattle(game.selectedFrom, game.selectedTo);
+        const fromId = game.selectedFrom, toId = game.selectedTo;
+        const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
+        const defenderName = game.players[game.owner[toId]].name;
+        const res = doBattle(fromId, toId);
+        recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
         if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
         renderGame();
       }

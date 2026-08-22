@@ -25,9 +25,14 @@ function getWaterRatio(){
   const el = document.getElementById('waterRatioInput');
   return el ? Number(el.value)/100 : 0.28;
 }
+function getWaterSpread(){
+  const el = document.getElementById('waterSpreadInput');
+  return el ? Number(el.value)/100 : 0.4;
+}
 
 function initEditorMap(){
-  mapData = generateRandomMap(40, 26, 22, 6, "Bản đồ của tôi", getWaterRatio());
+  const cols=100, rows=100;
+  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, "Bản đồ của tôi", getWaterRatio(), getWaterSpread());
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols;
   $('gridRows').value = mapData.rows;

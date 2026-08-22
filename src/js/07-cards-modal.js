@@ -46,8 +46,34 @@ function openCardsModal(forced){
 
 function showGameOver(winner){
   const overlay = el('div',''); overlay.id='gameOverOverlay';
-  overlay.innerHTML = `<h1>${winner? '🏆 '+winner.name+' Chiến Thắng!' : 'Ván chơi kết thúc'}</h1>
-    <p>${winner && winner.isHuman? 'Chúc mừng, bạn đã chinh phục toàn bộ bản đồ!' : winner? 'Đối thủ AI đã chinh phục toàn bộ bản đồ.' : ''}</p>`;
+  let html = `<h1>${winner? '🏆 '+winner.name+' Chiến Thắng!' : 'Ván chơi kết thúc'}</h1>
+    <p>${winner && winner.isHuman? 'Chúc mừng, bạn đã chinh phục toàn bộ bản đồ!' : winner? 'Đối thủ AI đã chinh phục toàn bộ bản đồ.' : ''}</p>
+    <p style="font-size:13px;">Ván đấu kéo dài ${game.roundNumber} vòng.</p>`;
+
+  const rows = game.players.map(p=>({p, terr: ownedTerritories(p.id).length}))
+    .sort((a,b)=> (b.p.alive - a.p.alive) || (b.terr - a.terr) || (b.p.totalKills - a.p.totalKills));
+  html += `<div class="summary-table-wrap"><table class="summary-table"><thead><tr>
+    <th></th><th>Người chơi</th><th>Trạng thái</th><th>Lãnh thổ</th><th>📦 Viện binh</th><th>😵 Tiêu diệt</th>
+    </tr></thead><tbody>`;
+  rows.forEach(({p,terr})=>{
+    const status = p.alive ? 'Còn sống' : ('Bị loại'+(p.eliminatedRound? ' (vòng '+p.eliminatedRound+')' : ''));
+    html += `<tr>
+      <td><span class="pdot" style="background:${p.color}"></span></td>
+      <td>${p.name}${p.isHuman?' (Bạn)':''}</td>
+      <td>${status}</td>
+      <td>${terr}</td>
+      <td>${p.totalReinforced}</td>
+      <td>${p.totalKills}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+
+  if(game.biggestBattle){
+    const b = game.biggestBattle;
+    html += `<p style="font-size:13px;">⚔️ Trận đánh lớn nhất: <b>${b.attackerName}</b> tấn công <b>${b.toName}</b> (${b.defenderName}) từ ${b.fromName} — tổng cộng ${b.totalLoss} quân tổn thất, ở vòng ${b.round}.</p>`;
+  }
+
+  overlay.innerHTML = html;
   const backBtn = el('button','primary','Về Menu chính');
   backBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); showScreen('screen-menu'); });
   overlay.appendChild(backBtn);

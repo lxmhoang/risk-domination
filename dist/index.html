@@ -140,6 +140,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .player-config .pdot{width:16px;height:16px;border-radius:50%;flex-shrink:0;}
 .player-config span{flex:1;font-size:13px;}
 .player-config select{width:100px;}
+.player-config input[type=text]{flex:1;min-width:0;padding:4px 6px;font-size:12px;}
 
 /* ---------- Game screen ---------- */
 #screen-game{flex-direction:column;overflow:hidden;}
@@ -211,9 +212,14 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .card-item.selected{border-color:var(--accent);}
 .card-item .label{font-size:11px;color:var(--muted);}
 
-#gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;}
+#gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;padding:20px;text-align:center;}
 #gameOverOverlay h1{font-size:36px;}
 #gameOverOverlay p{color:var(--muted);}
+.summary-table-wrap{max-width:640px;width:92vw;max-height:44vh;overflow:auto;}
+.summary-table{width:100%;border-collapse:collapse;font-size:13px;}
+.summary-table th,.summary-table td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);}
+.summary-table th{color:var(--muted);font-weight:600;}
+.summary-table .pdot{width:12px;height:12px;border-radius:50%;display:inline-block;}
 
 /* ==========================================================================
    MOBILE / SMALL SCREENS
@@ -451,29 +457,29 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       <div class="panel-header"><h4>Bản đồ</h4><span class="chev">▾</span></div>
       <div class="panel-content">
         <input type="text" id="mapNameInput" value="Bản đồ của tôi" style="width:100%;margin-bottom:8px;">
+        <div class="field-row"><span>Cột × Hàng</span>
+          <span style="display:flex;gap:4px;">
+            <input type="number" id="gridCols" value="100" min="10" max="200" style="width:52px;">
+            <input type="number" id="gridRows" value="100" min="10" max="200" style="width:52px;">
+          </span>
+        </div>
+        <button class="small ghost" id="btnApplyGrid" style="width:100%;margin-bottom:8px;">Áp dụng lưới mới</button>
         <div class="field-row"><span>Tỷ lệ mặt nước</span>
           <span style="display:flex;align-items:center;gap:6px;">
             <input type="range" id="waterRatioInput" min="0" max="55" value="28" style="width:100px;">
             <span id="waterRatioLabel" style="min-width:30px;color:var(--text);">28%</span>
           </span>
         </div>
+        <div class="field-row"><span>Độ dàn trải mặt nước</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="waterSpreadInput" min="0" max="100" value="40" style="width:100px;">
+            <span id="waterSpreadLabel" style="min-width:30px;color:var(--text);">40%</span>
+          </span>
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="small ghost" id="btnRandomGen">🎲 Ngẫu nhiên</button>
           <button class="small ghost" id="btnClearMap">🗑️ Xoá hết</button>
         </div>
-      </div>
-    </div>
-
-    <div class="panel-block">
-      <div class="panel-header collapsed"><h4>Kích thước lưới</h4><span class="chev">▾</span></div>
-      <div class="panel-content collapsed">
-        <div class="field-row"><span>Cột × Hàng</span>
-          <span style="display:flex;gap:4px;">
-            <input type="number" id="gridCols" value="40" min="10" max="80" style="width:52px;">
-            <input type="number" id="gridRows" value="26" min="8" max="60" style="width:52px;">
-          </span>
-        </div>
-        <button class="small ghost" id="btnApplyGrid" style="width:100%;">Áp dụng lưới mới</button>
       </div>
     </div>
 
@@ -545,9 +551,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       <select id="aiCountSelect">
         <option value="1">1 AI (2 người chơi)</option>
         <option value="2">2 AI (3 người chơi)</option>
-        <option value="3" selected>3 AI (4 người chơi)</option>
+        <option value="3">3 AI (4 người chơi)</option>
         <option value="4">4 AI (5 người chơi)</option>
-        <option value="5">5 AI (6 người chơi)</option>
+        <option value="5" selected>5 AI (6 người chơi)</option>
       </select>
     </div>
 
@@ -563,6 +569,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <div class="setup-row" id="playerConfigRow">
       <label>Người chơi</label>
       <div id="playerConfigList"></div>
+    </div>
+
+    <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="toggleAlliance"> 🤝 Liên minh chống người dẫn đầu (AI yếu tạm ngừng đánh nhau, dồn lực vào kẻ mạnh nhất)</label>
     </div>
 
     <div class="setup-row">
@@ -943,12 +953,20 @@ function bridgeComponentOut(map, compTerrIds){
   }
 }
 
-function generateWaterMask(cols, rows, waterRatio){
+function generateWaterMask(cols, rows, waterRatio, spread){
   const total = cols*rows;
   const water = new Uint8Array(total);
   const targetWater = Math.round(total*clamp(waterRatio,0,0.7));
   if(targetWater<=0) return water;
-  const numBlobs = clamp(Math.round(Math.sqrt(cols*rows)/9), 1, 6);
+  // spread (0-1): how scattered the water is. At 0, few big blobs grow into large lakes/seas
+  // (the original behavior); at 1, the same total water area is seeded from many more, smaller
+  // blobs with a lower per-cell fill chance so the coastline comes out raggeder and more spread
+  // out across the map instead of piling into 1-2 big clumps.
+  const s = clamp(spread===undefined?0.4:spread, 0, 1);
+  const baseBlobs = clamp(Math.round(Math.sqrt(total)/9), 1, 6);
+  const maxBlobs = Math.max(baseBlobs, Math.round(total/120));
+  const numBlobs = clamp(Math.round(baseBlobs + s*(maxBlobs-baseBlobs)), 1, maxBlobs);
+  const fillProb = 0.88 - s*0.33;
   const allCells = [];
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) allCells.push([c,r]);
   const seeds = shuffle(allCells).slice(0, numBlobs);
@@ -977,7 +995,7 @@ function generateWaterMask(cols, rows, waterRatio){
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const idx = nr*cols+nc;
         if(water[idx]) continue;
-        if(Math.random()<0.82){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
+        if(Math.random()<fillProb){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
       }
     }
     frontier = next;
@@ -985,9 +1003,9 @@ function generateWaterMask(cols, rows, waterRatio){
   return water;
 }
 
-function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio){
+function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
-  const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio);
+  const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
   map.water = water; // keep for reference/export if needed later
 
   const landCells = [];
@@ -1157,9 +1175,14 @@ function getWaterRatio(){
   const el = document.getElementById('waterRatioInput');
   return el ? Number(el.value)/100 : 0.28;
 }
+function getWaterSpread(){
+  const el = document.getElementById('waterSpreadInput');
+  return el ? Number(el.value)/100 : 0.4;
+}
 
 function initEditorMap(){
-  mapData = generateRandomMap(40, 26, 22, 6, "Bản đồ của tôi", getWaterRatio());
+  const cols=100, rows=100;
+  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, "Bản đồ của tôi", getWaterRatio(), getWaterSpread());
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols;
   $('gridRows').value = mapData.rows;
@@ -1469,19 +1492,20 @@ function tradeInValue(tradeCount){
   return TRADE_VALUES[TRADE_VALUES.length-1] + (tradeCount-TRADE_VALUES.length+1)*5;
 }
 
-function initGame(numAI, difficulty, humanColor, spectator){
+// playerConfigs: [{name, color, personality, isHuman}, ...] — index 0 is "you" (a real human
+// unless spectator mode made them AI-controlled too), built by readPlayerConfigs() in the
+// setup screen.
+function initGame(playerConfigs, difficulty, spectator, allianceEnabled){
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
-  const numPlayers = numAI+1;
-  const startArmies = standardStartingArmies(numPlayers);
-  const colors = shuffle(PLAYER_COLORS.filter(c=>c.hex!==humanColor));
-  const players = [];
+  const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
   // the per-turn capturedThisTurn/killedThisTurn flags which reset every endTurn().
-  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0});
-  for(let i=0;i<numAI;i++){
-    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0});
-  }
+  const players = playerConfigs.map((cfg,id)=>({
+    id, name:cfg.name, isHuman:cfg.isHuman, color:cfg.color, alive:true, cards:[],
+    capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0,
+    personality: cfg.isHuman ? 'balanced' : cfg.personality, eliminatedRound:null,
+  }));
   const terrIds = shuffle(Object.keys(mapData.territories).map(Number));
   const owner = {}; const armies = {};
   terrIds.forEach((id,i)=>{ owner[id] = i % players.length; armies[id] = 1; });
@@ -1501,6 +1525,8 @@ function initGame(numAI, difficulty, humanColor, spectator){
     selectedFrom: null, selectedTo: null,
     log: [],
     over: false,
+    allianceEnabled: !!allianceEnabled,
+    biggestBattle: null, // set by recordBattleStat(), shown on the end-game summary screen
   };
   logMsg('info', 'Ván chơi bắt đầu! '+players.length+' người chơi trên bản đồ "'+mapData.name+'".');
 }
@@ -1738,12 +1764,22 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
   document.body.appendChild(overlay);
 }
 
+// Tracks the single attack (1 human click, or 1 AI battleBatch) with the highest combined
+// army loss across the whole game, shown on the end-game summary screen (showGameOver()).
+function recordBattleStat(attackerName, defenderName, fromName, toName, totalLoss){
+  if(totalLoss<=0) return;
+  if(!game.biggestBattle || totalLoss > game.biggestBattle.totalLoss){
+    game.biggestBattle = {attackerName, defenderName, fromName, toName, totalLoss, round: game.roundNumber};
+  }
+}
+
 function checkElimination(pid, byPid){
   if(pid===undefined) return;
   const p = game.players[pid];
   if(!p.alive) return;
   if(ownedTerritories(pid).length===0){
     p.alive=false;
+    p.eliminatedRound = game.roundNumber;
     logMsg('capture', `${p.name} đã bị loại khỏi ván chơi!`);
     // transfer cards
     const byP = game.players[byPid];
@@ -1836,15 +1872,38 @@ function endTurn(){
       The AI is also more cautious about picking fights with whoever is
       currently the strongest player (evaluatePlayerPower), unless it's
       already comparably strong itself.
+   4. PERSONALITY (per-AI flavor on top of difficulty): each AI player has a
+      `personality` (see AI_PERSONALITIES) that nudges the same knobs — how
+      big a reserve to keep, how eager to chase continents/kills — so AIs at
+      the same difficulty still play distinctly from each other.
+   5. ALLIANCE (optional, game.allianceEnabled): when on, an AI that isn't
+      currently the strongest player is reluctant to fight OTHER non-leaders
+      and instead prefers piling onto whoever IS the leader — a loose "gang
+      up on the leader" dynamic instead of every AI treating all rivals the
+      same.
    ========================================================================= */
 
-function difficultyProfile(diff){
+const AI_PERSONALITIES = {
+  balanced:    { label:'Cân bằng',              thresholdAdj: 0,     reserveMult:1.0, killBonusMult:1.0, continentBonusMult:1.0 },
+  turtle:      { label:'Rùa (thủ chắc)',         thresholdAdj: 0.4,   reserveMult:1.6, killBonusMult:0.7, continentBonusMult:1.2 },
+  rusher:      { label:'Xông pha (háo chiến)',   thresholdAdj:-0.35,  reserveMult:0.4, killBonusMult:1.0, continentBonusMult:0.8 },
+  opportunist: { label:'Cơ hội (săn con mồi yếu)', thresholdAdj:-0.1, reserveMult:0.9, killBonusMult:1.8, continentBonusMult:0.9 },
+};
+
+function difficultyProfile(diff, personality){
   // baseThreshold: minimum armies-vs-armies ratio required to attack at all.
   // reserveFactor: how much of a bordering third-party threat to keep in
   //   reserve rather than throw into an attack (higher = more cautious).
-  if(diff==='easy')  return {baseThreshold:2.0, reserveFactor:1.0};
-  if(diff==='hard')  return {baseThreshold:1.15, reserveFactor:0.3};
-  return {baseThreshold:1.5, reserveFactor:0.6};
+  const base = diff==='easy' ? {baseThreshold:2.0, reserveFactor:1.0}
+             : diff==='hard' ? {baseThreshold:1.15, reserveFactor:0.3}
+             : {baseThreshold:1.5, reserveFactor:0.6};
+  const trait = AI_PERSONALITIES[personality] || AI_PERSONALITIES.balanced;
+  return {
+    baseThreshold: Math.max(1.05, base.baseThreshold + trait.thresholdAdj),
+    reserveFactor: Math.max(0, base.reserveFactor * trait.reserveMult),
+    killBonusMult: trait.killBonusMult,
+    continentBonusMult: trait.continentBonusMult,
+  };
 }
 function difficultyThreshold(diff){ return difficultyProfile(diff).baseThreshold; }
 
@@ -1941,11 +2000,12 @@ function tradeCards(p, indices){
 function aiAttackStep(pid){
   game.phase='attack';
   const p = game.players[pid];
-  const profile = difficultyProfile(game.difficulty);
+  const profile = difficultyProfile(game.difficulty, p.personality);
   const opponents = game.players.filter(pl=>pl.alive && pl.id!==pid);
   const myPower = evaluatePlayerPower(pid);
   let leaderId = null, leaderPower = -1;
   opponents.forEach(pl=>{ const pw = evaluatePlayerPower(pl.id); if(pw>leaderPower){ leaderPower=pw; leaderId=pl.id; } });
+  const iAmLeader = pid===leaderId;
 
   // How many armies a territory should keep in reserve, sized to the strongest
   // enemy neighbor it borders OTHER than the one currently being considered.
@@ -1964,13 +2024,17 @@ function aiAttackStep(pid){
     if(usable<1) return null; // nothing safe to attack with once the reserve is set aside
     const ratio = (usable+1)/Math.max(1,game.armies[toId]);
     let bonus = 0;
-    if(completesContinentFor(pid, toId)) bonus += 2.5;
+    if(completesContinentFor(pid, toId)) bonus += 2.5*profile.continentBonusMult;
     const defenderId = game.owner[toId];
     const defP = defenderId!=null ? game.players[defenderId] : null;
     if(defP){
       const defTerrCount = ownedTerritories(defenderId).length;
-      if(defTerrCount<=2) bonus += 1.5 + defP.cards.length*0.4; // finish them off for the cards
+      if(defTerrCount<=2) bonus += (1.5 + defP.cards.length*0.4)*profile.killBonusMult; // finish them off for the cards
       if(defenderId===leaderId && myPower<leaderPower*1.1) bonus -= 0.6; // wary of picking a fight I can't afford
+      if(game.allianceEnabled && !iAmLeader){
+        if(defenderId===leaderId) bonus += 1.2;   // gang up on whoever is currently strongest
+        else bonus -= 0.8;                        // reluctant to fight a fellow underdog instead
+      }
     }
     return {ratio, score:ratio+bonus, bonus};
   }
@@ -1982,7 +2046,7 @@ function aiAttackStep(pid){
   // rounds get folded into one combat-log line, since the in-between rounds have no delay
   // to actually be seen anyway.
   const BATCH_GUARD = 5000;
-  function battleBatch(fromId, toId){
+  function battleBatch(fromId, toId, fromName, toName, defenderName){
     let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
     while(rounds<BATCH_GUARD){
       if(game.armies[fromId]<2) break;
@@ -1994,6 +2058,11 @@ function aiAttackStep(pid){
       rounds++;
       attLossTotal += lastRes.attLoss;
       defLossTotal += lastRes.defLoss;
+      // Recorded every round (not just once after the loop) so that if THIS round's capture
+      // ends the game (checkElimination -> checkWinCondition -> showGameOver runs synchronously
+      // inside doBattle, before control even returns here), the summary screen already reflects
+      // this battle's running total instead of a stale earlier record.
+      recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
       if(lastRes.captured){ captured=true; break; }
     }
     return {rounds, attLossTotal, defLossTotal, captured, lastRes};
@@ -2023,7 +2092,8 @@ function aiAttackStep(pid){
 
     const { from, to } = bestOpt;
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
-    const result = battleBatch(from, to);
+    const defenderName = game.players[game.owner[to]].name;
+    const result = battleBatch(from, to, fromName, toName, defenderName);
     if(result.rounds>0){
       const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
       logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`);
@@ -2285,7 +2355,11 @@ function renderPhaseActions(){
     const atkBtn = el('button','danger','⚔️ Tấn công'); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
     atkBtn.addEventListener('click', ()=>{
       if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)){
-        doBattle(game.selectedFrom, game.selectedTo);
+        const fromId = game.selectedFrom, toId = game.selectedTo;
+        const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
+        const defenderName = game.players[game.owner[toId]].name;
+        const res = doBattle(fromId, toId);
+        recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
         if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
         renderGame();
       }
@@ -2506,8 +2580,34 @@ function openCardsModal(forced){
 
 function showGameOver(winner){
   const overlay = el('div',''); overlay.id='gameOverOverlay';
-  overlay.innerHTML = `<h1>${winner? '🏆 '+winner.name+' Chiến Thắng!' : 'Ván chơi kết thúc'}</h1>
-    <p>${winner && winner.isHuman? 'Chúc mừng, bạn đã chinh phục toàn bộ bản đồ!' : winner? 'Đối thủ AI đã chinh phục toàn bộ bản đồ.' : ''}</p>`;
+  let html = `<h1>${winner? '🏆 '+winner.name+' Chiến Thắng!' : 'Ván chơi kết thúc'}</h1>
+    <p>${winner && winner.isHuman? 'Chúc mừng, bạn đã chinh phục toàn bộ bản đồ!' : winner? 'Đối thủ AI đã chinh phục toàn bộ bản đồ.' : ''}</p>
+    <p style="font-size:13px;">Ván đấu kéo dài ${game.roundNumber} vòng.</p>`;
+
+  const rows = game.players.map(p=>({p, terr: ownedTerritories(p.id).length}))
+    .sort((a,b)=> (b.p.alive - a.p.alive) || (b.terr - a.terr) || (b.p.totalKills - a.p.totalKills));
+  html += `<div class="summary-table-wrap"><table class="summary-table"><thead><tr>
+    <th></th><th>Người chơi</th><th>Trạng thái</th><th>Lãnh thổ</th><th>📦 Viện binh</th><th>😵 Tiêu diệt</th>
+    </tr></thead><tbody>`;
+  rows.forEach(({p,terr})=>{
+    const status = p.alive ? 'Còn sống' : ('Bị loại'+(p.eliminatedRound? ' (vòng '+p.eliminatedRound+')' : ''));
+    html += `<tr>
+      <td><span class="pdot" style="background:${p.color}"></span></td>
+      <td>${p.name}${p.isHuman?' (Bạn)':''}</td>
+      <td>${status}</td>
+      <td>${terr}</td>
+      <td>${p.totalReinforced}</td>
+      <td>${p.totalKills}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+
+  if(game.biggestBattle){
+    const b = game.biggestBattle;
+    html += `<p style="font-size:13px;">⚔️ Trận đánh lớn nhất: <b>${b.attackerName}</b> tấn công <b>${b.toName}</b> (${b.defenderName}) từ ${b.fromName} — tổng cộng ${b.totalLoss} quân tổn thất, ở vòng ${b.round}.</p>`;
+  }
+
+  overlay.innerHTML = html;
   const backBtn = el('button','primary','Về Menu chính');
   backBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); showScreen('screen-menu'); });
   overlay.appendChild(backBtn);
@@ -2598,16 +2698,74 @@ function goToSetup(){
   renderPlayerConfigList();
   showScreen('screen-setup');
 }
+// Remembers name/color/personality edits across re-renders (changing aiCountSelect or
+// toggling spectator mode) within the same visit to the setup screen. Index 0 is "you" —
+// still a real slot even in spectator mode, where it becomes an AI-controlled player too.
+let playerConfigDraft = [];
+
+// Two color <select>s can't hold the same color: picking a color already used by another
+// row swaps it with that row's previous color instead, so all rows stay distinct.
+function wireColorSelect(sel, dot){
+  sel.addEventListener('change', ()=>{
+    const newHex = sel.value, oldHex = dot.dataset.hex;
+    document.querySelectorAll('#playerConfigList .player-color-select').forEach(other=>{
+      if(other===sel || other.value!==newHex) return;
+      other.value = oldHex;
+      const otherDot = other.closest('.player-config').querySelector('.pdot');
+      otherDot.style.background = oldHex; otherDot.dataset.hex = oldHex;
+    });
+    dot.style.background = newHex; dot.dataset.hex = newHex;
+  });
+}
+
 function renderPlayerConfigList(){
   const wrap = $('playerConfigList'); wrap.innerHTML='';
-  const row = el('div','player-config');
-  const dot = el('div','pdot'); dot.style.background=PLAYER_COLORS[0].hex;
-  const span = el('span','','Bạn (người chơi)');
-  const sel = el('select'); sel.id='humanColorSelect';
-  PLAYER_COLORS.forEach(c=>{ const opt=el('option','',c.name); opt.value=c.hex; sel.appendChild(opt); });
-  sel.addEventListener('change', ()=>{ dot.style.background = sel.value; });
-  row.appendChild(dot); row.appendChild(span); row.appendChild(sel);
-  wrap.appendChild(row);
+  const numAI = Number($('aiCountSelect').value);
+  const spectator = $('toggleSpectatorMode').checked;
+  const totalSlots = numAI+1;
+  for(let i=0;i<totalSlots;i++){
+    const isYou = i===0;
+    const draft = playerConfigDraft[i] || {};
+    const defaultColor = draft.color || PLAYER_COLORS[i % PLAYER_COLORS.length].hex;
+
+    const row = el('div','player-config');
+    const dot = el('div','pdot'); dot.style.background=defaultColor; dot.dataset.hex=defaultColor;
+
+    const nameInput = el('input'); nameInput.type='text'; nameInput.className='player-name-input';
+    nameInput.value = draft.name || (isYou ? 'Bạn' : ('AI '+(i+1)));
+
+    const persSel = el('select'); persSel.className='player-personality-select';
+    Object.keys(AI_PERSONALITIES).forEach(key=>{
+      const opt = el('option','',AI_PERSONALITIES[key].label); opt.value=key;
+      persSel.appendChild(opt);
+    });
+    persSel.value = draft.personality || 'balanced';
+    if(isYou && !spectator){
+      persSel.disabled = true;
+      persSel.title = 'Chỉ áp dụng khi bạn để AI chơi thay (bật "Chế độ xem AI đấu với nhau")';
+    }
+
+    const colorSel = el('select'); colorSel.className='player-color-select';
+    PLAYER_COLORS.forEach(c=>{ const opt=el('option','',c.name); opt.value=c.hex; colorSel.appendChild(opt); });
+    colorSel.value = defaultColor;
+    wireColorSelect(colorSel, dot);
+
+    row.appendChild(dot); row.appendChild(nameInput); row.appendChild(persSel); row.appendChild(colorSel);
+    wrap.appendChild(row);
+  }
+}
+
+function readPlayerConfigs(){
+  const spectator = $('toggleSpectatorMode').checked;
+  const rows = Array.from(document.querySelectorAll('#playerConfigList .player-config'));
+  const configs = rows.map((row,i)=>({
+    name: row.querySelector('.player-name-input').value.trim() || (i===0 ? 'Bạn' : ('AI '+(i+1))),
+    color: row.querySelector('.player-color-select').value,
+    personality: row.querySelector('.player-personality-select').value,
+    isHuman: i===0 && !spectator,
+  }));
+  playerConfigDraft = configs.map(c=>({name:c.name, color:c.color, personality:c.personality}));
+  return configs;
 }
 
 // Accordion (collapsible sidebar sections)
@@ -2640,10 +2798,11 @@ $('btnNewTerr').addEventListener('click', ()=>{
 });
 $('btnNewCont').addEventListener('click', ()=>{ createContinent(mapData); renderEditorLists(); });
 $('waterRatioInput').addEventListener('input', (e)=>{ $('waterRatioLabel').textContent = e.target.value+'%'; });
+$('waterSpreadInput').addEventListener('input', (e)=>{ $('waterSpreadLabel').textContent = e.target.value+'%'; });
 $('btnRandomGen').addEventListener('click', ()=>{
   if(!confirm('Tạo bản đồ ngẫu nhiên mới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
-  const cols = Number($('gridCols').value)||40, rows = Number($('gridRows').value)||26;
-  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, $('mapNameInput').value, getWaterRatio());
+  const cols = Number($('gridCols').value)||100, rows = Number($('gridRows').value)||100;
+  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, $('mapNameInput').value, getWaterRatio(), getWaterSpread());
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnClearMap').addEventListener('click', ()=>{
@@ -2653,8 +2812,8 @@ $('btnClearMap').addEventListener('click', ()=>{
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnApplyGrid').addEventListener('click', ()=>{
-  const cols = clamp(Number($('gridCols').value)||40,10,80);
-  const rows = clamp(Number($('gridRows').value)||26,8,60);
+  const cols = clamp(Number($('gridCols').value)||100,10,200);
+  const rows = clamp(Number($('gridRows').value)||100,10,200);
   if(!confirm('Đổi kích thước lưới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
   mapData = newMap(cols,rows,$('mapNameInput').value);
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
@@ -2684,12 +2843,13 @@ window.addEventListener('pointercancel', editorPointerUp);
 
 // Setup wiring
 $('btnBackFromSetup').addEventListener('click', ()=> showScreen('screen-menu'));
+$('aiCountSelect').addEventListener('change', renderPlayerConfigList);
 $('btnStartGame').addEventListener('click', ()=>{
-  const numAI = Number($('aiCountSelect').value);
   const diff = $('aiDifficultySelect').value;
-  const humanColor = $('humanColorSelect').value;
   const spectator = $('toggleSpectatorMode').checked;
-  initGame(numAI, diff, humanColor, spectator);
+  const alliance = $('toggleAlliance').checked;
+  const playerConfigs = readPlayerConfigs();
+  initGame(playerConfigs, diff, spectator, alliance);
   showScreen('screen-game');
   renderGame();
   if(RUNTIME_CONFIG.manualInitialPlacement){
@@ -2699,9 +2859,9 @@ $('btnStartGame').addEventListener('click', ()=>{
     beginReinforcePhase();
   }
 });
-$('toggleSpectatorMode').addEventListener('change', (e)=>{
-  const on = e.target.checked;
-  $('playerConfigRow').style.display = on ? 'none' : '';
+$('toggleSpectatorMode').addEventListener('change', ()=>{
+  readPlayerConfigs(); // keep whatever the user already typed/picked before re-rendering
+  renderPlayerConfigList();
 });
 
 // Game wiring

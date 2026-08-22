@@ -28,15 +28,38 @@
       The AI is also more cautious about picking fights with whoever is
       currently the strongest player (evaluatePlayerPower), unless it's
       already comparably strong itself.
+   4. PERSONALITY (per-AI flavor on top of difficulty): each AI player has a
+      `personality` (see AI_PERSONALITIES) that nudges the same knobs — how
+      big a reserve to keep, how eager to chase continents/kills — so AIs at
+      the same difficulty still play distinctly from each other.
+   5. ALLIANCE (optional, game.allianceEnabled): when on, an AI that isn't
+      currently the strongest player is reluctant to fight OTHER non-leaders
+      and instead prefers piling onto whoever IS the leader — a loose "gang
+      up on the leader" dynamic instead of every AI treating all rivals the
+      same.
    ========================================================================= */
 
-function difficultyProfile(diff){
+const AI_PERSONALITIES = {
+  balanced:    { label:'Cân bằng',              thresholdAdj: 0,     reserveMult:1.0, killBonusMult:1.0, continentBonusMult:1.0 },
+  turtle:      { label:'Rùa (thủ chắc)',         thresholdAdj: 0.4,   reserveMult:1.6, killBonusMult:0.7, continentBonusMult:1.2 },
+  rusher:      { label:'Xông pha (háo chiến)',   thresholdAdj:-0.35,  reserveMult:0.4, killBonusMult:1.0, continentBonusMult:0.8 },
+  opportunist: { label:'Cơ hội (săn con mồi yếu)', thresholdAdj:-0.1, reserveMult:0.9, killBonusMult:1.8, continentBonusMult:0.9 },
+};
+
+function difficultyProfile(diff, personality){
   // baseThreshold: minimum armies-vs-armies ratio required to attack at all.
   // reserveFactor: how much of a bordering third-party threat to keep in
   //   reserve rather than throw into an attack (higher = more cautious).
-  if(diff==='easy')  return {baseThreshold:2.0, reserveFactor:1.0};
-  if(diff==='hard')  return {baseThreshold:1.15, reserveFactor:0.3};
-  return {baseThreshold:1.5, reserveFactor:0.6};
+  const base = diff==='easy' ? {baseThreshold:2.0, reserveFactor:1.0}
+             : diff==='hard' ? {baseThreshold:1.15, reserveFactor:0.3}
+             : {baseThreshold:1.5, reserveFactor:0.6};
+  const trait = AI_PERSONALITIES[personality] || AI_PERSONALITIES.balanced;
+  return {
+    baseThreshold: Math.max(1.05, base.baseThreshold + trait.thresholdAdj),
+    reserveFactor: Math.max(0, base.reserveFactor * trait.reserveMult),
+    killBonusMult: trait.killBonusMult,
+    continentBonusMult: trait.continentBonusMult,
+  };
 }
 function difficultyThreshold(diff){ return difficultyProfile(diff).baseThreshold; }
 
@@ -133,11 +156,12 @@ function tradeCards(p, indices){
 function aiAttackStep(pid){
   game.phase='attack';
   const p = game.players[pid];
-  const profile = difficultyProfile(game.difficulty);
+  const profile = difficultyProfile(game.difficulty, p.personality);
   const opponents = game.players.filter(pl=>pl.alive && pl.id!==pid);
   const myPower = evaluatePlayerPower(pid);
   let leaderId = null, leaderPower = -1;
   opponents.forEach(pl=>{ const pw = evaluatePlayerPower(pl.id); if(pw>leaderPower){ leaderPower=pw; leaderId=pl.id; } });
+  const iAmLeader = pid===leaderId;
 
   // How many armies a territory should keep in reserve, sized to the strongest
   // enemy neighbor it borders OTHER than the one currently being considered.
@@ -156,13 +180,17 @@ function aiAttackStep(pid){
     if(usable<1) return null; // nothing safe to attack with once the reserve is set aside
     const ratio = (usable+1)/Math.max(1,game.armies[toId]);
     let bonus = 0;
-    if(completesContinentFor(pid, toId)) bonus += 2.5;
+    if(completesContinentFor(pid, toId)) bonus += 2.5*profile.continentBonusMult;
     const defenderId = game.owner[toId];
     const defP = defenderId!=null ? game.players[defenderId] : null;
     if(defP){
       const defTerrCount = ownedTerritories(defenderId).length;
-      if(defTerrCount<=2) bonus += 1.5 + defP.cards.length*0.4; // finish them off for the cards
+      if(defTerrCount<=2) bonus += (1.5 + defP.cards.length*0.4)*profile.killBonusMult; // finish them off for the cards
       if(defenderId===leaderId && myPower<leaderPower*1.1) bonus -= 0.6; // wary of picking a fight I can't afford
+      if(game.allianceEnabled && !iAmLeader){
+        if(defenderId===leaderId) bonus += 1.2;   // gang up on whoever is currently strongest
+        else bonus -= 0.8;                        // reluctant to fight a fellow underdog instead
+      }
     }
     return {ratio, score:ratio+bonus, bonus};
   }
@@ -174,7 +202,7 @@ function aiAttackStep(pid){
   // rounds get folded into one combat-log line, since the in-between rounds have no delay
   // to actually be seen anyway.
   const BATCH_GUARD = 5000;
-  function battleBatch(fromId, toId){
+  function battleBatch(fromId, toId, fromName, toName, defenderName){
     let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
     while(rounds<BATCH_GUARD){
       if(game.armies[fromId]<2) break;
@@ -186,6 +214,11 @@ function aiAttackStep(pid){
       rounds++;
       attLossTotal += lastRes.attLoss;
       defLossTotal += lastRes.defLoss;
+      // Recorded every round (not just once after the loop) so that if THIS round's capture
+      // ends the game (checkElimination -> checkWinCondition -> showGameOver runs synchronously
+      // inside doBattle, before control even returns here), the summary screen already reflects
+      // this battle's running total instead of a stale earlier record.
+      recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
       if(lastRes.captured){ captured=true; break; }
     }
     return {rounds, attLossTotal, defLossTotal, captured, lastRes};
@@ -215,7 +248,8 @@ function aiAttackStep(pid){
 
     const { from, to } = bestOpt;
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
-    const result = battleBatch(from, to);
+    const defenderName = game.players[game.owner[to]].name;
+    const result = battleBatch(from, to, fromName, toName, defenderName);
     if(result.rounds>0){
       const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
       logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`);

@@ -18,19 +18,20 @@ function tradeInValue(tradeCount){
   return TRADE_VALUES[TRADE_VALUES.length-1] + (tradeCount-TRADE_VALUES.length+1)*5;
 }
 
-function initGame(numAI, difficulty, humanColor, spectator){
+// playerConfigs: [{name, color, personality, isHuman}, ...] — index 0 is "you" (a real human
+// unless spectator mode made them AI-controlled too), built by readPlayerConfigs() in the
+// setup screen.
+function initGame(playerConfigs, difficulty, spectator, allianceEnabled){
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
-  const numPlayers = numAI+1;
-  const startArmies = standardStartingArmies(numPlayers);
-  const colors = shuffle(PLAYER_COLORS.filter(c=>c.hex!==humanColor));
-  const players = [];
+  const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
   // the per-turn capturedThisTurn/killedThisTurn flags which reset every endTurn().
-  players.push({id:0, name: spectatorMode ? 'AI 1' : 'Bạn', isHuman: !spectatorMode, color:humanColor, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0});
-  for(let i=0;i<numAI;i++){
-    players.push({id:i+1, name:'AI '+(i+2), isHuman:false, color:colors[i%colors.length].hex, alive:true, cards:[], capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0});
-  }
+  const players = playerConfigs.map((cfg,id)=>({
+    id, name:cfg.name, isHuman:cfg.isHuman, color:cfg.color, alive:true, cards:[],
+    capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0,
+    personality: cfg.isHuman ? 'balanced' : cfg.personality, eliminatedRound:null,
+  }));
   const terrIds = shuffle(Object.keys(mapData.territories).map(Number));
   const owner = {}; const armies = {};
   terrIds.forEach((id,i)=>{ owner[id] = i % players.length; armies[id] = 1; });
@@ -50,6 +51,8 @@ function initGame(numAI, difficulty, humanColor, spectator){
     selectedFrom: null, selectedTo: null,
     log: [],
     over: false,
+    allianceEnabled: !!allianceEnabled,
+    biggestBattle: null, // set by recordBattleStat(), shown on the end-game summary screen
   };
   logMsg('info', 'Ván chơi bắt đầu! '+players.length+' người chơi trên bản đồ "'+mapData.name+'".');
 }
@@ -287,12 +290,22 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
   document.body.appendChild(overlay);
 }
 
+// Tracks the single attack (1 human click, or 1 AI battleBatch) with the highest combined
+// army loss across the whole game, shown on the end-game summary screen (showGameOver()).
+function recordBattleStat(attackerName, defenderName, fromName, toName, totalLoss){
+  if(totalLoss<=0) return;
+  if(!game.biggestBattle || totalLoss > game.biggestBattle.totalLoss){
+    game.biggestBattle = {attackerName, defenderName, fromName, toName, totalLoss, round: game.roundNumber};
+  }
+}
+
 function checkElimination(pid, byPid){
   if(pid===undefined) return;
   const p = game.players[pid];
   if(!p.alive) return;
   if(ownedTerritories(pid).length===0){
     p.alive=false;
+    p.eliminatedRound = game.roundNumber;
     logMsg('capture', `${p.name} đã bị loại khỏi ván chơi!`);
     // transfer cards
     const byP = game.players[byPid];

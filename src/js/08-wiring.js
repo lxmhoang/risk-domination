@@ -81,16 +81,74 @@ function goToSetup(){
   renderPlayerConfigList();
   showScreen('screen-setup');
 }
+// Remembers name/color/personality edits across re-renders (changing aiCountSelect or
+// toggling spectator mode) within the same visit to the setup screen. Index 0 is "you" —
+// still a real slot even in spectator mode, where it becomes an AI-controlled player too.
+let playerConfigDraft = [];
+
+// Two color <select>s can't hold the same color: picking a color already used by another
+// row swaps it with that row's previous color instead, so all rows stay distinct.
+function wireColorSelect(sel, dot){
+  sel.addEventListener('change', ()=>{
+    const newHex = sel.value, oldHex = dot.dataset.hex;
+    document.querySelectorAll('#playerConfigList .player-color-select').forEach(other=>{
+      if(other===sel || other.value!==newHex) return;
+      other.value = oldHex;
+      const otherDot = other.closest('.player-config').querySelector('.pdot');
+      otherDot.style.background = oldHex; otherDot.dataset.hex = oldHex;
+    });
+    dot.style.background = newHex; dot.dataset.hex = newHex;
+  });
+}
+
 function renderPlayerConfigList(){
   const wrap = $('playerConfigList'); wrap.innerHTML='';
-  const row = el('div','player-config');
-  const dot = el('div','pdot'); dot.style.background=PLAYER_COLORS[0].hex;
-  const span = el('span','','Bạn (người chơi)');
-  const sel = el('select'); sel.id='humanColorSelect';
-  PLAYER_COLORS.forEach(c=>{ const opt=el('option','',c.name); opt.value=c.hex; sel.appendChild(opt); });
-  sel.addEventListener('change', ()=>{ dot.style.background = sel.value; });
-  row.appendChild(dot); row.appendChild(span); row.appendChild(sel);
-  wrap.appendChild(row);
+  const numAI = Number($('aiCountSelect').value);
+  const spectator = $('toggleSpectatorMode').checked;
+  const totalSlots = numAI+1;
+  for(let i=0;i<totalSlots;i++){
+    const isYou = i===0;
+    const draft = playerConfigDraft[i] || {};
+    const defaultColor = draft.color || PLAYER_COLORS[i % PLAYER_COLORS.length].hex;
+
+    const row = el('div','player-config');
+    const dot = el('div','pdot'); dot.style.background=defaultColor; dot.dataset.hex=defaultColor;
+
+    const nameInput = el('input'); nameInput.type='text'; nameInput.className='player-name-input';
+    nameInput.value = draft.name || (isYou ? 'Bạn' : ('AI '+(i+1)));
+
+    const persSel = el('select'); persSel.className='player-personality-select';
+    Object.keys(AI_PERSONALITIES).forEach(key=>{
+      const opt = el('option','',AI_PERSONALITIES[key].label); opt.value=key;
+      persSel.appendChild(opt);
+    });
+    persSel.value = draft.personality || 'balanced';
+    if(isYou && !spectator){
+      persSel.disabled = true;
+      persSel.title = 'Chỉ áp dụng khi bạn để AI chơi thay (bật "Chế độ xem AI đấu với nhau")';
+    }
+
+    const colorSel = el('select'); colorSel.className='player-color-select';
+    PLAYER_COLORS.forEach(c=>{ const opt=el('option','',c.name); opt.value=c.hex; colorSel.appendChild(opt); });
+    colorSel.value = defaultColor;
+    wireColorSelect(colorSel, dot);
+
+    row.appendChild(dot); row.appendChild(nameInput); row.appendChild(persSel); row.appendChild(colorSel);
+    wrap.appendChild(row);
+  }
+}
+
+function readPlayerConfigs(){
+  const spectator = $('toggleSpectatorMode').checked;
+  const rows = Array.from(document.querySelectorAll('#playerConfigList .player-config'));
+  const configs = rows.map((row,i)=>({
+    name: row.querySelector('.player-name-input').value.trim() || (i===0 ? 'Bạn' : ('AI '+(i+1))),
+    color: row.querySelector('.player-color-select').value,
+    personality: row.querySelector('.player-personality-select').value,
+    isHuman: i===0 && !spectator,
+  }));
+  playerConfigDraft = configs.map(c=>({name:c.name, color:c.color, personality:c.personality}));
+  return configs;
 }
 
 // Accordion (collapsible sidebar sections)
@@ -123,10 +181,11 @@ $('btnNewTerr').addEventListener('click', ()=>{
 });
 $('btnNewCont').addEventListener('click', ()=>{ createContinent(mapData); renderEditorLists(); });
 $('waterRatioInput').addEventListener('input', (e)=>{ $('waterRatioLabel').textContent = e.target.value+'%'; });
+$('waterSpreadInput').addEventListener('input', (e)=>{ $('waterSpreadLabel').textContent = e.target.value+'%'; });
 $('btnRandomGen').addEventListener('click', ()=>{
   if(!confirm('Tạo bản đồ ngẫu nhiên mới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
-  const cols = Number($('gridCols').value)||40, rows = Number($('gridRows').value)||26;
-  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, $('mapNameInput').value, getWaterRatio());
+  const cols = Number($('gridCols').value)||100, rows = Number($('gridRows').value)||100;
+  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, $('mapNameInput').value, getWaterRatio(), getWaterSpread());
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnClearMap').addEventListener('click', ()=>{
@@ -136,8 +195,8 @@ $('btnClearMap').addEventListener('click', ()=>{
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnApplyGrid').addEventListener('click', ()=>{
-  const cols = clamp(Number($('gridCols').value)||40,10,80);
-  const rows = clamp(Number($('gridRows').value)||26,8,60);
+  const cols = clamp(Number($('gridCols').value)||100,10,200);
+  const rows = clamp(Number($('gridRows').value)||100,10,200);
   if(!confirm('Đổi kích thước lưới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
   mapData = newMap(cols,rows,$('mapNameInput').value);
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
@@ -167,12 +226,13 @@ window.addEventListener('pointercancel', editorPointerUp);
 
 // Setup wiring
 $('btnBackFromSetup').addEventListener('click', ()=> showScreen('screen-menu'));
+$('aiCountSelect').addEventListener('change', renderPlayerConfigList);
 $('btnStartGame').addEventListener('click', ()=>{
-  const numAI = Number($('aiCountSelect').value);
   const diff = $('aiDifficultySelect').value;
-  const humanColor = $('humanColorSelect').value;
   const spectator = $('toggleSpectatorMode').checked;
-  initGame(numAI, diff, humanColor, spectator);
+  const alliance = $('toggleAlliance').checked;
+  const playerConfigs = readPlayerConfigs();
+  initGame(playerConfigs, diff, spectator, alliance);
   showScreen('screen-game');
   renderGame();
   if(RUNTIME_CONFIG.manualInitialPlacement){
@@ -182,9 +242,9 @@ $('btnStartGame').addEventListener('click', ()=>{
     beginReinforcePhase();
   }
 });
-$('toggleSpectatorMode').addEventListener('change', (e)=>{
-  const on = e.target.checked;
-  $('playerConfigRow').style.display = on ? 'none' : '';
+$('toggleSpectatorMode').addEventListener('change', ()=>{
+  readPlayerConfigs(); // keep whatever the user already typed/picked before re-rendering
+  renderPlayerConfigList();
 });
 
 // Game wiring

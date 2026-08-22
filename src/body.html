@@ -81,29 +81,29 @@
       <div class="panel-header"><h4>Bản đồ</h4><span class="chev">▾</span></div>
       <div class="panel-content">
         <input type="text" id="mapNameInput" value="Bản đồ của tôi" style="width:100%;margin-bottom:8px;">
+        <div class="field-row"><span>Cột × Hàng</span>
+          <span style="display:flex;gap:4px;">
+            <input type="number" id="gridCols" value="100" min="10" max="200" style="width:52px;">
+            <input type="number" id="gridRows" value="100" min="10" max="200" style="width:52px;">
+          </span>
+        </div>
+        <button class="small ghost" id="btnApplyGrid" style="width:100%;margin-bottom:8px;">Áp dụng lưới mới</button>
         <div class="field-row"><span>Tỷ lệ mặt nước</span>
           <span style="display:flex;align-items:center;gap:6px;">
             <input type="range" id="waterRatioInput" min="0" max="55" value="28" style="width:100px;">
             <span id="waterRatioLabel" style="min-width:30px;color:var(--text);">28%</span>
           </span>
         </div>
+        <div class="field-row"><span>Độ dàn trải mặt nước</span>
+          <span style="display:flex;align-items:center;gap:6px;">
+            <input type="range" id="waterSpreadInput" min="0" max="100" value="40" style="width:100px;">
+            <span id="waterSpreadLabel" style="min-width:30px;color:var(--text);">40%</span>
+          </span>
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="small ghost" id="btnRandomGen">🎲 Ngẫu nhiên</button>
           <button class="small ghost" id="btnClearMap">🗑️ Xoá hết</button>
         </div>
-      </div>
-    </div>
-
-    <div class="panel-block">
-      <div class="panel-header collapsed"><h4>Kích thước lưới</h4><span class="chev">▾</span></div>
-      <div class="panel-content collapsed">
-        <div class="field-row"><span>Cột × Hàng</span>
-          <span style="display:flex;gap:4px;">
-            <input type="number" id="gridCols" value="40" min="10" max="80" style="width:52px;">
-            <input type="number" id="gridRows" value="26" min="8" max="60" style="width:52px;">
-          </span>
-        </div>
-        <button class="small ghost" id="btnApplyGrid" style="width:100%;">Áp dụng lưới mới</button>
       </div>
     </div>
 
@@ -175,9 +175,9 @@
       <select id="aiCountSelect">
         <option value="1">1 AI (2 người chơi)</option>
         <option value="2">2 AI (3 người chơi)</option>
-        <option value="3" selected>3 AI (4 người chơi)</option>
+        <option value="3">3 AI (4 người chơi)</option>
         <option value="4">4 AI (5 người chơi)</option>
-        <option value="5">5 AI (6 người chơi)</option>
+        <option value="5" selected>5 AI (6 người chơi)</option>
       </select>
     </div>
 
@@ -193,6 +193,10 @@
     <div class="setup-row" id="playerConfigRow">
       <label>Người chơi</label>
       <div id="playerConfigList"></div>
+    </div>
+
+    <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="toggleAlliance"> 🤝 Liên minh chống người dẫn đầu (AI yếu tạm ngừng đánh nhau, dồn lực vào kẻ mạnh nhất)</label>
     </div>
 
     <div class="setup-row">
