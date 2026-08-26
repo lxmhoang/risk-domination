@@ -44,6 +44,36 @@ function newMap(cols, rows, name){
   };
 }
 
+// Plain-JSON (de)serialization of a map, shared by the editor's export/import (03-editor.js)
+// and by game save/load (04-game-state.js) — a saved-game file bundles one of these alongside
+// the game state so loading it doesn't depend on whatever map happens to be open already.
+function mapToPlainObject(map){
+  return {
+    name: map.name, cols: map.cols, rows: map.rows, cellSize: map.cellSize,
+    cellTerritory: Array.from(map.cellTerritory),
+    territories: Object.values(map.territories).map(t=>({id:t.id,name:t.name,continentId:t.continentId,color:t.color})),
+    continents: Object.values(map.continents).map(c=>({id:c.id,name:c.name,color:c.color,bonus:c.bonus})),
+    nextTerrId: map.nextTerrId, nextContId: map.nextContId,
+  };
+}
+function mapFromPlainObject(obj){
+  const map = newMap(obj.cols, obj.rows, obj.name);
+  map.cellSize = obj.cellSize || map.cellSize;
+  map.cellTerritory = new Int16Array(obj.cellTerritory);
+  (obj.territories||[]).forEach(t=>{
+    map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
+  });
+  (obj.continents||[]).forEach(c=>{ map.continents[c.id] = {id:c.id,name:c.name,color:c.color,bonus:c.bonus}; });
+  for(let r=0;r<map.rows;r++) for(let c=0;c<map.cols;c++){
+    const id = map.cellTerritory[cellIndex(map,c,r)];
+    if(id!==-1 && map.territories[id]) map.territories[id].cells.push([c,r]);
+  }
+  map.nextTerrId = obj.nextTerrId || (Math.max(0,...Object.keys(map.territories).map(Number))+1);
+  map.nextContId = obj.nextContId || (Math.max(0,...Object.keys(map.continents).map(Number))+1);
+  recomputeGraph(map);
+  return map;
+}
+
 function cellIndex(map,c,r){ return r*map.cols + c; }
 function inBounds(map,c,r){ return c>=0 && c<map.cols && r>=0 && r<map.rows; }
 

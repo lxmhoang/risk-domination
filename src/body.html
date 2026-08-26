@@ -22,6 +22,10 @@
         <h3><span class="emoji">📂</span> Tải bản đồ đã lưu</h3>
         <p>Nhập file bản đồ JSON đã xuất trước đó để chỉnh sửa hoặc chơi lại.</p>
       </div>
+      <div class="menu-card" id="btnLoadGame">
+        <h3><span class="emoji">💾</span> Tải ván chơi đã lưu</h3>
+        <p>Chơi tiếp 1 ván dở dang đã lưu ra file trước đó — đúng lượt, đúng quân số.</p>
+      </div>
       <div class="menu-card" id="btnHowTo">
         <h3><span class="emoji">📖</span> Luật chơi</h3>
         <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
@@ -32,6 +36,7 @@
       </div>
     </div>
     <input type="file" id="loadMapInput" accept=".json" class="hidden">
+    <input type="file" id="loadGameInput" accept=".json" class="hidden">
   </div>
 </div>
 
@@ -235,6 +240,7 @@
       <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍<span class="btn-label"> Xem châu lục <span style="opacity:.6;">(Space)</span></span></label>
       <button class="small ghost" id="btnToggleLog" aria-label="Thu gọn/mở nhật ký trận đấu">📜</button>
       <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
+      <button class="small ghost" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾<span class="btn-label"> Lưu</span></button>
       <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
     </div>
   </div>

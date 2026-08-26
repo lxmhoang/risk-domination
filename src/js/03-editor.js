@@ -278,13 +278,7 @@ function validateMap(){
 }
 
 function exportMapJSON(){
-  const out = {
-    name: mapData.name, cols: mapData.cols, rows: mapData.rows, cellSize: mapData.cellSize,
-    cellTerritory: Array.from(mapData.cellTerritory),
-    territories: Object.values(mapData.territories).map(t=>({id:t.id,name:t.name,continentId:t.continentId,color:t.color})),
-    continents: Object.values(mapData.continents).map(c=>({id:c.id,name:c.name,color:c.color,bonus:c.bonus})),
-    nextTerrId: mapData.nextTerrId, nextContId: mapData.nextContId
-  };
+  const out = mapToPlainObject(mapData);
   const blob = new Blob([JSON.stringify(out,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -294,21 +288,7 @@ function exportMapJSON(){
 }
 
 function importMapJSON(obj){
-  const map = newMap(obj.cols, obj.rows, obj.name);
-  map.cellSize = obj.cellSize || map.cellSize;
-  map.cellTerritory = new Int16Array(obj.cellTerritory);
-  (obj.territories||[]).forEach(t=>{
-    map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
-  });
-  (obj.continents||[]).forEach(c=>{ map.continents[c.id] = {id:c.id,name:c.name,color:c.color,bonus:c.bonus}; });
-  for(let r=0;r<map.rows;r++) for(let c=0;c<map.cols;c++){
-    const id = map.cellTerritory[cellIndex(map,c,r)];
-    if(id!==-1 && map.territories[id]) map.territories[id].cells.push([c,r]);
-  }
-  map.nextTerrId = obj.nextTerrId || (Math.max(0,...Object.keys(map.territories).map(Number))+1);
-  map.nextContId = obj.nextContId || (Math.max(0,...Object.keys(map.continents).map(Number))+1);
-  recomputeGraph(map);
-  mapData = map;
+  mapData = mapFromPlainObject(obj);
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols; $('gridRows').value = mapData.rows;
   editorCurrentTerrId = null;

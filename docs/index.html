@@ -398,6 +398,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
         <h3><span class="emoji">📂</span> Tải bản đồ đã lưu</h3>
         <p>Nhập file bản đồ JSON đã xuất trước đó để chỉnh sửa hoặc chơi lại.</p>
       </div>
+      <div class="menu-card" id="btnLoadGame">
+        <h3><span class="emoji">💾</span> Tải ván chơi đã lưu</h3>
+        <p>Chơi tiếp 1 ván dở dang đã lưu ra file trước đó — đúng lượt, đúng quân số.</p>
+      </div>
       <div class="menu-card" id="btnHowTo">
         <h3><span class="emoji">📖</span> Luật chơi</h3>
         <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
@@ -408,6 +412,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       </div>
     </div>
     <input type="file" id="loadMapInput" accept=".json" class="hidden">
+    <input type="file" id="loadGameInput" accept=".json" class="hidden">
   </div>
 </div>
 
@@ -611,6 +616,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍<span class="btn-label"> Xem châu lục <span style="opacity:.6;">(Space)</span></span></label>
       <button class="small ghost" id="btnToggleLog" aria-label="Thu gọn/mở nhật ký trận đấu">📜</button>
       <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
+      <button class="small ghost" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾<span class="btn-label"> Lưu</span></button>
       <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
     </div>
   </div>
@@ -800,6 +806,36 @@ function newMap(cols, rows, name){
     _terrBoundaryCache: {}, // terrId -> smoothed pixel-space loops, see getTerritoryBoundaryLoops()
     _contBoundaryCache: {}, // contId -> smoothed pixel-space loops, see getContinentBoundaryLoops()
   };
+}
+
+// Plain-JSON (de)serialization of a map, shared by the editor's export/import (03-editor.js)
+// and by game save/load (04-game-state.js) — a saved-game file bundles one of these alongside
+// the game state so loading it doesn't depend on whatever map happens to be open already.
+function mapToPlainObject(map){
+  return {
+    name: map.name, cols: map.cols, rows: map.rows, cellSize: map.cellSize,
+    cellTerritory: Array.from(map.cellTerritory),
+    territories: Object.values(map.territories).map(t=>({id:t.id,name:t.name,continentId:t.continentId,color:t.color})),
+    continents: Object.values(map.continents).map(c=>({id:c.id,name:c.name,color:c.color,bonus:c.bonus})),
+    nextTerrId: map.nextTerrId, nextContId: map.nextContId,
+  };
+}
+function mapFromPlainObject(obj){
+  const map = newMap(obj.cols, obj.rows, obj.name);
+  map.cellSize = obj.cellSize || map.cellSize;
+  map.cellTerritory = new Int16Array(obj.cellTerritory);
+  (obj.territories||[]).forEach(t=>{
+    map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
+  });
+  (obj.continents||[]).forEach(c=>{ map.continents[c.id] = {id:c.id,name:c.name,color:c.color,bonus:c.bonus}; });
+  for(let r=0;r<map.rows;r++) for(let c=0;c<map.cols;c++){
+    const id = map.cellTerritory[cellIndex(map,c,r)];
+    if(id!==-1 && map.territories[id]) map.territories[id].cells.push([c,r]);
+  }
+  map.nextTerrId = obj.nextTerrId || (Math.max(0,...Object.keys(map.territories).map(Number))+1);
+  map.nextContId = obj.nextContId || (Math.max(0,...Object.keys(map.continents).map(Number))+1);
+  recomputeGraph(map);
+  return map;
 }
 
 function cellIndex(map,c,r){ return r*map.cols + c; }
@@ -1569,13 +1605,7 @@ function validateMap(){
 }
 
 function exportMapJSON(){
-  const out = {
-    name: mapData.name, cols: mapData.cols, rows: mapData.rows, cellSize: mapData.cellSize,
-    cellTerritory: Array.from(mapData.cellTerritory),
-    territories: Object.values(mapData.territories).map(t=>({id:t.id,name:t.name,continentId:t.continentId,color:t.color})),
-    continents: Object.values(mapData.continents).map(c=>({id:c.id,name:c.name,color:c.color,bonus:c.bonus})),
-    nextTerrId: mapData.nextTerrId, nextContId: mapData.nextContId
-  };
+  const out = mapToPlainObject(mapData);
   const blob = new Blob([JSON.stringify(out,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1585,21 +1615,7 @@ function exportMapJSON(){
 }
 
 function importMapJSON(obj){
-  const map = newMap(obj.cols, obj.rows, obj.name);
-  map.cellSize = obj.cellSize || map.cellSize;
-  map.cellTerritory = new Int16Array(obj.cellTerritory);
-  (obj.territories||[]).forEach(t=>{
-    map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
-  });
-  (obj.continents||[]).forEach(c=>{ map.continents[c.id] = {id:c.id,name:c.name,color:c.color,bonus:c.bonus}; });
-  for(let r=0;r<map.rows;r++) for(let c=0;c<map.cols;c++){
-    const id = map.cellTerritory[cellIndex(map,c,r)];
-    if(id!==-1 && map.territories[id]) map.territories[id].cells.push([c,r]);
-  }
-  map.nextTerrId = obj.nextTerrId || (Math.max(0,...Object.keys(map.territories).map(Number))+1);
-  map.nextContId = obj.nextContId || (Math.max(0,...Object.keys(map.continents).map(Number))+1);
-  recomputeGraph(map);
-  mapData = map;
+  mapData = mapFromPlainObject(obj);
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols; $('gridRows').value = mapData.rows;
   editorCurrentTerrId = null;
@@ -1991,6 +2007,56 @@ function endTurn(){
   } while(!isAlive(currentPlayerId()));
   if(game.over) return;
   startReinforce();
+}
+
+/* ---------------- Save / load an in-progress game ---------------- */
+// A save file bundles the map (same plain shape used by the map editor's export) together
+// with the `game` object itself, which is already plain JSON-serializable data (no Sets,
+// Maps, or function references live on it — those are all on mapData instead).
+const GAME_SAVE_FORMAT_VERSION = 1;
+
+function exportGameJSON(){
+  const out = {
+    formatVersion: GAME_SAVE_FORMAT_VERSION,
+    savedAt: Date.now(),
+    spectatorMode,
+    mapData: mapToPlainObject(mapData),
+    game,
+  };
+  const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  a.href = url; a.download = 'risk-save-'+stamp+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importGameJSON(obj){
+  if(!obj || !obj.mapData || !obj.game) throw new Error('File không đúng định dạng ván chơi đã lưu.');
+  mapData = mapFromPlainObject(obj.mapData);
+  game = obj.game;
+  spectatorMode = !!obj.spectatorMode;
+  aiPaused = false; pendingAIResume = null;
+  showScreen('screen-game');
+  renderGame();
+  renderCombatLog();
+  if(game.over) return;
+  // If it was an AI's turn (or still mid initial placement) when saved, nothing is scheduled
+  // to continue it on its own — kick the appropriate step back off from wherever it left off.
+  // Each of these reads current game state fresh rather than re-deriving it (e.g. aiReinforceStep
+  // just keeps spending game.reinforceRemaining, it doesn't recompute/re-grant it), so resuming
+  // mid-phase is safe and doesn't double up any army grants.
+  if(game.phase==='setup-place'){
+    setupPlaceNext();
+  } else {
+    const cp = currentPlayer();
+    if(!cp.isHuman){
+      if(game.phase==='reinforce') aiReinforceStep(cp.id);
+      else if(game.phase==='attack') aiAttackStep(cp.id);
+      else if(game.phase==='fortify') aiFortifyStep(cp.id);
+    }
+  }
 }
 
 /* ---- src/js/05-ai.js ---- */
@@ -2806,6 +2872,17 @@ $('loadMapInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
+$('btnLoadGame').addEventListener('click', ()=> $('loadGameInput').click());
+$('loadGameInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{ const obj = JSON.parse(reader.result); importGameJSON(obj); }
+    catch(err){ alert('Không đọc được file ván chơi: '+err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value='';
+});
 $('btnOpenSettings').addEventListener('click', ()=>{ renderSettingsScreen(); showScreen('screen-settings'); });
 $('btnBackFromSettings').addEventListener('click', ()=> showScreen('screen-menu'));
 function renderSettingsScreen(){
@@ -3043,6 +3120,7 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
+$('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });

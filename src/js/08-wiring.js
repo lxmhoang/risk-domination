@@ -20,6 +20,17 @@ $('loadMapInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
+$('btnLoadGame').addEventListener('click', ()=> $('loadGameInput').click());
+$('loadGameInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{ const obj = JSON.parse(reader.result); importGameJSON(obj); }
+    catch(err){ alert('Không đọc được file ván chơi: '+err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value='';
+});
 $('btnOpenSettings').addEventListener('click', ()=>{ renderSettingsScreen(); showScreen('screen-settings'); });
 $('btnBackFromSettings').addEventListener('click', ()=> showScreen('screen-menu'));
 function renderSettingsScreen(){
@@ -257,6 +268,7 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
+$('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });

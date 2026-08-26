@@ -384,3 +384,53 @@ function endTurn(){
   startReinforce();
 }
 
+/* ---------------- Save / load an in-progress game ---------------- */
+// A save file bundles the map (same plain shape used by the map editor's export) together
+// with the `game` object itself, which is already plain JSON-serializable data (no Sets,
+// Maps, or function references live on it — those are all on mapData instead).
+const GAME_SAVE_FORMAT_VERSION = 1;
+
+function exportGameJSON(){
+  const out = {
+    formatVersion: GAME_SAVE_FORMAT_VERSION,
+    savedAt: Date.now(),
+    spectatorMode,
+    mapData: mapToPlainObject(mapData),
+    game,
+  };
+  const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  a.href = url; a.download = 'risk-save-'+stamp+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importGameJSON(obj){
+  if(!obj || !obj.mapData || !obj.game) throw new Error('File không đúng định dạng ván chơi đã lưu.');
+  mapData = mapFromPlainObject(obj.mapData);
+  game = obj.game;
+  spectatorMode = !!obj.spectatorMode;
+  aiPaused = false; pendingAIResume = null;
+  showScreen('screen-game');
+  renderGame();
+  renderCombatLog();
+  if(game.over) return;
+  // If it was an AI's turn (or still mid initial placement) when saved, nothing is scheduled
+  // to continue it on its own — kick the appropriate step back off from wherever it left off.
+  // Each of these reads current game state fresh rather than re-deriving it (e.g. aiReinforceStep
+  // just keeps spending game.reinforceRemaining, it doesn't recompute/re-grant it), so resuming
+  // mid-phase is safe and doesn't double up any army grants.
+  if(game.phase==='setup-place'){
+    setupPlaceNext();
+  } else {
+    const cp = currentPlayer();
+    if(!cp.isHuman){
+      if(game.phase==='reinforce') aiReinforceStep(cp.id);
+      else if(game.phase==='attack') aiAttackStep(cp.id);
+      else if(game.phase==='fortify') aiFortifyStep(cp.id);
+    }
+  }
+}
+
