@@ -66,12 +66,13 @@ function renderEditorLists(){
       contSel.appendChild(opt);
     });
     contSel.addEventListener('click', e=>e.stopPropagation());
-    contSel.addEventListener('change', ()=>{ t.continentId = contSel.value? Number(contSel.value): null; drawEditorCanvas(); });
+    contSel.addEventListener('change', ()=>{ t.continentId = contSel.value? Number(contSel.value): null; mapData._contBoundaryCache = {}; drawEditorCanvas(); });
     const actions = el('div','row-actions');
     const delBtn = el('button','mini-btn','✕'); delBtn.title='Xoá lãnh thổ';
     delBtn.addEventListener('click', (e)=>{
       e.stopPropagation();
       t.cells.forEach(([c,r])=>{ mapData.cellTerritory[cellIndex(mapData,c,r)] = -1; });
+      invalidateBoundaryCache(mapData, t.id);
       delete mapData.territories[t.id];
       if(editorCurrentTerrId===t.id) editorCurrentTerrId=null;
       recomputeGraph(mapData); renderEditorLists(); drawEditorCanvas();
@@ -101,6 +102,7 @@ function renderEditorLists(){
     delBtn.addEventListener('click', ()=>{
       Object.values(mapData.territories).forEach(t=>{ if(t.continentId===c.id) t.continentId=null; });
       delete mapData.continents[c.id];
+      mapData._contBoundaryCache = {};
       renderEditorLists(); drawEditorCanvas();
     });
     top.appendChild(colorInput); top.appendChild(nameInput); top.appendChild(delBtn);
@@ -135,44 +137,41 @@ function drawEditorCanvas(){
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#123a56';
   ctx.fillRect(0,0,canvas.width,canvas.height);
-  for(let r=0;r<mapData.rows;r++){
-    for(let c=0;c<mapData.cols;c++){
-      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
-      if(id===-1) continue;
-      const t = mapData.territories[id];
-      if(!t) continue;
-      if(editorShowContinents){
-        const cont = t.continentId!=null ? mapData.continents[t.continentId] : null;
-        ctx.fillStyle = cont ? cont.color : '#3a3f52';
-      } else {
-        ctx.fillStyle = t.color;
-      }
-      ctx.fillRect(c*cs, r*cs, cs, cs);
+
+  const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
+  terrs.forEach(t=>{
+    if(editorShowContinents){
+      const cont = t.continentId!=null ? mapData.continents[t.continentId] : null;
+      ctx.fillStyle = cont ? cont.color : '#3a3f52';
+    } else {
+      ctx.fillStyle = t.color;
     }
+    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    ctx.fill();
+  });
+
+  // borders: every territory's own outline, thin; continent outlines drawn thicker on top
+  // when in continent view (rather than comparing neighbor-by-neighbor, each continent's own
+  // traced outer edge already IS exactly where a thick border belongs).
+  terrs.forEach(t=>{
+    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,14,24,0.9)';
+    ctx.stroke();
+  });
+  if(editorShowContinents){
+    Object.values(mapData.continents).forEach(cont=>{
+      const loops = getContinentBoundaryLoops(mapData, cont.id);
+      if(loops.length===0) return;
+      pathFromLoops(ctx, loops);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.stroke();
+    });
   }
-  // borders: thin between territories, thicker between continents when in continent view
-  for(let r=0;r<mapData.rows;r++){
-    for(let c=0;c<mapData.cols;c++){
-      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
-      const idR = c+1<mapData.cols? mapData.cellTerritory[cellIndex(mapData,c+1,r)] : id;
-      const idD = r+1<mapData.rows? mapData.cellTerritory[cellIndex(mapData,c,r+1)] : id;
-      if(editorShowContinents){
-        const t = mapData.territories[id];
-        const contId = t? t.continentId : null;
-        const tR = mapData.territories[idR]; const contR = tR? tR.continentId : null;
-        const tD = mapData.territories[idD]; const contD = tD? tD.continentId : null;
-        ctx.lineWidth = (idR!==id && contR!==contId) ? 3 : 1;
-        ctx.strokeStyle = (idR!==id && contR!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(10,14,24,0.5)';
-        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-        ctx.lineWidth = (idD!==id && contD!==contId) ? 3 : 1;
-        ctx.strokeStyle = (idD!==id && contD!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(10,14,24,0.5)';
-        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-      } else {
-        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,14,24,0.9)';
-        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-      }
-    }
+  // highlight current territory selection border
+  if(editorCurrentTerrId && mapData.territories[editorCurrentTerrId] && mapData.territories[editorCurrentTerrId].cells.length){
+    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, editorCurrentTerrId));
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.stroke();
   }
   // labels
   ctx.font = 'bold 11px sans-serif';
@@ -193,11 +192,6 @@ function drawEditorCanvas(){
       ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillText(label, pos.x+1, pos.y+1);
       ctx.fillStyle='#fff'; ctx.fillText(label, pos.x, pos.y);
     });
-  }
-  // highlight current territory selection border
-  if(editorCurrentTerrId && mapData.territories[editorCurrentTerrId]){
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth=1;
   }
 }
 

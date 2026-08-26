@@ -39,6 +39,8 @@ function newMap(cols, rows, name){
     continents: {},    // id -> {id,name,color,bonus}
     nextTerrId: 1,
     nextContId: 1,
+    _terrBoundaryCache: {}, // terrId -> smoothed pixel-space loops, see getTerritoryBoundaryLoops()
+    _contBoundaryCache: {}, // contId -> smoothed pixel-space loops, see getContinentBoundaryLoops()
   };
 }
 
@@ -60,6 +62,99 @@ function createContinent(map, name, color){
   return map.continents[id];
 }
 
+// ---------------- Smooth territory/continent boundary rendering ----------------
+// Territories are still just sets of grid cells underneath (adjacency, ownership, click
+// hit-testing all stay cell-based) — this only affects how a territory's outline is DRAWN:
+// its outer edge (and any water "holes" inside it) is traced by walking cell edges (marching-
+// squares style), then rounded from blocky right angles into an organic curve with a couple
+// passes of Chaikin's corner-cutting algorithm. Purely a rendering concern.
+//
+// inSet(c,r) => whether cell (c,r) belongs to the mask being traced. Emitting each filled
+// cell's edges in this specific order/direction makes the outer boundary of a blob come out
+// clockwise and any hole inside it come out counter-clockwise automatically — which is exactly
+// what canvas's default "nonzero" fill rule needs to render holes as holes.
+function traceMaskBoundary(inSet){
+  const edges = new Map(); // "x_y" (edge start corner) -> [x2,y2] (edge end corner)
+  const k = (x,y)=> x+'_'+y;
+  inSet.cells.forEach(([c,r])=>{
+    if(!inSet(c,r-1)) edges.set(k(c,r), [c+1,r]);
+    if(!inSet(c+1,r)) edges.set(k(c+1,r), [c+1,r+1]);
+    if(!inSet(c,r+1)) edges.set(k(c+1,r+1), [c,r+1]);
+    if(!inSet(c-1,r)) edges.set(k(c,r+1), [c,r]);
+  });
+  const loops = [];
+  const visited = new Set();
+  for(const startKey of edges.keys()){
+    if(visited.has(startKey)) continue;
+    const loop = [];
+    let curKey = startKey, guard = 0;
+    while(!visited.has(curKey) && edges.has(curKey) && guard++<200000){
+      visited.add(curKey);
+      loop.push(curKey.split('_').map(Number));
+      const [nx,ny] = edges.get(curKey);
+      curKey = k(nx,ny);
+    }
+    if(loop.length>=3) loops.push(loop);
+  }
+  return loops;
+}
+
+// One pass replaces each edge (P0,P1) with 2 points at 25%/75% along it, cutting every corner
+// down and rounding it; a couple of passes is enough to look like a smooth organic curve.
+function chaikinSmooth(loop, iterations){
+  let pts = loop;
+  for(let it=0; it<iterations; it++){
+    const next = []; const n = pts.length;
+    for(let i=0;i<n;i++){
+      const [x0,y0] = pts[i]; const [x1,y1] = pts[(i+1)%n];
+      next.push([x0+(x1-x0)*0.25, y0+(y1-y0)*0.25]);
+      next.push([x0+(x1-x0)*0.75, y0+(y1-y0)*0.75]);
+    }
+    pts = next;
+  }
+  return pts;
+}
+
+function traceAndSmoothCells(map, cellList){
+  const cellSet = new Set(cellList.map(([c,r])=> c+'_'+r));
+  const inSet = (c,r)=> cellSet.has(c+'_'+r);
+  inSet.cells = cellList;
+  const cs = map.cellSize;
+  return traceMaskBoundary(inSet).map(loop => chaikinSmooth(loop.map(([x,y])=>[x*cs,y*cs]), 2));
+}
+
+// Smoothed outer boundary (+ any water-hole boundaries) of a single territory, in pixel space,
+// cached until invalidateBoundaryCache() drops it (see paintCell() below).
+function getTerritoryBoundaryLoops(map, terrId){
+  const t = map.territories[terrId];
+  if(!t || t.cells.length===0) return [];
+  if(!map._terrBoundaryCache) map._terrBoundaryCache = {};
+  if(map._terrBoundaryCache[terrId]) return map._terrBoundaryCache[terrId];
+  const loops = traceAndSmoothCells(map, t.cells);
+  map._terrBoundaryCache[terrId] = loops;
+  return loops;
+}
+
+// Smoothed outer boundary of an entire continent (the union of all its member territories'
+// cells) — used only for the thicker continent-outline overlay in continent view.
+function getContinentBoundaryLoops(map, contId){
+  if(!map._contBoundaryCache) map._contBoundaryCache = {};
+  if(map._contBoundaryCache[contId]) return map._contBoundaryCache[contId];
+  const cellList = [];
+  Object.values(map.territories).forEach(t=>{ if(t.continentId===contId) cellList.push(...t.cells); });
+  const loops = cellList.length ? traceAndSmoothCells(map, cellList) : [];
+  map._contBoundaryCache[contId] = loops;
+  return loops;
+}
+
+// Territory shape changes invalidate that territory's own cached boundary; continent shapes
+// are unions of territories so any cell change could affect any continent's outline — cheap
+// enough to just drop that whole (much smaller) cache rather than track it precisely.
+function invalidateBoundaryCache(map, terrId){
+  if(map._terrBoundaryCache) delete map._terrBoundaryCache[terrId];
+  map._contBoundaryCache = {};
+}
+
 function paintCell(map, c, r, terrId){
   if(!inBounds(map,c,r)) return;
   const idx = cellIndex(map,c,r);
@@ -69,10 +164,12 @@ function paintCell(map, c, r, terrId){
     const t = map.territories[old];
     const i = t.cells.findIndex(cc=>cc[0]===c&&cc[1]===r);
     if(i>=0) t.cells.splice(i,1);
+    invalidateBoundaryCache(map, old);
   }
   map.cellTerritory[idx] = terrId;
   if(terrId !== -1 && map.territories[terrId]){
     map.territories[terrId].cells.push([c,r]);
+    invalidateBoundaryCache(map, terrId);
   }
 }
 

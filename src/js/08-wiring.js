@@ -345,5 +345,7 @@ window.__debug = {
   },
   doBattle, beginFortifyPhase, endTurn, checkElimination, checkWinCondition,
   generateRandomMap, findConnectedComponents, renderGame, openFortifyModal,
-  tradeCards, tradeInValue, findTradeCombo
+  tradeCards, tradeInValue, findTradeCombo, drawEditorCanvas, drawGameCanvas,
+  getTerritoryBoundaryLoops, getContinentBoundaryLoops, paintCell,
+  get editorCurrentTerrId(){ return editorCurrentTerrId; }
 };

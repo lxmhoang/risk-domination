@@ -3,6 +3,21 @@
    ========================================================================= */
 function playerOf(id){ return game.players[id]; }
 
+// Traces a ctx path from one or more smoothed boundary loops (see getTerritoryBoundaryLoops()/
+// getContinentBoundaryLoops() in 02-map-model.js) — multiple loops in one beginPath() combine
+// correctly under the canvas default "nonzero" fill rule (holes come out already
+// counter-wound, disjoint shapes just union together), so this works for both a single
+// territory (outer edge + any water holes) and a combined set of several territories at once.
+function pathFromLoops(ctx, loops){
+  ctx.beginPath();
+  loops.forEach(loop=>{
+    if(loop.length<3) return;
+    ctx.moveTo(loop[0][0], loop[0][1]);
+    for(let i=1;i<loop.length;i++) ctx.lineTo(loop[i][0], loop[i][1]);
+    ctx.closePath();
+  });
+}
+
 function drawGameCanvas(){
   const canvas = $('gameCanvas');
   const cs = mapData.cellSize;
@@ -11,68 +26,60 @@ function drawGameCanvas(){
   const ctx = canvas.getContext('2d');
   ctx.fillStyle='#123a56';
   ctx.fillRect(0,0,canvas.width,canvas.height);
-  for(let r=0;r<mapData.rows;r++){
-    for(let c=0;c<mapData.cols;c++){
-      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
-      if(id===-1) continue;
-      let color;
-      if(showContinentsGame){
-        const t = mapData.territories[id];
-        const cont = t && t.continentId!=null ? mapData.continents[t.continentId] : null;
-        color = cont ? cont.color : '#3a3f52';
-      } else {
-        const ownerId = game.owner[id];
-        color = ownerId!==undefined ? playerOf(ownerId).color : '#444';
-      }
-      ctx.fillStyle = color;
-      ctx.fillRect(c*cs,r*cs,cs,cs);
+
+  const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
+  terrs.forEach(t=>{
+    let color;
+    if(showContinentsGame){
+      const cont = t.continentId!=null ? mapData.continents[t.continentId] : null;
+      color = cont ? cont.color : '#3a3f52';
+    } else {
+      const ownerId = game.owner[t.id];
+      color = ownerId!==undefined ? playerOf(ownerId).color : '#444';
     }
-  }
+    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    ctx.fillStyle = color;
+    ctx.fill();
+  });
+
   // In continent view, emphasize the viewing (human) player's own territories with a diagonal
   // white stripe overlay — keeps the true continent colors intact instead of retinting them.
   if(showContinentsGame){
-    ctx.save();
-    ctx.fillStyle = getStripePattern(ctx);
-    for(let r=0;r<mapData.rows;r++){
-      for(let c=0;c<mapData.cols;c++){
-        const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
-        if(id===-1) continue;
-        if(game.owner[id]===0){ ctx.fillRect(c*cs, r*cs, cs, cs); }
-      }
+    const mine = terrs.filter(t=>game.owner[t.id]===0);
+    if(mine.length){
+      ctx.save();
+      pathFromLoops(ctx, mine.flatMap(t=>getTerritoryBoundaryLoops(mapData, t.id)));
+      ctx.clip();
+      ctx.fillStyle = getStripePattern(ctx);
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.restore();
     }
-    ctx.restore();
   }
-  // borders: thin between territories, thicker between continents when in continent view
-  for(let r=0;r<mapData.rows;r++){
-    for(let c=0;c<mapData.cols;c++){
-      const id = mapData.cellTerritory[cellIndex(mapData,c,r)];
-      const idR = c+1<mapData.cols? mapData.cellTerritory[cellIndex(mapData,c+1,r)] : id;
-      const idD = r+1<mapData.rows? mapData.cellTerritory[cellIndex(mapData,c,r+1)] : id;
-      if(showContinentsGame){
-        const t = mapData.territories[id]; const contId = t? t.continentId : null;
-        const tR = mapData.territories[idR]; const contR = tR? tR.continentId : null;
-        const tD = mapData.territories[idD]; const contD = tD? tD.continentId : null;
-        ctx.lineWidth = (idR!==id && contR!==contId) ? 3 : 1;
-        ctx.strokeStyle = (idR!==id && contR!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(8,10,18,0.5)';
-        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-        ctx.lineWidth = (idD!==id && contD!==contId) ? 3 : 1;
-        ctx.strokeStyle = (idD!==id && contD!==contId) ? 'rgba(255,255,255,0.85)' : 'rgba(8,10,18,0.5)';
-        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-      } else {
-        ctx.lineWidth=2; ctx.strokeStyle='rgba(8,10,18,0.85)';
-        if(idR!==id){ ctx.beginPath(); ctx.moveTo((c+1)*cs,r*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-        if(idD!==id){ ctx.beginPath(); ctx.moveTo(c*cs,(r+1)*cs); ctx.lineTo((c+1)*cs,(r+1)*cs); ctx.stroke(); }
-      }
-    }
+
+  // borders: every territory's own outline, thin; continent outlines drawn thicker on top
+  // when in continent view (rather than comparing neighbor-by-neighbor, each continent's own
+  // traced outer edge already IS exactly where a thick border belongs).
+  terrs.forEach(t=>{
+    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(8,10,18,0.85)';
+    ctx.stroke();
+  });
+  if(showContinentsGame){
+    Object.values(mapData.continents).forEach(cont=>{
+      const loops = getContinentBoundaryLoops(mapData, cont.id);
+      if(loops.length===0) return;
+      pathFromLoops(ctx, loops);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.stroke();
+    });
   }
   // selection highlight
   [['selectedFrom','#fff'],['selectedTo','#f2b84b']].forEach(([key,col])=>{
     const id = game[key];
     if(id!=null && mapData.territories[id]){
+      pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, id));
       ctx.strokeStyle=col; ctx.lineWidth=3;
-      mapData.territories[id].cells.forEach(([c,r])=>{
-        ctx.strokeRect(c*cs+1.5,r*cs+1.5,cs-3,cs-3);
-      });
+      ctx.stroke();
     }
   });
   // army badges
