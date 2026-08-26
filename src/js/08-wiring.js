@@ -237,8 +237,9 @@ $('btnStartGame').addEventListener('click', ()=>{
   const diff = $('aiDifficultySelect').value;
   const spectator = $('toggleSpectatorMode').checked;
   const alliance = $('toggleAlliance').checked;
+  const tradeRule = $('tradeRuleSelect').value;
   const playerConfigs = readPlayerConfigs();
-  initGame(playerConfigs, diff, spectator, alliance);
+  initGame(playerConfigs, diff, spectator, alliance, tradeRule);
   showScreen('screen-game');
   renderGame();
   if(RUNTIME_CONFIG.manualInitialPlacement){
@@ -343,5 +344,6 @@ window.__debug = {
     renderGame();
   },
   doBattle, beginFortifyPhase, endTurn, checkElimination, checkWinCondition,
-  generateRandomMap, findConnectedComponents, renderGame, openFortifyModal
+  generateRandomMap, findConnectedComponents, renderGame, openFortifyModal,
+  tradeCards, tradeInValue, findTradeCombo
 };

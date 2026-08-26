@@ -13,7 +13,22 @@ const CARD_TYPES = ['infantry','cavalry','artillery'];
 const CARD_ICON = {infantry:'🪖', cavalry:'🐎', artillery:'💣'};
 const TRADE_VALUES = [4,6,8,10,12,15,20];
 
-function tradeInValue(tradeCount){
+// Three trade-bonus rules a game can be started with (see game.tradeRule, chosen in setup):
+//  - fixed:       classic escalating table, but it PLATEAUS at the last table value forever
+//                 once reached — no reason to ever hold cards, every trade from then on pays
+//                 exactly the same.
+//  - progressive: the table keeps climbing forever (+5 per trade) based on a count SHARED by
+//                 all players — trading later (after opponents have also traded) pays more, so
+//                 holding cards is a real (if risky) strategy. This is the game's original/
+//                 default behavior.
+//  - exponential: value compounds ~1.3x per trade, but tracked PER PLAYER instead of globally —
+//                 an opponent trading a lot doesn't help or hurt you; only your OWN trade count
+//                 matters, so the earlier and more often YOU personally trade, the faster your
+//                 own trades ramp up.
+function tradeInValue(rule, tradeCount, personalTradeCount){
+  if(rule==='exponential') return Math.round(4*Math.pow(1.3, personalTradeCount));
+  if(rule==='fixed') return TRADE_VALUES[Math.min(tradeCount, TRADE_VALUES.length-1)];
+  // progressive (default)
   if(tradeCount < TRADE_VALUES.length) return TRADE_VALUES[tradeCount];
   return TRADE_VALUES[TRADE_VALUES.length-1] + (tradeCount-TRADE_VALUES.length+1)*5;
 }
@@ -21,7 +36,7 @@ function tradeInValue(tradeCount){
 // playerConfigs: [{name, color, personality, isHuman}, ...] — index 0 is "you" (a real human
 // unless spectator mode made them AI-controlled too), built by readPlayerConfigs() in the
 // setup screen.
-function initGame(playerConfigs, difficulty, spectator, allianceEnabled){
+function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule){
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
   const startArmies = standardStartingArmies(playerConfigs.length);
@@ -31,6 +46,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled){
     id, name:cfg.name, isHuman:cfg.isHuman, color:cfg.color, alive:true, cards:[],
     capturedThisTurn:false, killedThisTurn:false, totalReinforced:startArmies, totalKills:0,
     personality: cfg.isHuman ? 'balanced' : cfg.personality, eliminatedRound:null,
+    personalTradeCount: 0, // only used by the 'exponential' trade rule (see tradeInValue())
   }));
   const terrIds = shuffle(Object.keys(mapData.territories).map(Number));
   const owner = {}; const armies = {};
@@ -47,6 +63,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled){
     difficulty,
     roundNumber: 1, // +1 each time turnIdx wraps back to the start of turnOrder (see endTurn())
     reinforceRemaining: 0,
+    tradeRule: tradeRule || 'progressive',
     tradeCount: 0,
     selectedFrom: null, selectedTo: null,
     log: [],

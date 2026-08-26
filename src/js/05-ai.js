@@ -118,11 +118,20 @@ function aiReinforceStep(pid){
 
 function aiTryTradeCards(p){
   let guard=0;
+  // How willing the AI is to hold a valid combo instead of cashing it in immediately depends
+  // on which trade rule is active (see tradeInValue() for what each rule means):
+  //  - progressive: the shared global count only goes up, so a LATER trade always pays MORE —
+  //    holding is a real (if risky, since forced at 5 cards) strategy, so hold fairly often.
+  //  - fixed: value plateaus at a fixed cap, so once there, waiting gains nothing — trade ASAP.
+  //  - exponential: only the player's OWN trade count matters, and it compounds — the sooner
+  //    (and more often) this AI personally trades, the faster ITS OWN future trades ramp up, so
+  //    trade ASAP rather than sitting on cards that aren't growing in value by waiting.
+  const holdChance = game.tradeRule==='progressive' ? 0.7 : 0.1;
   while(guard++<10){
     const combo = findTradeCombo(p.cards);
     const forced = p.cards.length>=5;
     if(!combo) break;
-    if(!forced && Math.random()<0.4 && p.cards.length<5) break; // sometimes hold cards
+    if(!forced && Math.random()<holdChance && p.cards.length<5) break; // sometimes hold cards
     tradeCards(p, combo);
   }
 }
@@ -142,7 +151,8 @@ function tradeCards(p, indices){
   const removed = idxSorted.map(i=>p.cards[i]);
   idxSorted.forEach(i=> p.cards.splice(i,1));
   game.tradeCount++;
-  const value = tradeInValue(game.tradeCount);
+  p.personalTradeCount = (p.personalTradeCount||0)+1;
+  const value = tradeInValue(game.tradeRule, game.tradeCount, p.personalTradeCount);
   p.totalReinforced += value;
   if(game.phase==='reinforce' && currentPlayerId()===p.id){
     game.reinforceRemaining += value;
