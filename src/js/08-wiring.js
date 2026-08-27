@@ -269,6 +269,28 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
+
+// Setup-place: holding down on a territory keeps placing armies into it — 1 immediately on
+// press, then (after a short initial delay, like a keyboard's key-repeat) once per tick for as
+// long as the pointer stays down, until the phase ends or this spot stops being valid.
+let setupHoldTimer = null;
+function stopSetupHold(){ clearTimeout(setupHoldTimer); clearInterval(setupHoldTimer); setupHoldTimer=null; }
+$('gameCanvas').addEventListener('pointerdown', (e)=>{
+  if(!game || game.phase!=='setup-place') return;
+  const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), e);
+  if(!attemptSetupPlacement(terrId)) return;
+  $('gameCanvas').setPointerCapture(e.pointerId);
+  stopSetupHold();
+  setupHoldTimer = setTimeout(()=>{
+    setupHoldTimer = setInterval(()=>{
+      if(!canKeepHoldingSetupPlacement(terrId)){ stopSetupHold(); return; }
+      attemptSetupPlacement(terrId);
+    }, 150);
+  }, 400);
+});
+['pointerup','pointerleave','pointercancel'].forEach(evtName=>
+  $('gameCanvas').addEventListener(evtName, stopSetupHold)
+);
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
 $('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
 $('btnQuitGame').addEventListener('click', ()=>{
@@ -320,6 +342,30 @@ window.addEventListener('keydown', (e)=>{
   cb.dispatchEvent(new Event('change'));
 });
 
+// Phase-action keyboard shortcuts — attack: C = Công triệt để, T = Tấn công, K = Kết thúc tấn
+// công; fortify: C = Chuyển quân, K = Kết thúc lượt. Modal-specific shortcuts (the capture-move
+// and fortify popups) are wired locally in their own open functions instead, since a modal
+// being open already blocks these via the same guard the Space-bar shortcut uses above.
+window.addEventListener('keydown', (e)=>{
+  if(!game || game.over) return;
+  const activeScreen = document.querySelector('.screen.active');
+  if(!activeScreen || activeScreen.id!=='screen-game') return;
+  if(document.querySelector('.modal-overlay') || $('gameOverOverlay')) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+  const p = currentPlayer();
+  if(!p.isHuman) return;
+  const key = e.key.toLowerCase();
+  if(game.phase==='attack'){
+    if(key==='c'){ e.preventDefault(); allOutAttack(); }
+    else if(key==='t'){ e.preventDefault(); doSingleAttack(); }
+    else if(key==='k'){ e.preventDefault(); beginFortifyPhase(); }
+  } else if(game.phase==='fortify'){
+    if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
+    else if(key==='k'){ e.preventDefault(); endTurn(); }
+  }
+});
+
 // Top bar contextual buttons
 function updateTopbarActions(){
   const wrap = $('topbarActions'); wrap.innerHTML='';
@@ -361,5 +407,6 @@ window.__debug = {
   generateRandomMap, findConnectedComponents, renderGame, openFortifyModal,
   tradeCards, tradeInValue, findTradeCombo, drawEditorCanvas, drawGameCanvas,
   getTerritoryBoundaryLoops, getContinentBoundaryLoops, paintCell,
+  attemptSetupPlacement, canKeepHoldingSetupPlacement, allOutAttack, doSingleAttack,
   get editorCurrentTerrId(){ return editorCurrentTerrId; }
 };

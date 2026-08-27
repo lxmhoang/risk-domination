@@ -670,6 +670,25 @@ function setConfigValue(key, value){ RUNTIME_CONFIG[key] = value; saveRuntimeCon
 function resetRuntimeConfig(){ RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG); localStorage.removeItem(SETTINGS_STORAGE_KEY); }
 
 /* =========================================================================
+   KEYBOARD-SHORTCUT HINTS
+   ---------------------------------------------------------------------
+   There's no reliable API to ask "does this device have a physical keyboard" up
+   front (touch-capable laptops exist, desktops without touch exist, etc.) — so
+   instead this waits for actual proof: the first real keydown event. Once one
+   fires, every button built with withShortcut() starts showing its key in the
+   label too, retroactively (a re-render is triggered right away) and for every
+   button rendered from then on — never guessed ahead of time, so mobile/touch
+   players who never press a key simply never see hints they can't use.
+   ========================================================================= */
+let hasKeyboardDetected = false;
+window.addEventListener('keydown', ()=>{
+  if(hasKeyboardDetected) return;
+  hasKeyboardDetected = true;
+  if(game && document.getElementById('screen-game').classList.contains('active')) renderGame();
+}, {capture:true});
+function withShortcut(label, key){ return hasKeyboardDetected ? `${label} (${key.toUpperCase()})` : label; }
+
+/* =========================================================================
    UTILITIES
    ========================================================================= */
 const $ = (id)=>document.getElementById(id);
@@ -1741,6 +1760,30 @@ function advanceSetupTurn(){
   setupPlaceNext();
 }
 
+// Places 1 army for the human into `terrId` if it's currently their turn/valid, same effect as
+// a single click during setup-place. Returns whether a placement actually happened.
+function attemptSetupPlacement(terrId){
+  if(!game || game.over || game.phase!=='setup-place') return false;
+  const p = currentPlayer();
+  if(!p.isHuman || terrId===-1 || game.owner[terrId]!==p.id || game.pool[p.id]<=0) return false;
+  game.armies[terrId]++; game.pool[p.id]--;
+  renderGame();
+  if(allPoolsEmpty()){ beginReinforcePhase(); }
+  else { setActionHint('Còn lại: '+game.pool[p.id]+' quân để đặt.'); advanceSetupTurn(); }
+  return true;
+}
+
+// Whether a press-and-hold placement loop should keep waiting for another turn to come back
+// around (turn order cycles through the AI between each of the human's own placements, so
+// most ticks while holding land mid-AI-turn — that's not a reason to stop), vs give up
+// entirely because the phase ended or this spot/player can no longer place here.
+function canKeepHoldingSetupPlacement(terrId){
+  if(!game || game.over || game.phase!=='setup-place') return false;
+  const p = currentPlayer();
+  if(p.isHuman && (game.owner[terrId]!==p.id || game.pool[p.id]<=0)) return false;
+  return true;
+}
+
 // Alternative to the turn-based setupPlaceNext() flow: dump every player's starting
 // pool onto their own territories at random, all at once, then go straight to
 // reinforce. Used when the "Đặt quân thủ công lúc bắt đầu" setting is off.
@@ -1889,6 +1932,7 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
   bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
   modal.appendChild(bigRow);
 
+  let keyHandler = null;
   if(extraMax>0){
     const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
     const slider = document.createElement('input');
@@ -1906,20 +1950,36 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
     modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
 
     const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
-    const quickMin = el('button','ghost','Giữ nguyên (+0)');
+    const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','G')); quickMin.title='Phím tắt: G';
     quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
-    const quickMax = el('button','ghost','Tối đa (+'+extraMax+')');
+    const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
     quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
-    const confirmBtn = el('button','primary','Xác nhận');
+    const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
     confirmBtn.addEventListener('click', ()=>{
       const extra = Number(slider.value);
       game.armies[fromId] -= extra;
       game.armies[toId] += extra;
-      document.body.removeChild(overlay);
+      close();
       renderGame();
     });
     btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
     modal.appendChild(btnRow);
+
+    keyHandler = function(e){
+      const key = e.key.toLowerCase();
+      if(key==='g'){ e.preventDefault(); quickMin.click(); }
+      else if(key==='t'){ e.preventDefault(); quickMax.click(); }
+      else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
+    };
+    document.addEventListener('keydown', keyHandler);
+    // sync the big from/to numbers with the slider's initial value (defaults to max extra) —
+    // without this they show the pre-transfer counts until the user drags the slider once.
+    slider.dispatchEvent(new Event('input'));
+  }
+
+  function close(){
+    if(keyHandler) document.removeEventListener('keydown', keyHandler);
+    document.body.removeChild(overlay);
   }
 
   overlay.appendChild(modal);
@@ -2567,13 +2627,59 @@ function showDice(ad,dd,results){
 
 function setActionHint(text){ $('actionHint').textContent = text; }
 
+// Shared by the attack-phase buttons and their keyboard shortcuts (08-wiring.js).
+function canAttackNow(p){
+  return game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id);
+}
+function doSingleAttack(){
+  const p = currentPlayer();
+  if(!canAttackNow(p)) return;
+  const fromId = game.selectedFrom, toId = game.selectedTo;
+  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
+  const defenderName = game.players[game.owner[toId]].name;
+  const res = doBattle(fromId, toId);
+  recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
+  if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
+  renderGame();
+}
+// Keeps attacking the same target back-to-back (same silent-round-then-summarize approach as
+// the AI's battleBatch() in 05-ai.js) until the source runs dry or the target is captured.
+function allOutAttack(){
+  const p = currentPlayer();
+  if(!canAttackNow(p)) return;
+  const fromId = game.selectedFrom, toId = game.selectedTo;
+  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
+  const defenderName = game.players[game.owner[toId]].name;
+  let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
+  while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
+    lastRes = doBattle(fromId, toId, {silent:true});
+    rounds++; attLossTotal += lastRes.attLoss; defLossTotal += lastRes.defLoss;
+    if(lastRes.captured){ captured=true; break; }
+  }
+  if(rounds>0){
+    const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
+    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`);
+    if(lastRes) showDice(lastRes.ad, lastRes.dd, lastRes.results);
+    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`);
+    recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
+  }
+  if(game.armies[fromId]<2) game.selectedFrom=null;
+  renderGame();
+}
+// Shared by the fortify-phase button and its keyboard shortcut (08-wiring.js).
+function canFortifyNow(p){
+  return game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
+    game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
+    pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1;
+}
+
 function renderPhaseActions(){
   const wrap = $('phaseActions'); wrap.innerHTML='';
   if(game.over) return;
   const p = currentPlayer();
   if(!p.isHuman){ wrap.appendChild(el('div','',''));  return; }
   if(game.phase==='setup-place'){
-    wrap.appendChild(el('div','', 'Đặt quân ban đầu — nhấp vào bản đồ.'));
+    wrap.appendChild(el('div','', 'Đặt quân ban đầu — nhấp vào bản đồ (giữ nhấn để đặt liên tục).'));
     return;
   }
   if(game.phase==='reinforce'){
@@ -2581,39 +2687,28 @@ function renderPhaseActions(){
     return;
   }
   if(game.phase==='attack'){
-    const atkBtn = el('button','danger','⚔️ Tấn công'); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
-    atkBtn.addEventListener('click', ()=>{
-      if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)){
-        const fromId = game.selectedFrom, toId = game.selectedTo;
-        const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-        const defenderName = game.players[game.owner[toId]].name;
-        const res = doBattle(fromId, toId);
-        recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
-        if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
-        renderGame();
-      }
-    });
-    if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)) atkBtn.disabled=false;
+    const ready = canAttackNow(p);
+    const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack'; allOutBtn.disabled=!ready;
+    allOutBtn.title='Phím tắt: C';
+    allOutBtn.addEventListener('click', allOutAttack);
+    wrap.appendChild(allOutBtn);
+    const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack'; atkBtn.disabled=!ready;
+    atkBtn.title='Phím tắt: T';
+    atkBtn.addEventListener('click', doSingleAttack);
     wrap.appendChild(atkBtn);
-    const endBtn = el('button','primary','Kết thúc tấn công');
+    const endBtn = el('button','primary',withShortcut('Kết thúc tấn công','K')); endBtn.title='Phím tắt: K';
     endBtn.addEventListener('click', ()=> beginFortifyPhase());
     wrap.appendChild(endBtn);
     return;
   }
   if(game.phase==='fortify'){
-    const fortBtn = el('button','good','🚚 Chuyển quân'); fortBtn.id='btnDoFortify'; fortBtn.disabled=true;
+    const fortBtn = el('button','good',withShortcut('🚚 Chuyển quân','C')); fortBtn.id='btnDoFortify'; fortBtn.disabled=!canFortifyNow(p);
+    fortBtn.title='Phím tắt: C';
     fortBtn.addEventListener('click', ()=>{
-      if(game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
-         game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
-         pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1){
-        openFortifyModal(game.selectedFrom, game.selectedTo);
-      }
+      if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo);
     });
-    if(game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
-       game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
-       pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1) fortBtn.disabled=false;
     wrap.appendChild(fortBtn);
-    const endBtn = el('button','primary','Kết thúc lượt');
+    const endBtn = el('button','primary',withShortcut('Kết thúc lượt','K')); endBtn.title='Phím tắt: K';
     endBtn.addEventListener('click', ()=> endTurn());
     wrap.appendChild(endBtn);
   }
@@ -2658,17 +2753,17 @@ function openFortifyModal(fromId, toId){
 
   const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
   const cancelBtn = el('button','ghost','Huỷ');
-  cancelBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); });
-  const quickMin = el('button','ghost','Tối thiểu (1)');
+  cancelBtn.addEventListener('click', close);
+  const quickMin = el('button','ghost',withShortcut('Tối thiểu (1)','T')); quickMin.title='Phím tắt: T';
   quickMin.addEventListener('click', ()=>{ slider.value='1'; slider.dispatchEvent(new Event('input')); });
-  const quickMax = el('button','ghost','Tối đa ('+max+')');
+  const quickMax = el('button','ghost',withShortcut('Tối đa ('+max+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(max); slider.dispatchEvent(new Event('input')); });
-  const confirmBtn = el('button','primary','Xác nhận');
+  const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
   confirmBtn.addEventListener('click', ()=>{
     const n = Number(slider.value);
     game.armies[fromId] -= n; game.armies[toId] += n;
     logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.');
-    document.body.removeChild(overlay);
+    close();
     game.selectedFrom=null; game.selectedTo=null;
     renderGame();
   });
@@ -2677,6 +2772,21 @@ function openFortifyModal(fromId, toId){
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+  // sync the big from/to numbers with the slider's initial value (defaults to max) — without
+  // this they show the pre-transfer counts until the user drags the slider at least once.
+  slider.dispatchEvent(new Event('input'));
+
+  function keyHandler(e){
+    const key = e.key.toLowerCase();
+    if(key==='t'){ e.preventDefault(); quickMin.click(); }
+    else if(key==='d'){ e.preventDefault(); quickMax.click(); }
+    else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
+  }
+  document.addEventListener('keydown', keyHandler);
+  function close(){
+    document.removeEventListener('keydown', keyHandler);
+    document.body.removeChild(overlay);
+  }
 }
 
 function renderTopbar(){
@@ -2711,28 +2821,26 @@ function renderGame(){
 }
 
 /* ---------------- Game canvas click handling ---------------- */
-function gameCanvasClick(evt){
-  if(game.over) return;
-  const p = currentPlayer();
-  if(!p.isHuman) return;
-  const canvas = $('gameCanvas');
+// Shared by the click handler below and the setup-place press-and-hold wiring (08-wiring.js).
+function getTerritoryFromCanvasEvent(canvas, evt){
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const x=(evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
   const c=Math.floor(x/mapData.cellSize), r=Math.floor(y/mapData.cellSize);
-  if(!inBounds(mapData,c,r)) return;
-  const terrId = mapData.cellTerritory[cellIndex(mapData,c,r)];
+  if(!inBounds(mapData,c,r)) return -1;
+  return mapData.cellTerritory[cellIndex(mapData,c,r)];
+}
+
+function gameCanvasClick(evt){
+  if(game.over) return;
+  const p = currentPlayer();
+  if(!p.isHuman) return;
+  // setup-place is handled entirely by the pointerdown/hold wiring instead (so holding down
+  // can keep placing armies) — see $('gameCanvas') pointer wiring in 08-wiring.js.
+  if(game.phase==='setup-place') return;
+  const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), evt);
   if(terrId===-1) return;
 
-  if(game.phase==='setup-place'){
-    if(game.owner[terrId]===p.id && game.pool[p.id]>0){
-      game.armies[terrId]++; game.pool[p.id]--;
-      renderGame();
-      if(allPoolsEmpty()){ beginReinforcePhase(); }
-      else { setActionHint('Còn lại: '+game.pool[p.id]+' quân để đặt.'); advanceSetupTurn(); }
-    }
-    return;
-  }
   if(game.phase==='reinforce'){
     placeReinforcement(terrId);
     return;
@@ -2766,45 +2874,76 @@ function gameCanvasClick(evt){
    ========================================================================= */
 function openCardsModal(forced){
   const p = game.players[0];
-  const root = $('modalRoot');
   const overlay = el('div','modal-overlay');
   const modal = el('div','modal');
   modal.appendChild(el('h3','', forced? '⚠️ Bạn phải đổi thẻ bài (≥5 thẻ)!' : '🃏 Thẻ bài của bạn'));
   const cardsWrap = el('div','');
   const selected = new Set();
+  // Pre-select a valid tradeable combo if the player already has one, so the common case
+  // ("I have a valid set, just trade it") needs zero clicks before D/Xác nhận.
+  const autoCombo = findTradeCombo(p.cards);
+  if(autoCombo) autoCombo.forEach(i=>selected.add(i));
+
+  function comboIfValid(){
+    const idxs = [...selected];
+    if(idxs.length!==3) return null;
+    const uniq = new Set(idxs.map(i=>p.cards[i]));
+    return (uniq.size===1||uniq.size===3) ? idxs : null;
+  }
+  function updatePreview(){
+    const idxs = comboIfValid();
+    previewEl.textContent = idxs
+      ? `Đổi 3 thẻ này sẽ nhận ${tradeInValue(game.tradeRule, game.tradeCount+1, (p.personalTradeCount||0)+1)} quân.`
+      : '';
+  }
+
   p.cards.forEach((type,i)=>{
-    const item = el('div','card-item', CARD_ICON[type]+`<span class="label">${type}</span>`);
+    const item = el('div','card-item'+(selected.has(i)?' selected':''), CARD_ICON[type]+`<span class="label">${type}</span>`);
     item.addEventListener('click', ()=>{
       if(selected.has(i)){ selected.delete(i); item.classList.remove('selected'); }
       else if(selected.size<3){ selected.add(i); item.classList.add('selected'); }
+      updatePreview();
     });
     cardsWrap.appendChild(item);
   });
   modal.appendChild(cardsWrap);
   const info = el('div','', '<p style="color:var(--muted);font-size:12px;margin-top:10px;">Chọn 3 thẻ giống nhau hoặc 3 loại khác nhau để đổi lấy quân.</p>');
   modal.appendChild(info);
+  const previewEl = el('p',''); previewEl.style.cssText='font-size:13px;color:var(--good);font-weight:700;margin-top:8px;min-height:18px;';
+  modal.appendChild(previewEl);
+
   const btnRow = el('div',''); btnRow.style.marginTop='14px'; btnRow.style.display='flex'; btnRow.style.gap='8px';
-  const tradeBtn = el('button','primary','Đổi thẻ');
+  const tradeBtn = el('button','primary',withShortcut('Đổi thẻ','D')); tradeBtn.title='Phím tắt: D';
   tradeBtn.addEventListener('click', ()=>{
-    const idxs = [...selected];
-    if(idxs.length!==3) return;
-    const types = idxs.map(i=>p.cards[i]);
-    const uniq = new Set(types);
-    if(!(uniq.size===1||uniq.size===3)){ alert('Phải chọn 3 thẻ cùng loại hoặc 3 loại khác nhau.'); return; }
+    const idxs = comboIfValid();
+    if(!idxs){ alert('Phải chọn 3 thẻ cùng loại hoặc 3 loại khác nhau.'); return; }
     tradeCards(p, idxs);
-    document.body.removeChild(overlay);
+    close();
     if(p.cards.length>=5) openCardsModal(true);
     else renderGame();
   });
   btnRow.appendChild(tradeBtn);
+  let cancelBtn = null;
   if(!forced){
-    const closeBtn = el('button','ghost','Đóng');
-    closeBtn.addEventListener('click', ()=> document.body.removeChild(overlay));
-    btnRow.appendChild(closeBtn);
+    cancelBtn = el('button','ghost',withShortcut('Huỷ','H')); cancelBtn.title='Phím tắt: H';
+    cancelBtn.addEventListener('click', close);
+    btnRow.appendChild(cancelBtn);
   }
   modal.appendChild(btnRow);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+  updatePreview();
+
+  function keyHandler(e){
+    const key = e.key.toLowerCase();
+    if(key==='d'){ e.preventDefault(); tradeBtn.click(); }
+    else if(key==='h' && cancelBtn){ e.preventDefault(); cancelBtn.click(); }
+  }
+  document.addEventListener('keydown', keyHandler);
+  function close(){
+    document.removeEventListener('keydown', keyHandler);
+    document.body.removeChild(overlay);
+  }
 }
 
 function showGameOver(winner){
@@ -3115,6 +3254,28 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
+
+// Setup-place: holding down on a territory keeps placing armies into it — 1 immediately on
+// press, then (after a short initial delay, like a keyboard's key-repeat) once per tick for as
+// long as the pointer stays down, until the phase ends or this spot stops being valid.
+let setupHoldTimer = null;
+function stopSetupHold(){ clearTimeout(setupHoldTimer); clearInterval(setupHoldTimer); setupHoldTimer=null; }
+$('gameCanvas').addEventListener('pointerdown', (e)=>{
+  if(!game || game.phase!=='setup-place') return;
+  const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), e);
+  if(!attemptSetupPlacement(terrId)) return;
+  $('gameCanvas').setPointerCapture(e.pointerId);
+  stopSetupHold();
+  setupHoldTimer = setTimeout(()=>{
+    setupHoldTimer = setInterval(()=>{
+      if(!canKeepHoldingSetupPlacement(terrId)){ stopSetupHold(); return; }
+      attemptSetupPlacement(terrId);
+    }, 150);
+  }, 400);
+});
+['pointerup','pointerleave','pointercancel'].forEach(evtName=>
+  $('gameCanvas').addEventListener(evtName, stopSetupHold)
+);
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
 $('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
 $('btnQuitGame').addEventListener('click', ()=>{
@@ -3166,6 +3327,30 @@ window.addEventListener('keydown', (e)=>{
   cb.dispatchEvent(new Event('change'));
 });
 
+// Phase-action keyboard shortcuts — attack: C = Công triệt để, T = Tấn công, K = Kết thúc tấn
+// công; fortify: C = Chuyển quân, K = Kết thúc lượt. Modal-specific shortcuts (the capture-move
+// and fortify popups) are wired locally in their own open functions instead, since a modal
+// being open already blocks these via the same guard the Space-bar shortcut uses above.
+window.addEventListener('keydown', (e)=>{
+  if(!game || game.over) return;
+  const activeScreen = document.querySelector('.screen.active');
+  if(!activeScreen || activeScreen.id!=='screen-game') return;
+  if(document.querySelector('.modal-overlay') || $('gameOverOverlay')) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+  const p = currentPlayer();
+  if(!p.isHuman) return;
+  const key = e.key.toLowerCase();
+  if(game.phase==='attack'){
+    if(key==='c'){ e.preventDefault(); allOutAttack(); }
+    else if(key==='t'){ e.preventDefault(); doSingleAttack(); }
+    else if(key==='k'){ e.preventDefault(); beginFortifyPhase(); }
+  } else if(game.phase==='fortify'){
+    if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
+    else if(key==='k'){ e.preventDefault(); endTurn(); }
+  }
+});
+
 // Top bar contextual buttons
 function updateTopbarActions(){
   const wrap = $('topbarActions'); wrap.innerHTML='';
@@ -3207,6 +3392,7 @@ window.__debug = {
   generateRandomMap, findConnectedComponents, renderGame, openFortifyModal,
   tradeCards, tradeInValue, findTradeCombo, drawEditorCanvas, drawGameCanvas,
   getTerritoryBoundaryLoops, getContinentBoundaryLoops, paintCell,
+  attemptSetupPlacement, canKeepHoldingSetupPlacement, allOutAttack, doSingleAttack,
   get editorCurrentTerrId(){ return editorCurrentTerrId; }
 };
 

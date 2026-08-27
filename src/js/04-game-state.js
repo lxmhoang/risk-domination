@@ -122,6 +122,30 @@ function advanceSetupTurn(){
   setupPlaceNext();
 }
 
+// Places 1 army for the human into `terrId` if it's currently their turn/valid, same effect as
+// a single click during setup-place. Returns whether a placement actually happened.
+function attemptSetupPlacement(terrId){
+  if(!game || game.over || game.phase!=='setup-place') return false;
+  const p = currentPlayer();
+  if(!p.isHuman || terrId===-1 || game.owner[terrId]!==p.id || game.pool[p.id]<=0) return false;
+  game.armies[terrId]++; game.pool[p.id]--;
+  renderGame();
+  if(allPoolsEmpty()){ beginReinforcePhase(); }
+  else { setActionHint('Còn lại: '+game.pool[p.id]+' quân để đặt.'); advanceSetupTurn(); }
+  return true;
+}
+
+// Whether a press-and-hold placement loop should keep waiting for another turn to come back
+// around (turn order cycles through the AI between each of the human's own placements, so
+// most ticks while holding land mid-AI-turn — that's not a reason to stop), vs give up
+// entirely because the phase ended or this spot/player can no longer place here.
+function canKeepHoldingSetupPlacement(terrId){
+  if(!game || game.over || game.phase!=='setup-place') return false;
+  const p = currentPlayer();
+  if(p.isHuman && (game.owner[terrId]!==p.id || game.pool[p.id]<=0)) return false;
+  return true;
+}
+
 // Alternative to the turn-based setupPlaceNext() flow: dump every player's starting
 // pool onto their own territories at random, all at once, then go straight to
 // reinforce. Used when the "Đặt quân thủ công lúc bắt đầu" setting is off.
@@ -270,6 +294,7 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
   bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
   modal.appendChild(bigRow);
 
+  let keyHandler = null;
   if(extraMax>0){
     const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
     const slider = document.createElement('input');
@@ -287,20 +312,36 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
     modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
 
     const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
-    const quickMin = el('button','ghost','Giữ nguyên (+0)');
+    const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','G')); quickMin.title='Phím tắt: G';
     quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
-    const quickMax = el('button','ghost','Tối đa (+'+extraMax+')');
+    const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
     quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
-    const confirmBtn = el('button','primary','Xác nhận');
+    const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
     confirmBtn.addEventListener('click', ()=>{
       const extra = Number(slider.value);
       game.armies[fromId] -= extra;
       game.armies[toId] += extra;
-      document.body.removeChild(overlay);
+      close();
       renderGame();
     });
     btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
     modal.appendChild(btnRow);
+
+    keyHandler = function(e){
+      const key = e.key.toLowerCase();
+      if(key==='g'){ e.preventDefault(); quickMin.click(); }
+      else if(key==='t'){ e.preventDefault(); quickMax.click(); }
+      else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
+    };
+    document.addEventListener('keydown', keyHandler);
+    // sync the big from/to numbers with the slider's initial value (defaults to max extra) —
+    // without this they show the pre-transfer counts until the user drags the slider once.
+    slider.dispatchEvent(new Event('input'));
+  }
+
+  function close(){
+    if(keyHandler) document.removeEventListener('keydown', keyHandler);
+    document.body.removeChild(overlay);
   }
 
   overlay.appendChild(modal);

@@ -22,6 +22,25 @@ function setConfigValue(key, value){ RUNTIME_CONFIG[key] = value; saveRuntimeCon
 function resetRuntimeConfig(){ RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG); localStorage.removeItem(SETTINGS_STORAGE_KEY); }
 
 /* =========================================================================
+   KEYBOARD-SHORTCUT HINTS
+   ---------------------------------------------------------------------
+   There's no reliable API to ask "does this device have a physical keyboard" up
+   front (touch-capable laptops exist, desktops without touch exist, etc.) — so
+   instead this waits for actual proof: the first real keydown event. Once one
+   fires, every button built with withShortcut() starts showing its key in the
+   label too, retroactively (a re-render is triggered right away) and for every
+   button rendered from then on — never guessed ahead of time, so mobile/touch
+   players who never press a key simply never see hints they can't use.
+   ========================================================================= */
+let hasKeyboardDetected = false;
+window.addEventListener('keydown', ()=>{
+  if(hasKeyboardDetected) return;
+  hasKeyboardDetected = true;
+  if(game && document.getElementById('screen-game').classList.contains('active')) renderGame();
+}, {capture:true});
+function withShortcut(label, key){ return hasKeyboardDetected ? `${label} (${key.toUpperCase()})` : label; }
+
+/* =========================================================================
    UTILITIES
    ========================================================================= */
 const $ = (id)=>document.getElementById(id);

@@ -201,13 +201,59 @@ function showDice(ad,dd,results){
 
 function setActionHint(text){ $('actionHint').textContent = text; }
 
+// Shared by the attack-phase buttons and their keyboard shortcuts (08-wiring.js).
+function canAttackNow(p){
+  return game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id);
+}
+function doSingleAttack(){
+  const p = currentPlayer();
+  if(!canAttackNow(p)) return;
+  const fromId = game.selectedFrom, toId = game.selectedTo;
+  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
+  const defenderName = game.players[game.owner[toId]].name;
+  const res = doBattle(fromId, toId);
+  recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
+  if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
+  renderGame();
+}
+// Keeps attacking the same target back-to-back (same silent-round-then-summarize approach as
+// the AI's battleBatch() in 05-ai.js) until the source runs dry or the target is captured.
+function allOutAttack(){
+  const p = currentPlayer();
+  if(!canAttackNow(p)) return;
+  const fromId = game.selectedFrom, toId = game.selectedTo;
+  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
+  const defenderName = game.players[game.owner[toId]].name;
+  let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
+  while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
+    lastRes = doBattle(fromId, toId, {silent:true});
+    rounds++; attLossTotal += lastRes.attLoss; defLossTotal += lastRes.defLoss;
+    if(lastRes.captured){ captured=true; break; }
+  }
+  if(rounds>0){
+    const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
+    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`);
+    if(lastRes) showDice(lastRes.ad, lastRes.dd, lastRes.results);
+    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`);
+    recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
+  }
+  if(game.armies[fromId]<2) game.selectedFrom=null;
+  renderGame();
+}
+// Shared by the fortify-phase button and its keyboard shortcut (08-wiring.js).
+function canFortifyNow(p){
+  return game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
+    game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
+    pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1;
+}
+
 function renderPhaseActions(){
   const wrap = $('phaseActions'); wrap.innerHTML='';
   if(game.over) return;
   const p = currentPlayer();
   if(!p.isHuman){ wrap.appendChild(el('div','',''));  return; }
   if(game.phase==='setup-place'){
-    wrap.appendChild(el('div','', 'Đặt quân ban đầu — nhấp vào bản đồ.'));
+    wrap.appendChild(el('div','', 'Đặt quân ban đầu — nhấp vào bản đồ (giữ nhấn để đặt liên tục).'));
     return;
   }
   if(game.phase==='reinforce'){
@@ -215,39 +261,28 @@ function renderPhaseActions(){
     return;
   }
   if(game.phase==='attack'){
-    const atkBtn = el('button','danger','⚔️ Tấn công'); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
-    atkBtn.addEventListener('click', ()=>{
-      if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)){
-        const fromId = game.selectedFrom, toId = game.selectedTo;
-        const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-        const defenderName = game.players[game.owner[toId]].name;
-        const res = doBattle(fromId, toId);
-        recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
-        if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
-        renderGame();
-      }
-    });
-    if(game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id)) atkBtn.disabled=false;
+    const ready = canAttackNow(p);
+    const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack'; allOutBtn.disabled=!ready;
+    allOutBtn.title='Phím tắt: C';
+    allOutBtn.addEventListener('click', allOutAttack);
+    wrap.appendChild(allOutBtn);
+    const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack'; atkBtn.disabled=!ready;
+    atkBtn.title='Phím tắt: T';
+    atkBtn.addEventListener('click', doSingleAttack);
     wrap.appendChild(atkBtn);
-    const endBtn = el('button','primary','Kết thúc tấn công');
+    const endBtn = el('button','primary',withShortcut('Kết thúc tấn công','K')); endBtn.title='Phím tắt: K';
     endBtn.addEventListener('click', ()=> beginFortifyPhase());
     wrap.appendChild(endBtn);
     return;
   }
   if(game.phase==='fortify'){
-    const fortBtn = el('button','good','🚚 Chuyển quân'); fortBtn.id='btnDoFortify'; fortBtn.disabled=true;
+    const fortBtn = el('button','good',withShortcut('🚚 Chuyển quân','C')); fortBtn.id='btnDoFortify'; fortBtn.disabled=!canFortifyNow(p);
+    fortBtn.title='Phím tắt: C';
     fortBtn.addEventListener('click', ()=>{
-      if(game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
-         game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
-         pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1){
-        openFortifyModal(game.selectedFrom, game.selectedTo);
-      }
+      if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo);
     });
-    if(game.selectedFrom!=null && game.selectedTo!=null && game.selectedFrom!==game.selectedTo &&
-       game.owner[game.selectedFrom]===p.id && game.owner[game.selectedTo]===p.id &&
-       pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1) fortBtn.disabled=false;
     wrap.appendChild(fortBtn);
-    const endBtn = el('button','primary','Kết thúc lượt');
+    const endBtn = el('button','primary',withShortcut('Kết thúc lượt','K')); endBtn.title='Phím tắt: K';
     endBtn.addEventListener('click', ()=> endTurn());
     wrap.appendChild(endBtn);
   }
@@ -292,17 +327,17 @@ function openFortifyModal(fromId, toId){
 
   const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
   const cancelBtn = el('button','ghost','Huỷ');
-  cancelBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); });
-  const quickMin = el('button','ghost','Tối thiểu (1)');
+  cancelBtn.addEventListener('click', close);
+  const quickMin = el('button','ghost',withShortcut('Tối thiểu (1)','T')); quickMin.title='Phím tắt: T';
   quickMin.addEventListener('click', ()=>{ slider.value='1'; slider.dispatchEvent(new Event('input')); });
-  const quickMax = el('button','ghost','Tối đa ('+max+')');
+  const quickMax = el('button','ghost',withShortcut('Tối đa ('+max+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(max); slider.dispatchEvent(new Event('input')); });
-  const confirmBtn = el('button','primary','Xác nhận');
+  const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
   confirmBtn.addEventListener('click', ()=>{
     const n = Number(slider.value);
     game.armies[fromId] -= n; game.armies[toId] += n;
     logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.');
-    document.body.removeChild(overlay);
+    close();
     game.selectedFrom=null; game.selectedTo=null;
     renderGame();
   });
@@ -311,6 +346,21 @@ function openFortifyModal(fromId, toId){
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
+  // sync the big from/to numbers with the slider's initial value (defaults to max) — without
+  // this they show the pre-transfer counts until the user drags the slider at least once.
+  slider.dispatchEvent(new Event('input'));
+
+  function keyHandler(e){
+    const key = e.key.toLowerCase();
+    if(key==='t'){ e.preventDefault(); quickMin.click(); }
+    else if(key==='d'){ e.preventDefault(); quickMax.click(); }
+    else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
+  }
+  document.addEventListener('keydown', keyHandler);
+  function close(){
+    document.removeEventListener('keydown', keyHandler);
+    document.body.removeChild(overlay);
+  }
 }
 
 function renderTopbar(){
@@ -345,28 +395,26 @@ function renderGame(){
 }
 
 /* ---------------- Game canvas click handling ---------------- */
-function gameCanvasClick(evt){
-  if(game.over) return;
-  const p = currentPlayer();
-  if(!p.isHuman) return;
-  const canvas = $('gameCanvas');
+// Shared by the click handler below and the setup-place press-and-hold wiring (08-wiring.js).
+function getTerritoryFromCanvasEvent(canvas, evt){
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const x=(evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
   const c=Math.floor(x/mapData.cellSize), r=Math.floor(y/mapData.cellSize);
-  if(!inBounds(mapData,c,r)) return;
-  const terrId = mapData.cellTerritory[cellIndex(mapData,c,r)];
+  if(!inBounds(mapData,c,r)) return -1;
+  return mapData.cellTerritory[cellIndex(mapData,c,r)];
+}
+
+function gameCanvasClick(evt){
+  if(game.over) return;
+  const p = currentPlayer();
+  if(!p.isHuman) return;
+  // setup-place is handled entirely by the pointerdown/hold wiring instead (so holding down
+  // can keep placing armies) — see $('gameCanvas') pointer wiring in 08-wiring.js.
+  if(game.phase==='setup-place') return;
+  const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), evt);
   if(terrId===-1) return;
 
-  if(game.phase==='setup-place'){
-    if(game.owner[terrId]===p.id && game.pool[p.id]>0){
-      game.armies[terrId]++; game.pool[p.id]--;
-      renderGame();
-      if(allPoolsEmpty()){ beginReinforcePhase(); }
-      else { setActionHint('Còn lại: '+game.pool[p.id]+' quân để đặt.'); advanceSetupTurn(); }
-    }
-    return;
-  }
   if(game.phase==='reinforce'){
     placeReinforcement(terrId);
     return;
