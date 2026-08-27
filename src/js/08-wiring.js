@@ -31,9 +31,10 @@ $('loadGameInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
-$('btnOpenSettings').addEventListener('click', ()=>{ renderSettingsScreen(); showScreen('screen-settings'); });
-$('btnBackFromSettings').addEventListener('click', ()=> showScreen('screen-menu'));
-function renderSettingsScreen(){
+// The config knobs that used to live on a separate Settings screen now live directly in the
+// setup screen (see goToSetup() -> renderConfigControls()) so everything for starting a game
+// is in one place. They still persist to RUNTIME_CONFIG/localStorage exactly as before.
+function renderConfigControls(){
   $('settingSpectatorDelay').value = RUNTIME_CONFIG.spectatorModeDelayMs;
   $('settingManualPlacement').checked = !!RUNTIME_CONFIG.manualInitialPlacement;
   $('settingCardAwardEvent').value = RUNTIME_CONFIG.cardAwardEvent;
@@ -51,7 +52,7 @@ $('settingCardAwardEvent').addEventListener('change', (e)=>{
 });
 $('btnSettingsReset').addEventListener('click', ()=>{
   resetRuntimeConfig();
-  renderSettingsScreen();
+  renderConfigControls();
 });
 $('btnSettingsExport').addEventListener('click', ()=>{
   const blob = new Blob([JSON.stringify(pickConfig(RUNTIME_CONFIG), null, 2)], {type:'application/json'});
@@ -69,7 +70,7 @@ $('settingsImportInput').addEventListener('change', (e)=>{
       const obj = JSON.parse(reader.result);
       CONFIG_KEYS.forEach(k=>{ if(obj[k]!==undefined) RUNTIME_CONFIG[k]=obj[k]; });
       saveRuntimeConfig();
-      renderSettingsScreen();
+      renderConfigControls();
     }catch(err){ alert('Không đọc được file config: '+err.message); }
   };
   reader.readAsText(file);
@@ -83,13 +84,14 @@ $('btnHowTo').addEventListener('click', ()=>{
 2. TẤN CÔNG: Chọn vùng của bạn (≥2 quân) tấn công vùng địch liền kề. Đổ xúc xắc: bên tấn công tối đa 3, bên phòng thủ tối đa 2. So sánh xúc xắc cao nhất, hòa thì phòng thủ thắng.
 3. CHIẾM VÙNG: Nếu quân địch về 0, bạn chiếm vùng và phải chuyển quân sang đó.
 4. TĂNG CƯỜNG: Cuối lượt, di chuyển quân giữa 2 vùng của bạn có đường nối.
-5. THẺ BÀI: Mặc định, chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài (đổi được ở Cài đặt: theo lượt hạ quân địch, hoặc phát tự động mỗi lượt). Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
+5. THẺ BÀI: Mặc định, chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài (đổi được ở màn Thiết lập ván chơi: theo lượt hạ quân địch, hoặc phát tự động mỗi lượt). Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
 6. THẮNG: Người cuối cùng còn lãnh thổ trên bản đồ.`);
 });
 
 function goToSetup(){
   $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục.`;
   renderPlayerConfigList();
+  renderConfigControls();
   showScreen('screen-setup');
 }
 // Remembers name/color/personality edits across re-renders (changing aiCountSelect or

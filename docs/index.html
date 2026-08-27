@@ -132,8 +132,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .switch-row input{cursor:pointer;width:15px;height:15px;}
 
 /* ---------- Setup screen ---------- */
-#screen-setup{align-items:center;justify-content:center;padding:30px;overflow-y:auto;}
-.setup-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;}
+/* align-items:center (horizontal) is fine, but justify-content:center (vertical) on a
+   scrolling flex container clips the START of overflowing content — the browser centers it
+   by pushing the top above scrollTop:0, and that part can't be scrolled back into view. Center
+   vertically via auto margins on the card instead, which collapse to 0 (normal top-anchored
+   scroll) once the content no longer fits, instead of via justify-content on the container. */
+#screen-setup{align-items:center;padding:30px;overflow-y:auto;}
+.setup-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;margin:auto 0;}
 .setup-row{margin-bottom:18px;}
 .setup-row label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600;}
 .player-config{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel2);border-radius:10px;margin-bottom:6px;}
@@ -406,52 +411,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
         <h3><span class="emoji">📖</span> Luật chơi</h3>
         <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
       </div>
-      <div class="menu-card" id="btnOpenSettings">
-        <h3><span class="emoji">⚙️</span> Cài đặt</h3>
-        <p>Tốc độ chế độ xem AI đấu AI, cách đặt quân ban đầu, sự kiện phát thẻ bài.</p>
-      </div>
     </div>
     <input type="file" id="loadMapInput" accept=".json" class="hidden">
     <input type="file" id="loadGameInput" accept=".json" class="hidden">
-  </div>
-</div>
-
-<!-- ============ SETTINGS ============ -->
-<div class="screen" id="screen-settings">
-  <div class="setup-card">
-    <h2>Cài đặt</h2>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">
-      Áp dụng ngay và được ghi nhớ trong trình duyệt này. Dùng "Xuất config.json" để lưu
-      lại thành mặc định gốc cho lần build sau (thay file src/config.json rồi chạy
-      node build.js).
-    </p>
-
-    <div class="setup-row">
-      <label>Độ trễ khi xem AI đấu AI (ms)</label>
-      <input type="number" id="settingSpectatorDelay" min="0" max="10000" step="50" style="width:110px;">
-    </div>
-
-    <div class="setup-row">
-      <label class="switch-row"><input type="checkbox" id="settingManualPlacement"> Đặt quân thủ công lúc bắt đầu ván (tắt = rải quân ngẫu nhiên, mặc định)</label>
-    </div>
-
-    <div class="setup-row">
-      <label>Sự kiện phát thẻ bài</label>
-      <select id="settingCardAwardEvent">
-        <option value="on_capture">Khi chiếm được 1 lãnh thổ (mặc định)</option>
-        <option value="on_kill">Khi đánh hạ được ít nhất 1 đơn vị địch</option>
-        <option value="on_turn_end">Hết lượt là được phát, không cần điều kiện</option>
-      </select>
-    </div>
-
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-      <button class="ghost small" id="btnSettingsReset">↺ Khôi phục mặc định</button>
-      <button class="ghost small" id="btnSettingsExport">⬇ Xuất config.json</button>
-      <button class="ghost small" id="btnSettingsImport">⬆ Nhập config.json</button>
-      <input type="file" id="settingsImportInput" accept=".json" class="hidden">
-    </div>
-
-    <button class="ghost" id="btnBackFromSettings" style="width:100%;margin-top:16px;">← Quay lại</button>
   </div>
 </div>
 
@@ -593,7 +555,39 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     </div>
 
     <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="settingManualPlacement"> Đặt quân thủ công lúc bắt đầu ván (tắt = rải quân ngẫu nhiên, mặc định)</label>
+    </div>
+
+    <div class="setup-row">
+      <label>Sự kiện phát thẻ bài</label>
+      <select id="settingCardAwardEvent">
+        <option value="on_capture">Khi chiếm được 1 lãnh thổ (mặc định)</option>
+        <option value="on_kill">Khi đánh hạ được ít nhất 1 đơn vị địch</option>
+        <option value="on_turn_end">Hết lượt là được phát, không cần điều kiện</option>
+      </select>
+    </div>
+
+    <div class="setup-row">
       <label class="switch-row"><input type="checkbox" id="toggleSpectatorMode"> 👀 Chế độ xem AI đấu với nhau (bạn không điều khiển, mỗi hành động cách nhau 1 giây)</label>
+    </div>
+
+    <div class="setup-row">
+      <label>Độ trễ khi xem AI đấu AI (ms)</label>
+      <input type="number" id="settingSpectatorDelay" min="0" max="10000" step="50" style="width:110px;">
+    </div>
+
+    <div class="setup-row">
+      <label>Cấu hình nâng cao (ghi nhớ trong trình duyệt này)</label>
+      <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">
+        "Xuất config.json" lưu các lựa chọn ở trên (trừ những mục riêng cho ván này như số AI/độ khó)
+        thành mặc định gốc cho lần build sau (thay file src/config.json rồi chạy node build.js).
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="ghost small" id="btnSettingsReset">↺ Khôi phục mặc định</button>
+        <button class="ghost small" id="btnSettingsExport">⬇ Xuất config.json</button>
+        <button class="ghost small" id="btnSettingsImport">⬆ Nhập config.json</button>
+        <input type="file" id="settingsImportInput" accept=".json" class="hidden">
+      </div>
     </div>
 
     <button class="primary" id="btnStartGame" style="width:100%;padding:14px;font-size:15px;margin-top:10px;">Bắt đầu chơi</button>
@@ -2883,9 +2877,10 @@ $('loadGameInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
-$('btnOpenSettings').addEventListener('click', ()=>{ renderSettingsScreen(); showScreen('screen-settings'); });
-$('btnBackFromSettings').addEventListener('click', ()=> showScreen('screen-menu'));
-function renderSettingsScreen(){
+// The config knobs that used to live on a separate Settings screen now live directly in the
+// setup screen (see goToSetup() -> renderConfigControls()) so everything for starting a game
+// is in one place. They still persist to RUNTIME_CONFIG/localStorage exactly as before.
+function renderConfigControls(){
   $('settingSpectatorDelay').value = RUNTIME_CONFIG.spectatorModeDelayMs;
   $('settingManualPlacement').checked = !!RUNTIME_CONFIG.manualInitialPlacement;
   $('settingCardAwardEvent').value = RUNTIME_CONFIG.cardAwardEvent;
@@ -2903,7 +2898,7 @@ $('settingCardAwardEvent').addEventListener('change', (e)=>{
 });
 $('btnSettingsReset').addEventListener('click', ()=>{
   resetRuntimeConfig();
-  renderSettingsScreen();
+  renderConfigControls();
 });
 $('btnSettingsExport').addEventListener('click', ()=>{
   const blob = new Blob([JSON.stringify(pickConfig(RUNTIME_CONFIG), null, 2)], {type:'application/json'});
@@ -2921,7 +2916,7 @@ $('settingsImportInput').addEventListener('change', (e)=>{
       const obj = JSON.parse(reader.result);
       CONFIG_KEYS.forEach(k=>{ if(obj[k]!==undefined) RUNTIME_CONFIG[k]=obj[k]; });
       saveRuntimeConfig();
-      renderSettingsScreen();
+      renderConfigControls();
     }catch(err){ alert('Không đọc được file config: '+err.message); }
   };
   reader.readAsText(file);
@@ -2935,13 +2930,14 @@ $('btnHowTo').addEventListener('click', ()=>{
 2. TẤN CÔNG: Chọn vùng của bạn (≥2 quân) tấn công vùng địch liền kề. Đổ xúc xắc: bên tấn công tối đa 3, bên phòng thủ tối đa 2. So sánh xúc xắc cao nhất, hòa thì phòng thủ thắng.
 3. CHIẾM VÙNG: Nếu quân địch về 0, bạn chiếm vùng và phải chuyển quân sang đó.
 4. TĂNG CƯỜNG: Cuối lượt, di chuyển quân giữa 2 vùng của bạn có đường nối.
-5. THẺ BÀI: Mặc định, chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài (đổi được ở Cài đặt: theo lượt hạ quân địch, hoặc phát tự động mỗi lượt). Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
+5. THẺ BÀI: Mặc định, chiếm được ≥1 vùng trong lượt sẽ nhận 1 thẻ bài (đổi được ở màn Thiết lập ván chơi: theo lượt hạ quân địch, hoặc phát tự động mỗi lượt). Đổi 3 thẻ (giống nhau hoặc khác nhau) lấy quân thưởng tăng dần.
 6. THẮNG: Người cuối cùng còn lãnh thổ trên bản đồ.`);
 });
 
 function goToSetup(){
   $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục.`;
   renderPlayerConfigList();
+  renderConfigControls();
   showScreen('screen-setup');
 }
 // Remembers name/color/personality edits across re-renders (changing aiCountSelect or

@@ -125,8 +125,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .switch-row input{cursor:pointer;width:15px;height:15px;}
 
 /* ---------- Setup screen ---------- */
-#screen-setup{align-items:center;justify-content:center;padding:30px;overflow-y:auto;}
-.setup-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;}
+/* align-items:center (horizontal) is fine, but justify-content:center (vertical) on a
+   scrolling flex container clips the START of overflowing content — the browser centers it
+   by pushing the top above scrollTop:0, and that part can't be scrolled back into view. Center
+   vertically via auto margins on the card instead, which collapse to 0 (normal top-anchored
+   scroll) once the content no longer fits, instead of via justify-content on the container. */
+#screen-setup{align-items:center;padding:30px;overflow-y:auto;}
+.setup-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:28px;max-width:560px;width:100%;margin:auto 0;}
 .setup-row{margin-bottom:18px;}
 .setup-row label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:600;}
 .player-config{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--panel2);border-radius:10px;margin-bottom:6px;}

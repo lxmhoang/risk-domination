@@ -11,10 +11,11 @@ split at the same logical boundaries the code already had.
   (`on_capture` / `on_kill` / `on_turn_end` — when a player earns a Risk card).
   `build.js` inlines it as a `GAME_CONFIG` constant at the top of the generated script —
   not `fetch()`ed at runtime, since `dist/index.html` must stay openable via `file://`
-  with no server. The in-game Settings screen (`screen-settings`, wired in
-  `08-wiring.js`) lets the player override these at runtime; overrides live in
-  `RUNTIME_CONFIG` (see `01-utils.js`), persisted to `localStorage`, and can be
-  exported back out as a new `config.json` to promote into the real default.
+  with no server. These are exposed as controls directly on the setup screen
+  (`screen-setup`, wired in `08-wiring.js`, see `renderConfigControls()`) alongside the
+  rest of a game's per-match settings; overrides live in `RUNTIME_CONFIG` (see
+  `01-utils.js`), persisted to `localStorage`, and can be exported back out as a new
+  `config.json` to promote into the real default.
 - **01-utils.js** — DOM helpers (`$`, `el`), RNG helpers, Vietnamese name generation
   (`finalizeTerrName`, `finalizeContName`, prefix/base word lists), string sanitization,
   and the `RUNTIME_CONFIG` / `localStorage` settings layer described above.
