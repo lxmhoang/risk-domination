@@ -270,21 +270,33 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
 
-// Setup-place: holding down on a territory keeps placing armies into it — 1 immediately on
-// press, then (after a short initial delay, like a keyboard's key-repeat) once per tick for as
-// long as the pointer stays down, until the phase ends or this spot stops being valid.
+// Setup-place AND reinforce: holding down on a territory keeps placing armies into it — 1
+// immediately on press, then (after a short initial delay, like a keyboard's key-repeat) once
+// per tick for as long as the pointer stays down, until there's nothing left to place there.
+// Setup-place cycles through the AI's turns in between each of the human's own placements
+// (see canKeepHoldingSetupPlacement), while reinforce is entirely the human's own turn so
+// placeReinforcement()'s own true/false return is enough to know whether to keep going.
 let setupHoldTimer = null;
 function stopSetupHold(){ clearTimeout(setupHoldTimer); clearInterval(setupHoldTimer); setupHoldTimer=null; }
+function tryHoldPlacement(terrId){
+  if(game.phase==='setup-place') return attemptSetupPlacement(terrId);
+  if(game.phase==='reinforce') return placeReinforcement(terrId);
+  return false;
+}
 $('gameCanvas').addEventListener('pointerdown', (e)=>{
-  if(!game || game.phase!=='setup-place') return;
+  if(!game || (game.phase!=='setup-place' && game.phase!=='reinforce')) return;
   const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), e);
-  if(!attemptSetupPlacement(terrId)) return;
+  if(!tryHoldPlacement(terrId)) return;
   $('gameCanvas').setPointerCapture(e.pointerId);
   stopSetupHold();
   setupHoldTimer = setTimeout(()=>{
     setupHoldTimer = setInterval(()=>{
-      if(!canKeepHoldingSetupPlacement(terrId)){ stopSetupHold(); return; }
-      attemptSetupPlacement(terrId);
+      if(game.phase==='setup-place'){
+        if(!canKeepHoldingSetupPlacement(terrId)){ stopSetupHold(); return; }
+        attemptSetupPlacement(terrId);
+      } else if(!tryHoldPlacement(terrId)){
+        stopSetupHold();
+      }
     }, 150);
   }, 400);
 });

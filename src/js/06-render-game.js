@@ -409,16 +409,12 @@ function gameCanvasClick(evt){
   if(game.over) return;
   const p = currentPlayer();
   if(!p.isHuman) return;
-  // setup-place is handled entirely by the pointerdown/hold wiring instead (so holding down
-  // can keep placing armies) — see $('gameCanvas') pointer wiring in 08-wiring.js.
-  if(game.phase==='setup-place') return;
+  // setup-place and reinforce are both handled entirely by the pointerdown/hold wiring instead
+  // (so holding down can keep placing armies) — see $('gameCanvas') pointer wiring in 08-wiring.js.
+  if(game.phase==='setup-place' || game.phase==='reinforce') return;
   const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), evt);
   if(terrId===-1) return;
 
-  if(game.phase==='reinforce'){
-    placeReinforcement(terrId);
-    return;
-  }
   if(game.phase==='attack'){
     if(game.owner[terrId]===p.id){
       game.selectedFrom = terrId; game.selectedTo=null;
