@@ -86,10 +86,17 @@ function showScreen(id){
   document.body.classList.toggle('in-game-screen', id==='screen-game');
 }
 
-const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#98c1d9","#c9a0dc","#f4a261","#e76f51",
-  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#00bbf9","#00f5d4",
-  "#fee440","#ff9f1c","#2ec4b6","#e71d36","#8ac926","#1982c4","#6a4c93","#ff595e"];
-const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#3fd0c9","#ff9f5b","#7bd389"];
+// A few entries here used to be bright/pale blues or teals ("#98c1d9","#00bbf9","#00f5d4",
+// "#2ec4b6","#1982c4") close enough to the bright ocean color (see OCEAN_COLOR in
+// 06-render-game.js/03-editor.js) that a territory/continent using one could visually blend
+// into the surrounding water — swapped for warm/jewel tones with no such collision instead.
+const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#e8998d","#c9a0dc","#f4a261","#e76f51",
+  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#ffb703","#c9184a",
+  "#fee440","#ff9f1c","#7209b7","#e71d36","#8ac926","#fb8500","#6a4c93","#ff595e"];
+const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#f72585","#ff9f5b","#7bd389"];
+// Bright ocean blue used for water fill on both canvases and for the space around the map,
+// so zooming out reads as one continuous ocean surrounding the continents.
+const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
   {name:"Vàng", hex:"#f2c94c"}, {name:"Tím", hex:"#9b5de5"}, {name:"Cam", hex:"#f2994a"}

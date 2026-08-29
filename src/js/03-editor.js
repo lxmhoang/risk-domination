@@ -135,7 +135,7 @@ function drawEditorCanvas(){
   canvas.width = mapData.cols*cs;
   canvas.height = mapData.rows*cs;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#123a56';
+  ctx.fillStyle = OCEAN_COLOR;
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);

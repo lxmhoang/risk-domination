@@ -90,7 +90,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #editor-toolbar .grp{display:flex;gap:6px;border-right:1px solid var(--border);padding-right:10px;margin-right:4px;}
 #editor-toolbar .grp:last-child{border-right:none;}
 #editor-canvas-wrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:20px;}
-#editorCanvas{background:#1a2136;border-radius:8px;box-shadow:0 0 0 1px var(--border);cursor:crosshair;max-width:100%;height:auto;touch-action:none;}
+#editorCanvas{background:#1CB5E0;border-radius:8px;box-shadow:0 0 0 1px var(--border);cursor:crosshair;max-width:100%;height:auto;touch-action:none;}
 .tool-btn.active{background:var(--accent);color:#fff;}
 .panel-block{background:var(--panel2);border-radius:10px;padding:10px;}
 .panel-block h4{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0;}
@@ -154,7 +154,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #screen-game{position:relative;overflow:hidden;padding:0;}
 #gameCanvasWrap{
   position:absolute;inset:0;overflow:auto;display:flex;align-items:flex-start;
-  background:#0a0e18;touch-action:pan-x pan-y;
+  background:#1CB5E0;touch-action:pan-x pan-y;
 }
 /* margin:auto on the canvas (not justify-content/align-items on the wrap, deliberately absent
    here) centers it in BOTH axes when it fits. Auto margins collapse to 0 once zoomed past the
@@ -168,7 +168,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    a stylesheet cap on only ONE of the two axes clamps that axis alone once zoomed past the
    container's size, stretching the other and distorting the map, since inline `width`/`height`
    don't override a separate `max-width`/`max-height` rule. */
-#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
+#gameCanvas{background:#1CB5E0;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
 
 /* Overlay scaffolding: a positioned bar/column that centers itself and scrolls internally if
    its content ever runs longer than the screen has room for (a short/narrow viewport with many

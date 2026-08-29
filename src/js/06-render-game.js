@@ -84,7 +84,7 @@ function drawGameCanvas(){
   canvas.style.marginBottom = '0';
   const ctx = canvas.getContext('2d');
   ctx.scale(displayScale, displayScale); // canvas.width/height assignment above already reset the transform to identity
-  ctx.fillStyle='#123a56';
+  ctx.fillStyle=OCEAN_COLOR;
   ctx.fillRect(0,0,nativeW,nativeH);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);

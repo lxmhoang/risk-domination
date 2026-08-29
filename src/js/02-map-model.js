@@ -381,6 +381,10 @@ function generateWaterMask(cols, rows, waterRatio, spread){
     }
     frontier = next;
   }
+  // Force the outer ring of cells to be water, so a randomly generated map never comes out
+  // with the map's rectangular bounding box itself as a visible straight-edged coastline.
+  for(let c=0;c<cols;c++){ water[c]=1; water[(rows-1)*cols+c]=1; }
+  for(let r=0;r<rows;r++){ water[r*cols]=1; water[r*cols+cols-1]=1; }
   return water;
 }
 

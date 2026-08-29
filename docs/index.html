@@ -102,7 +102,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #editor-toolbar .grp{display:flex;gap:6px;border-right:1px solid var(--border);padding-right:10px;margin-right:4px;}
 #editor-toolbar .grp:last-child{border-right:none;}
 #editor-canvas-wrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:20px;}
-#editorCanvas{background:#1a2136;border-radius:8px;box-shadow:0 0 0 1px var(--border);cursor:crosshair;max-width:100%;height:auto;touch-action:none;}
+#editorCanvas{background:#1CB5E0;border-radius:8px;box-shadow:0 0 0 1px var(--border);cursor:crosshair;max-width:100%;height:auto;touch-action:none;}
 .tool-btn.active{background:var(--accent);color:#fff;}
 .panel-block{background:var(--panel2);border-radius:10px;padding:10px;}
 .panel-block h4{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0;}
@@ -166,7 +166,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #screen-game{position:relative;overflow:hidden;padding:0;}
 #gameCanvasWrap{
   position:absolute;inset:0;overflow:auto;display:flex;align-items:flex-start;
-  background:#0a0e18;touch-action:pan-x pan-y;
+  background:#1CB5E0;touch-action:pan-x pan-y;
 }
 /* margin:auto on the canvas (not justify-content/align-items on the wrap, deliberately absent
    here) centers it in BOTH axes when it fits. Auto margins collapse to 0 once zoomed past the
@@ -180,7 +180,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    a stylesheet cap on only ONE of the two axes clamps that axis alone once zoomed past the
    container's size, stretching the other and distorting the map, since inline `width`/`height`
    don't override a separate `max-width`/`max-height` rule. */
-#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
+#gameCanvas{background:#1CB5E0;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
 
 /* Overlay scaffolding: a positioned bar/column that centers itself and scrolls internally if
    its content ever runs longer than the screen has room for (a short/narrow viewport with many
@@ -742,10 +742,17 @@ function showScreen(id){
   document.body.classList.toggle('in-game-screen', id==='screen-game');
 }
 
-const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#98c1d9","#c9a0dc","#f4a261","#e76f51",
-  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#00bbf9","#00f5d4",
-  "#fee440","#ff9f1c","#2ec4b6","#e71d36","#8ac926","#1982c4","#6a4c93","#ff595e"];
-const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#3fd0c9","#ff9f5b","#7bd389"];
+// A few entries here used to be bright/pale blues or teals ("#98c1d9","#00bbf9","#00f5d4",
+// "#2ec4b6","#1982c4") close enough to the bright ocean color (see OCEAN_COLOR in
+// 06-render-game.js/03-editor.js) that a territory/continent using one could visually blend
+// into the surrounding water — swapped for warm/jewel tones with no such collision instead.
+const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#e8998d","#c9a0dc","#f4a261","#e76f51",
+  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#ffb703","#c9184a",
+  "#fee440","#ff9f1c","#7209b7","#e71d36","#8ac926","#fb8500","#6a4c93","#ff595e"];
+const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#f72585","#ff9f5b","#7bd389"];
+// Bright ocean blue used for water fill on both canvases and for the space around the map,
+// so zooming out reads as one continuous ocean surrounding the continents.
+const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
   {name:"Vàng", hex:"#f2c94c"}, {name:"Tím", hex:"#9b5de5"}, {name:"Cam", hex:"#f2994a"}
@@ -1166,6 +1173,10 @@ function generateWaterMask(cols, rows, waterRatio, spread){
     }
     frontier = next;
   }
+  // Force the outer ring of cells to be water, so a randomly generated map never comes out
+  // with the map's rectangular bounding box itself as a visible straight-edged coastline.
+  for(let c=0;c<cols;c++){ water[c]=1; water[(rows-1)*cols+c]=1; }
+  for(let r=0;r<rows;r++){ water[r*cols]=1; water[r*cols+cols-1]=1; }
   return water;
 }
 
@@ -1483,7 +1494,7 @@ function drawEditorCanvas(){
   canvas.width = mapData.cols*cs;
   canvas.height = mapData.rows*cs;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#123a56';
+  ctx.fillStyle = OCEAN_COLOR;
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
@@ -2520,7 +2531,7 @@ function drawGameCanvas(){
   canvas.style.marginBottom = '0';
   const ctx = canvas.getContext('2d');
   ctx.scale(displayScale, displayScale); // canvas.width/height assignment above already reset the transform to identity
-  ctx.fillStyle='#123a56';
+  ctx.fillStyle=OCEAN_COLOR;
   ctx.fillRect(0,0,nativeW,nativeH);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
