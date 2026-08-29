@@ -178,6 +178,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   top:10px;left:50%;transform:translateX(-50%);
   flex-direction:row;align-items:center;
   max-height:none;max-width:calc(100% - 20px);overflow-x:auto;overflow-y:hidden;
+  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
+  border-radius:12px;padding:6px 8px;
 }
 #gameControlsTop .ov-section{flex-direction:row;}
 #gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:132px;overflow-y:auto;}
@@ -189,7 +191,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 .ov-section{
   display:flex;flex-direction:column;gap:4px;align-items:center;
-  background:rgba(10,14,24,.88);backdrop-filter:blur(4px);border:1px solid var(--border);
+  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
   border-radius:10px;padding:6px;
 }
 .ov-btn{
@@ -211,7 +213,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #phaseActions{display:flex;flex-direction:column;gap:4px;}
 #phaseActions button{width:100%;font-size:11px;padding:6px 4px;line-height:1.25;}
 
-#gameTurnInfo{background:rgba(10,14,24,.88);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
+#gameTurnInfo{background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
 .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;flex-shrink:0;}
 .phase-badge{
   padding:4px 12px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;
@@ -221,10 +223,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 #playerList{display:flex;flex-direction:column;gap:4px;}
 .player-card{
-  background:rgba(10,14,24,.88);backdrop-filter:blur(4px);border:2px solid var(--border);
+  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:2px solid var(--border);
   border-radius:8px;padding:5px 7px;
 }
-.player-card.active-turn{border-color:var(--accent);box-shadow:0 0 12px rgba(91,141,239,.3);}
+/* Used to be var(--accent), a blue — same hue as the ocean background and the "Xanh dương"
+   player color, so it stopped reading as a distinct highlight once the map turned ocean-blue.
+   White doesn't collide with the ocean or any PLAYER_COLORS entry. */
+.player-card.active-turn{border-color:#fff;box-shadow:0 0 12px rgba(255,255,255,.45);}
 .player-card .pline1{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;}
 .player-card .pname-badge{
   color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
