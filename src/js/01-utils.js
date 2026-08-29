@@ -79,6 +79,23 @@ function getStripeTile(){
 }
 function getStripePattern(ctx){ return ctx.createPattern(getStripeTile(), 'repeat'); }
 function rollDie(){ return 1+rand(6); }
+// Picks a grid size for a freshly random-generated map so cells don't render smaller than
+// minCellPx once the canvas is scaled to fit whatever the CURRENT device's viewport allows
+// (drawGameCanvas()'s fitScale always stretches the whole grid to fill the available area, so a
+// fixed col/row count that looks fine on desktop turns into tiny slivers on a small phone
+// screen). Only used at generation time — an already-generated/saved map keeps its own grid
+// regardless of what device later opens it.
+function computeViewportGridSize(minCellPx){
+  const mc = minCellPx || 16;
+  const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
+  // Rough estimate of the canvas's usable share of the viewport, leaving room for the
+  // surrounding overlay panels/chrome whose exact size isn't known before layout happens.
+  const availW = Math.max(320, vw*0.72);
+  const availH = Math.max(220, vh*0.62);
+  const cols = clamp(Math.round(availW/mc), 18, 100);
+  const rows = clamp(Math.round(availH/mc), 12, 100);
+  return { cols, rows };
+}
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');

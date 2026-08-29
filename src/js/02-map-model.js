@@ -424,6 +424,17 @@ function generateWaterMask(cols, rows, waterRatio, spread){
   return water;
 }
 
+// Territory/continent counts for a freshly random-generated map of a given grid size — kept
+// as one shared formula so every call site (quick play, editor's initial map, editor's
+// "Ngẫu nhiên" button) derives numCont with enough headroom above the min-4-territories-per-
+// continent floor that reassignContinents() enforces below, instead of each guessing its own
+// fixed continent count independent of how many territories the grid actually ends up with.
+function deriveMapGenCounts(cols, rows){
+  const numTerr = Math.max(8, Math.round(cols*rows/50));
+  const numCont = clamp(Math.round(numTerr/6), 2, 8);
+  return { numTerr, numCont };
+}
+
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
   const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
@@ -500,6 +511,41 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
   for(let i=0;i<numCont;i++) createContinent(map);
   reassignContinents(map);
   return map;
+}
+
+// Repeatedly folds any continent left with fewer than minSize territories into whichever
+// neighboring continent shares the most border with it (falls back to the smallest other
+// continent if it has no land neighbor at all, e.g. a tiny separate island), so no continent
+// ends up too small to feel like a meaningful conquest goal. Continents with zero territories
+// are left alone — they're simply unused, not a violation of the minimum.
+function enforceMinContinentSize(map, minSize){
+  let guard = 0;
+  while(guard++<200){
+    const contIds = Object.keys(map.continents).map(Number);
+    if(contIds.length<=1) break;
+    const sizeOf = {}; contIds.forEach(id=> sizeOf[id]=0);
+    Object.values(map.territories).forEach(t=>{ if(t.continentId!=null) sizeOf[t.continentId]++; });
+    let target = null;
+    contIds.forEach(id=>{
+      if(sizeOf[id]>0 && sizeOf[id]<minSize && (target===null || sizeOf[id]<sizeOf[target])) target=id;
+    });
+    if(target===null) break;
+    const border = {};
+    Object.values(map.territories).forEach(t=>{
+      if(t.continentId!==target) return;
+      t.neighbors.forEach(nb=>{
+        const nc = map.territories[nb].continentId;
+        if(nc!=null && nc!==target) border[nc]=(border[nc]||0)+1;
+      });
+    });
+    let mergeInto = null;
+    Object.keys(border).map(Number).forEach(id=>{ if(mergeInto===null || border[id]>border[mergeInto]) mergeInto=id; });
+    if(mergeInto===null){
+      contIds.forEach(id=>{ if(id!==target && (mergeInto===null || sizeOf[id]<sizeOf[mergeInto])) mergeInto=id; });
+    }
+    if(mergeInto===null) break;
+    Object.values(map.territories).forEach(t=>{ if(t.continentId===target) t.continentId = mergeInto; });
+  }
 }
 
 // Reassigns every territory's continentId across the map's EXISTING continents — never
@@ -592,6 +638,8 @@ function reassignContinents(map){
     comp.ids.forEach(tid=> map.territories[tid].continentId = targetCont);
     sizeOf[targetCont] += comp.ids.length;
   });
+
+  enforceMinContinentSize(map, 4);
 
   // bonuses based on continent size
   Object.values(map.continents).forEach(cont=>{

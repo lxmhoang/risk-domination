@@ -2,7 +2,9 @@
    NAVIGATION / WIRING
    ========================================================================= */
 $('btnQuickPlay').addEventListener('click', ()=>{
-  mapData = generateRandomMap(40,26,22,6,'Bản đồ ngẫu nhiên', 0.28);
+  const {cols, rows} = computeViewportGridSize();
+  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
   goToSetup();
 });
 $('btnOpenEditor').addEventListener('click', ()=>{
@@ -208,7 +210,8 @@ $('waterSpreadInput').addEventListener('input', (e)=>{ $('waterSpreadLabel').tex
 $('btnRandomGen').addEventListener('click', ()=>{
   if(!confirm('Tạo bản đồ ngẫu nhiên mới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
   const cols = Number($('gridCols').value)||100, rows = Number($('gridRows').value)||100;
-  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, $('mapNameInput').value, getWaterRatio(), getWaterSpread());
+  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  mapData = generateRandomMap(cols, rows, numTerr, numCont, $('mapNameInput').value, getWaterRatio(), getWaterSpread());
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnClearMap').addEventListener('click', ()=>{

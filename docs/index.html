@@ -735,6 +735,23 @@ function getStripeTile(){
 }
 function getStripePattern(ctx){ return ctx.createPattern(getStripeTile(), 'repeat'); }
 function rollDie(){ return 1+rand(6); }
+// Picks a grid size for a freshly random-generated map so cells don't render smaller than
+// minCellPx once the canvas is scaled to fit whatever the CURRENT device's viewport allows
+// (drawGameCanvas()'s fitScale always stretches the whole grid to fill the available area, so a
+// fixed col/row count that looks fine on desktop turns into tiny slivers on a small phone
+// screen). Only used at generation time — an already-generated/saved map keeps its own grid
+// regardless of what device later opens it.
+function computeViewportGridSize(minCellPx){
+  const mc = minCellPx || 16;
+  const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
+  // Rough estimate of the canvas's usable share of the viewport, leaving room for the
+  // surrounding overlay panels/chrome whose exact size isn't known before layout happens.
+  const availW = Math.max(320, vw*0.72);
+  const availH = Math.max(220, vh*0.62);
+  const cols = clamp(Math.round(availW/mc), 18, 100);
+  const rows = clamp(Math.round(availH/mc), 12, 100);
+  return { cols, rows };
+}
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
@@ -1216,6 +1233,17 @@ function generateWaterMask(cols, rows, waterRatio, spread){
   return water;
 }
 
+// Territory/continent counts for a freshly random-generated map of a given grid size — kept
+// as one shared formula so every call site (quick play, editor's initial map, editor's
+// "Ngẫu nhiên" button) derives numCont with enough headroom above the min-4-territories-per-
+// continent floor that reassignContinents() enforces below, instead of each guessing its own
+// fixed continent count independent of how many territories the grid actually ends up with.
+function deriveMapGenCounts(cols, rows){
+  const numTerr = Math.max(8, Math.round(cols*rows/50));
+  const numCont = clamp(Math.round(numTerr/6), 2, 8);
+  return { numTerr, numCont };
+}
+
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
   const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
@@ -1292,6 +1320,41 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
   for(let i=0;i<numCont;i++) createContinent(map);
   reassignContinents(map);
   return map;
+}
+
+// Repeatedly folds any continent left with fewer than minSize territories into whichever
+// neighboring continent shares the most border with it (falls back to the smallest other
+// continent if it has no land neighbor at all, e.g. a tiny separate island), so no continent
+// ends up too small to feel like a meaningful conquest goal. Continents with zero territories
+// are left alone — they're simply unused, not a violation of the minimum.
+function enforceMinContinentSize(map, minSize){
+  let guard = 0;
+  while(guard++<200){
+    const contIds = Object.keys(map.continents).map(Number);
+    if(contIds.length<=1) break;
+    const sizeOf = {}; contIds.forEach(id=> sizeOf[id]=0);
+    Object.values(map.territories).forEach(t=>{ if(t.continentId!=null) sizeOf[t.continentId]++; });
+    let target = null;
+    contIds.forEach(id=>{
+      if(sizeOf[id]>0 && sizeOf[id]<minSize && (target===null || sizeOf[id]<sizeOf[target])) target=id;
+    });
+    if(target===null) break;
+    const border = {};
+    Object.values(map.territories).forEach(t=>{
+      if(t.continentId!==target) return;
+      t.neighbors.forEach(nb=>{
+        const nc = map.territories[nb].continentId;
+        if(nc!=null && nc!==target) border[nc]=(border[nc]||0)+1;
+      });
+    });
+    let mergeInto = null;
+    Object.keys(border).map(Number).forEach(id=>{ if(mergeInto===null || border[id]>border[mergeInto]) mergeInto=id; });
+    if(mergeInto===null){
+      contIds.forEach(id=>{ if(id!==target && (mergeInto===null || sizeOf[id]<sizeOf[mergeInto])) mergeInto=id; });
+    }
+    if(mergeInto===null) break;
+    Object.values(map.territories).forEach(t=>{ if(t.continentId===target) t.continentId = mergeInto; });
+  }
 }
 
 // Reassigns every territory's continentId across the map's EXISTING continents — never
@@ -1385,6 +1448,8 @@ function reassignContinents(map){
     sizeOf[targetCont] += comp.ids.length;
   });
 
+  enforceMinContinentSize(map, 4);
+
   // bonuses based on continent size
   Object.values(map.continents).forEach(cont=>{
     const size = Object.values(map.territories).filter(t=>t.continentId===cont.id).length;
@@ -1426,8 +1491,9 @@ function getWaterSpread(){
 }
 
 function initEditorMap(){
-  const cols=100, rows=100;
-  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, "Bản đồ của tôi", getWaterRatio(), getWaterSpread());
+  const {cols, rows} = computeViewportGridSize();
+  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  mapData = generateRandomMap(cols, rows, numTerr, numCont, "Bản đồ của tôi", getWaterRatio(), getWaterSpread());
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols;
   $('gridRows').value = mapData.rows;
@@ -3069,7 +3135,9 @@ function showGameOver(winner){
    NAVIGATION / WIRING
    ========================================================================= */
 $('btnQuickPlay').addEventListener('click', ()=>{
-  mapData = generateRandomMap(40,26,22,6,'Bản đồ ngẫu nhiên', 0.28);
+  const {cols, rows} = computeViewportGridSize();
+  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
   goToSetup();
 });
 $('btnOpenEditor').addEventListener('click', ()=>{
@@ -3275,7 +3343,8 @@ $('waterSpreadInput').addEventListener('input', (e)=>{ $('waterSpreadLabel').tex
 $('btnRandomGen').addEventListener('click', ()=>{
   if(!confirm('Tạo bản đồ ngẫu nhiên mới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
   const cols = Number($('gridCols').value)||100, rows = Number($('gridRows').value)||100;
-  mapData = generateRandomMap(cols, rows, Math.max(8,Math.round(cols*rows/50)), 6, $('mapNameInput').value, getWaterRatio(), getWaterSpread());
+  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  mapData = generateRandomMap(cols, rows, numTerr, numCont, $('mapNameInput').value, getWaterRatio(), getWaterSpread());
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnClearMap').addEventListener('click', ()=>{
