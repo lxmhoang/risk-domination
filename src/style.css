@@ -180,7 +180,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   max-height:none;max-width:calc(100% - 20px);overflow-x:auto;overflow-y:hidden;
 }
 #gameControlsTop .ov-section{flex-direction:row;}
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:190px;overflow-y:auto;}
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:132px;overflow-y:auto;}
 #gamePhaseActionsWrap{right:10px;top:50%;transform:translateY(-50%);overflow-y:auto;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:10px;
@@ -219,17 +219,22 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #reinforceCounter{font-size:13px;color:var(--warn);font-weight:700;}
 
-#playerList{display:flex;flex-direction:column;gap:8px;}
+#playerList{display:flex;flex-direction:column;gap:4px;}
 .player-card{
   background:rgba(10,14,24,.88);backdrop-filter:blur(4px);border:2px solid var(--border);
-  border-radius:10px;padding:10px;
+  border-radius:8px;padding:5px 7px;
 }
 .player-card.active-turn{border-color:var(--accent);box-shadow:0 0 12px rgba(91,141,239,.3);}
-.player-card .pname{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px;}
-.player-card .pdot{width:12px;height:12px;border-radius:50%;}
-.player-card .pstats{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;color:var(--muted);}
-/* The right-edge player list is always a narrow column now (not just on mobile) — icon+number
-   reads fine on its own, the word after it doesn't fit and isn't needed. */
+.player-card .pline1{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;}
+.player-card .pname-badge{
+  color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-shadow:0 1px 2px rgba(0,0,0,.5);
+}
+.player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:var(--text);flex-shrink:0;}
+.player-card .pline2{display:flex;gap:8px;font-size:10px;color:var(--muted);}
+/* The player list is always a narrow column now (not just on mobile) — icon+number reads fine
+   on its own, the word after it doesn't fit and isn't needed. */
 .stat-label{display:none;}
 .player-card.eliminated{opacity:.35;}
 
@@ -268,6 +273,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #screen-game.active #gamePhaseActionsWrap,
   #screen-game.active #gameTurnInfo,
   #screen-game.active #gameLogPanel{display:none;}
+}
+/* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
+   +/−/reset buttons are desktop-only affordances (no pinch there) and just crowd the top bar
+   on a phone, orientation aside, so this one isn't limited to (orientation:portrait) like the
+   rotate-prompt block above. */
+@media (hover:none) and (pointer:coarse){
+  #btnZoomOut, #btnZoomReset, #btnZoomIn{display:none;}
 }
 
 /* dice */

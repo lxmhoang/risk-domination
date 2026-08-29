@@ -69,6 +69,19 @@ function drawGameCanvas(){
   canvas.height = Math.max(1, Math.round(nativeH*displayScale));
   canvas.style.width = canvas.width+'px';
   canvas.style.height = canvas.height+'px';
+  // Center within the SAFE AREA specifically (the box between the 4 overlays), not the wrap's
+  // full box — CSS margin:auto centers in the full wrap, which only happens to clear every
+  // overlay when they're all roughly the same size on their axis. The player list and the
+  // phase-action panel are NOT the same width, so relying on symmetric auto-centering could
+  // let the map creep under the wider one at low zoom while leaving extra clearance on the
+  // narrower side. Explicit margin-left/top (overriding the CSS margin:auto for just those two
+  // properties) position it precisely between the actual measured edges instead.
+  const safeLeft = leftW+margin, safeRight = wrap.clientWidth-rightW-margin;
+  const safeTop = topH+margin, safeBottom = wrap.clientHeight-bottomH-margin;
+  canvas.style.marginLeft = Math.max(margin, (safeLeft+safeRight)/2 - canvas.width/2)+'px';
+  canvas.style.marginTop = Math.max(margin, (safeTop+safeBottom)/2 - canvas.height/2)+'px';
+  canvas.style.marginRight = '0';
+  canvas.style.marginBottom = '0';
   const ctx = canvas.getContext('2d');
   ctx.scale(displayScale, displayScale); // canvas.width/height assignment above already reset the transform to identity
   ctx.fillStyle='#123a56';
@@ -159,21 +172,27 @@ function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
   game.players.forEach(p=>{
     const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
-    const name = el('div','pname');
-    name.innerHTML = `<span class="pdot" style="background:${p.color}"></span> ${p.name} ${p.isHuman?'(Bạn)':''}`;
     const mine = ownedTerritories(p.id);
     const totalArmies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
     const contsHeld = Object.values(mapData.continents).filter(cont=>{
       const ct = Object.values(mapData.territories).filter(t=>t.continentId===cont.id).map(t=>t.id);
       return ct.length>0 && ct.every(id=>game.owner[id]===p.id);
     }).length;
-    // Each stat is icon + number with a separately-tagged text label, so mobile CSS can
-    // hide just the ".stat-label" words and keep the game readable as icon+number only.
-    const stats = el('div','pstats');
-    [['🗺️',mine.length,'vùng'],['⚔️',totalArmies,'quân'],['🌍',contsHeld,'châu lục'],['🃏',p.cards.length,'thẻ']].forEach(([icon,val,label])=>{
-      stats.appendChild(el('span','stat-item', `${icon} ${val}<span class="stat-label"> ${label}</span>`));
+    // Line 1: the player's own color, now as a filled name badge (white text) instead of a
+    // separate dot, plus army count — the two things you actually glance at mid-game. Line 2:
+    // the rest (territories/continents/cards), kept to icon+number only, no text label — this
+    // list has to stay short enough that ~6 players fit on a short landscape phone screen with
+    // no scrolling.
+    const line1 = el('div','pline1');
+    const nameBadge = el('span','pname-badge', p.name+(p.isHuman?' (Bạn)':''));
+    nameBadge.style.background = p.color;
+    line1.appendChild(nameBadge);
+    line1.appendChild(el('span','stat-item', `⚔️ ${totalArmies}`));
+    const line2 = el('div','pline2');
+    [['🗺️',mine.length],['🌍',contsHeld],['🃏',p.cards.length]].forEach(([icon,val])=>{
+      line2.appendChild(el('span','stat-item', `${icon} ${val}`));
     });
-    card.appendChild(name); card.appendChild(stats);
+    card.appendChild(line1); card.appendChild(line2);
     wrap.appendChild(card);
   });
 }
