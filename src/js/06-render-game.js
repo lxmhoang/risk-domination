@@ -445,7 +445,12 @@ function getTerritoryFromCanvasEvent(canvas, evt){
   return mapData.cellTerritory[cellIndex(mapData,c,r)];
 }
 
+// Set by the click-and-drag panning wiring (08-wiring.js) right before the 'click' that
+// naturally follows a mouseup would otherwise fire, so a drag doesn't also get treated as a
+// territory click.
+let suppressNextClick = false;
 function gameCanvasClick(evt){
+  if(suppressNextClick){ suppressNextClick = false; return; }
   if(game.over) return;
   const p = currentPlayer();
   if(!p.isHuman) return;

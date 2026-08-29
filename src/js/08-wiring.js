@@ -361,6 +361,36 @@ $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
     if(pinchPointers.size<2) pinchStartDist = null;
   })
 );
+// Click-and-drag panning (mouse only — touch already pans natively via touch-action, and pinch
+// is handled separately above). setPointerCapture keeps move/up events targeting the wrap even
+// if the cursor drifts outside it mid-drag. A drag past a few px sets suppressNextClick (see
+// gameCanvasClick in 06-render-game.js) so the click that naturally follows mouseup doesn't also
+// get treated as a territory selection.
+let dragPan = null; // {startX, startY, startScrollLeft, startScrollTop, dragged}
+$('gameCanvasWrap').addEventListener('pointerdown', (e)=>{
+  if(e.pointerType!=='mouse' || e.button!==0) return;
+  const wrap = $('gameCanvasWrap');
+  dragPan = { startX:e.clientX, startY:e.clientY, startScrollLeft:wrap.scrollLeft, startScrollTop:wrap.scrollTop, dragged:false };
+  wrap.setPointerCapture(e.pointerId);
+});
+$('gameCanvasWrap').addEventListener('pointermove', (e)=>{
+  if(!dragPan || e.pointerType!=='mouse') return;
+  const wrap = $('gameCanvasWrap');
+  const dx = e.clientX-dragPan.startX, dy = e.clientY-dragPan.startY;
+  if(!dragPan.dragged && Math.hypot(dx,dy)>4){ dragPan.dragged = true; document.body.style.cursor = 'grabbing'; }
+  if(dragPan.dragged){
+    wrap.scrollLeft = dragPan.startScrollLeft-dx;
+    wrap.scrollTop = dragPan.startScrollTop-dy;
+  }
+});
+['pointerup','pointercancel'].forEach(evtName=>
+  $('gameCanvasWrap').addEventListener(evtName, (e)=>{
+    if(!dragPan || e.pointerType!=='mouse') return;
+    if(dragPan.dragged) suppressNextClick = true;
+    dragPan = null;
+    document.body.style.cursor = '';
+  })
+);
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });
