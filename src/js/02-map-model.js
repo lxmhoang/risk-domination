@@ -438,7 +438,7 @@ const MIN_GRID_DIM = 150;
 // the viewport: on-screen px per cell shrinks as the physical screen shrinks, so more cells are
 // needed per territory on a small phone to keep its footprint near AVG_TERRITORY_TARGET_PX.
 function computeCellsPerTerritory(cols){
-  const { availW } = estimateCanvasArea();
+  const availW = estimateCanvasWidth();
   const cellPx = availW/cols;
   return Math.max(8, Math.round((AVG_TERRITORY_TARGET_PX/cellPx)**2));
 }
@@ -460,12 +460,13 @@ function deriveMapGenCounts(cols, rows){
 // numTerr/numCont are derived from that grid via deriveMapGenCounts(). Only used at generation
 // time — an already-generated/saved map keeps its own grid regardless of what device later
 // opens it.
+// Grid shape is always a fixed 3:2 (width:height) ratio, regardless of the viewport's actual
+// aspect ratio — a consistent, predictable map shape rather than one that changes with whatever
+// window the map happens to be generated in.
+const MAP_GEN_ASPECT = 3/2;
+
 function computeMapGenPlan(){
-  const { availW, availH } = estimateCanvasArea();
-  const aspect = clamp(availW/availH, 0.5, 3);
-  let cols, rows;
-  if(aspect>=1){ rows = MIN_GRID_DIM; cols = Math.round(MIN_GRID_DIM*aspect); }
-  else { cols = MIN_GRID_DIM; rows = Math.round(MIN_GRID_DIM/aspect); }
+  const rows = MIN_GRID_DIM, cols = Math.round(MIN_GRID_DIM*MAP_GEN_ASPECT);
   const { numTerr, numCont } = deriveMapGenCounts(cols, rows);
   return { cols, rows, numTerr, numCont };
 }
@@ -635,14 +636,13 @@ function enforceMinContinentSize(map, minSize){
     donors.sort((a,b)=> sizeOf[b]-sizeOf[a]);
     const donor = donors.find(id=> sizeOf[id]-1 >= minSize
       && borderCandidates[id].some(tid=> wouldStayConnectedAfterRemoving(map, id, tid)));
-    if(donor!==undefined){
-      const validPicks = borderCandidates[donor].filter(tid=> wouldStayConnectedAfterRemoving(map, donor, tid));
-      const pick = randChoice(validPicks);
-      map.territories[pick].continentId = target;
-    } else {
-      const mergeInto = donors[0];
-      Object.values(map.territories).forEach(t=>{ if(t.continentId===target) t.continentId = mergeInto; });
-    }
+    if(donor===undefined) break; // no neighbor can spare a territory without itself going
+    // below the floor — leave `target` under-sized rather than dissolving it to 0 territories.
+    // validateMap() (and the rest of the app) treats a continent with 0 territories as broken,
+    // so a small-but-nonzero continent is the safer outcome here than a "complete" merge.
+    const validPicks = borderCandidates[donor].filter(tid=> wouldStayConnectedAfterRemoving(map, donor, tid));
+    const pick = randChoice(validPicks);
+    map.territories[pick].continentId = target;
   }
 }
 

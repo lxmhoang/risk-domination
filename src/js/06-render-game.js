@@ -392,7 +392,9 @@ function renderTopbar(){
   $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
   $('reinforceCounter').textContent = (game.phase==='reinforce'||game.phase==='setup-place') ?
     ('Quân đặt: ' + (game.phase==='setup-place'? game.pool[p.id] : game.reinforceRemaining)) : '';
-  $('cardCountBadge').textContent = game.players[0].cards.length;
+  const humanCards = game.players[0].cards;
+  $('cardCountBadge').textContent = humanCards.length;
+  $('cardCountBadge').style.display = findTradeCombo(humanCards) ? 'flex' : 'none';
   // Play/pause only matters (and is only clickable) while an AI is actually taking its turn.
   const aiTurn = !p.isHuman && !game.over;
   $('btnPauseAI').disabled = !aiTurn;

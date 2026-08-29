@@ -223,21 +223,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 #playerList{display:flex;flex-direction:column;gap:4px;}
 .player-card{
-  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:2px solid var(--border);
+  background:rgba(10,14,24,.75);backdrop-filter:blur(4px);border:2px solid var(--border);
   border-radius:8px;padding:5px 7px;
 }
 /* Used to be var(--accent), a blue — same hue as the ocean background and the "Xanh dương"
    player color, so it stopped reading as a distinct highlight once the map turned ocean-blue.
    White doesn't collide with the ocean or any PLAYER_COLORS entry. */
 .player-card.active-turn{border-color:#fff;box-shadow:0 0 12px rgba(255,255,255,.45);}
-.player-card .pline1{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;}
+.player-card .pline1{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-bottom:2px;}
 .player-card .pname-badge{
   color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
   text-shadow:0 1px 2px rgba(0,0,0,.5);
 }
-.player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:var(--text);flex-shrink:0;}
-.player-card .pline2{display:flex;gap:8px;font-size:10px;color:var(--muted);}
+.player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
+.player-card .pline2{display:flex;gap:8px;font-size:10px;color:#fff;}
 /* The player list is always a narrow column now (not just on mobile) — icon+number reads fine
    on its own, the word after it doesn't fit and isn't needed. */
 .stat-label{display:none;}

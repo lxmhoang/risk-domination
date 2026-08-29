@@ -115,12 +115,12 @@ function fillTextWithBackground(ctx, text, x, y){
 const TOUCH_TARGET_PX = 44;
 const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*2.5;
 
-// Rough estimate of the canvas's usable share of the viewport, leaving room for the
-// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Shared
-// by computeMapGenPlan() and computeCellsPerTerritory() in 02-map-model.js.
-function estimateCanvasArea(){
-  const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
-  return { availW: Math.max(320, vw*0.72), availH: Math.max(220, vh*0.62) };
+// Rough estimate of the canvas's usable width share of the viewport, leaving room for the
+// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Used by
+// computeCellsPerTerritory() in 02-map-model.js.
+function estimateCanvasWidth(){
+  const vw = window.innerWidth || 1280;
+  return Math.max(320, vw*0.72);
 }
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));

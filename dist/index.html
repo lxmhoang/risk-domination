@@ -235,21 +235,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 #playerList{display:flex;flex-direction:column;gap:4px;}
 .player-card{
-  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:2px solid var(--border);
+  background:rgba(10,14,24,.75);backdrop-filter:blur(4px);border:2px solid var(--border);
   border-radius:8px;padding:5px 7px;
 }
 /* Used to be var(--accent), a blue — same hue as the ocean background and the "Xanh dương"
    player color, so it stopped reading as a distinct highlight once the map turned ocean-blue.
    White doesn't collide with the ocean or any PLAYER_COLORS entry. */
 .player-card.active-turn{border-color:#fff;box-shadow:0 0 12px rgba(255,255,255,.45);}
-.player-card .pline1{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:2px;}
+.player-card .pline1{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-bottom:2px;}
 .player-card .pname-badge{
   color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
   text-shadow:0 1px 2px rgba(0,0,0,.5);
 }
-.player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:var(--text);flex-shrink:0;}
-.player-card .pline2{display:flex;gap:8px;font-size:10px;color:var(--muted);}
+.player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
+.player-card .pline2{display:flex;gap:8px;font-size:10px;color:#fff;}
 /* The player list is always a narrow column now (not just on mobile) — icon+number reads fine
    on its own, the word after it doesn't fit and isn't needed. */
 .stat-label{display:none;}
@@ -776,12 +776,12 @@ function fillTextWithBackground(ctx, text, x, y){
 const TOUCH_TARGET_PX = 44;
 const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*2.5;
 
-// Rough estimate of the canvas's usable share of the viewport, leaving room for the
-// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Shared
-// by computeMapGenPlan() and computeCellsPerTerritory() in 02-map-model.js.
-function estimateCanvasArea(){
-  const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
-  return { availW: Math.max(320, vw*0.72), availH: Math.max(220, vh*0.62) };
+// Rough estimate of the canvas's usable width share of the viewport, leaving room for the
+// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Used by
+// computeCellsPerTerritory() in 02-map-model.js.
+function estimateCanvasWidth(){
+  const vw = window.innerWidth || 1280;
+  return Math.max(320, vw*0.72);
 }
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -1278,7 +1278,7 @@ const MIN_GRID_DIM = 150;
 // the viewport: on-screen px per cell shrinks as the physical screen shrinks, so more cells are
 // needed per territory on a small phone to keep its footprint near AVG_TERRITORY_TARGET_PX.
 function computeCellsPerTerritory(cols){
-  const { availW } = estimateCanvasArea();
+  const availW = estimateCanvasWidth();
   const cellPx = availW/cols;
   return Math.max(8, Math.round((AVG_TERRITORY_TARGET_PX/cellPx)**2));
 }
@@ -1300,12 +1300,13 @@ function deriveMapGenCounts(cols, rows){
 // numTerr/numCont are derived from that grid via deriveMapGenCounts(). Only used at generation
 // time — an already-generated/saved map keeps its own grid regardless of what device later
 // opens it.
+// Grid shape is always a fixed 3:2 (width:height) ratio, regardless of the viewport's actual
+// aspect ratio — a consistent, predictable map shape rather than one that changes with whatever
+// window the map happens to be generated in.
+const MAP_GEN_ASPECT = 3/2;
+
 function computeMapGenPlan(){
-  const { availW, availH } = estimateCanvasArea();
-  const aspect = clamp(availW/availH, 0.5, 3);
-  let cols, rows;
-  if(aspect>=1){ rows = MIN_GRID_DIM; cols = Math.round(MIN_GRID_DIM*aspect); }
-  else { cols = MIN_GRID_DIM; rows = Math.round(MIN_GRID_DIM/aspect); }
+  const rows = MIN_GRID_DIM, cols = Math.round(MIN_GRID_DIM*MAP_GEN_ASPECT);
   const { numTerr, numCont } = deriveMapGenCounts(cols, rows);
   return { cols, rows, numTerr, numCont };
 }
@@ -1475,14 +1476,13 @@ function enforceMinContinentSize(map, minSize){
     donors.sort((a,b)=> sizeOf[b]-sizeOf[a]);
     const donor = donors.find(id=> sizeOf[id]-1 >= minSize
       && borderCandidates[id].some(tid=> wouldStayConnectedAfterRemoving(map, id, tid)));
-    if(donor!==undefined){
-      const validPicks = borderCandidates[donor].filter(tid=> wouldStayConnectedAfterRemoving(map, donor, tid));
-      const pick = randChoice(validPicks);
-      map.territories[pick].continentId = target;
-    } else {
-      const mergeInto = donors[0];
-      Object.values(map.territories).forEach(t=>{ if(t.continentId===target) t.continentId = mergeInto; });
-    }
+    if(donor===undefined) break; // no neighbor can spare a territory without itself going
+    // below the floor — leave `target` under-sized rather than dissolving it to 0 territories.
+    // validateMap() (and the rest of the app) treats a continent with 0 territories as broken,
+    // so a small-but-nonzero continent is the safer outcome here than a "complete" merge.
+    const validPicks = borderCandidates[donor].filter(tid=> wouldStayConnectedAfterRemoving(map, donor, tid));
+    const pick = randChoice(validPicks);
+    map.territories[pick].continentId = target;
   }
 }
 
@@ -3136,7 +3136,9 @@ function renderTopbar(){
   $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
   $('reinforceCounter').textContent = (game.phase==='reinforce'||game.phase==='setup-place') ?
     ('Quân đặt: ' + (game.phase==='setup-place'? game.pool[p.id] : game.reinforceRemaining)) : '';
-  $('cardCountBadge').textContent = game.players[0].cards.length;
+  const humanCards = game.players[0].cards;
+  $('cardCountBadge').textContent = humanCards.length;
+  $('cardCountBadge').style.display = findTradeCombo(humanCards) ? 'flex' : 'none';
   // Play/pause only matters (and is only clickable) while an AI is actually taking its turn.
   const aiTurn = !p.isHuman && !game.over;
   $('btnPauseAI').disabled = !aiTurn;
