@@ -378,15 +378,67 @@ window.addEventListener('keydown', (e)=>{
   }
 });
 
+// ---------------- Fullscreen ----------------
+// Standard Fullscreen API, vendor-prefixed for older Safari/Firefox. Note: iOS Safari has no
+// Fullscreen API for arbitrary page content at all (only <video>) — the button there just won't
+// do anything, and "Thêm vào Màn hình chính" (see the apple-mobile-web-app-* meta tags in
+// shell.html) is the only way to get a chrome-less window on iPhone.
+function fullscreenSupported(){
+  const e = document.documentElement;
+  return !!(e.requestFullscreen || e.webkitRequestFullscreen || e.mozRequestFullScreen || e.msRequestFullscreen);
+}
+function isFullscreen(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+}
+function toggleFullscreen(){
+  if(isFullscreen()){
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+    exit.call(document);
+  } else {
+    const e = document.documentElement;
+    const request = e.requestFullscreen || e.webkitRequestFullscreen || e.mozRequestFullScreen || e.msRequestFullscreen;
+    request.call(e);
+  }
+}
+function updateFullscreenButtons(){
+  const label = withShortcut('⛶', 'F');
+  const title = (isFullscreen() ? 'Thoát' : 'Vào') + ' toàn màn hình (F)';
+  const gameBtn = $('btnFullscreenGame');
+  if(gameBtn){ gameBtn.textContent = label; gameBtn.title = title; }
+  const topbarBtn = document.getElementById('btnFullscreenTopbar');
+  if(topbarBtn){ topbarBtn.textContent = label; topbarBtn.title = title; }
+}
+if(fullscreenSupported()){
+  $('btnFullscreenGame').addEventListener('click', toggleFullscreen);
+  ['fullscreenchange','webkitfullscreenchange','mozfullscreenchange','MSFullscreenChange'].forEach(evtName=>
+    document.addEventListener(evtName, updateFullscreenButtons)
+  );
+} else {
+  $('btnFullscreenGame').style.display = 'none';
+}
+// F toggles fullscreen from anywhere (not gated to the game screen, unlike the phase-action
+// shortcuts) — only skipped while typing in a text field (e.g. naming a territory in the editor).
+window.addEventListener('keydown', (e)=>{
+  if(e.key.toLowerCase()!=='f' || !fullscreenSupported()) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+  e.preventDefault();
+  toggleFullscreen();
+});
+
 // Top bar contextual buttons
 function updateTopbarActions(){
   const wrap = $('topbarActions'); wrap.innerHTML='';
   const activeScreen = document.querySelector('.screen.active').id;
   if(activeScreen==='screen-editor'){
     const b = el('button','ghost small','← Menu'); b.addEventListener('click',()=>showScreen('screen-menu')); wrap.appendChild(b);
-  } else if(activeScreen==='screen-menu'){
-    // nothing
   }
+  if(fullscreenSupported()){
+    const fsBtn = el('button','ghost small icon-btn',''); fsBtn.id='btnFullscreenTopbar';
+    fsBtn.addEventListener('click', toggleFullscreen);
+    wrap.appendChild(fsBtn);
+  }
+  updateFullscreenButtons();
 }
 new MutationObserver(updateTopbarActions).observe(document.body,{attributes:true,subtree:true,attributeFilter:['class']});
 updateTopbarActions();
