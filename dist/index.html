@@ -182,11 +182,15 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #gameCanvasWrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;position:relative;background:#0a0e18;touch-action:pan-x pan-y;}
 /* margin:auto (not justify-content on the wrap) centers the canvas when it fits — auto margins
    collapse to 0 once zoomed past the wrap's size, so scrolling stays normally top/left-anchored
-   instead of the flexbox-centering-clips-the-start gotcha (see the setup-screen fix). Explicit
-   width/height are set inline by drawGameCanvas() per zoom level, so max-width/height here are
-   just a pre-JS fallback. touch-action:pan-x pan-y on the wrap lets native single-finger
-   scrolling keep working while leaving 2-finger pinch free for the custom zoom handler. */
-#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;max-width:100%;height:auto;margin:auto;}
+   instead of the flexbox-centering-clips-the-start gotcha (see the setup-screen fix).
+   touch-action:pan-x pan-y on the wrap lets native single-finger scrolling keep working while
+   leaving 2-finger pinch free for the custom zoom handler.
+   No max-width/max-height/width:auto/height:auto here on purpose: drawGameCanvas() sets
+   width/height inline every render, computed together so the aspect ratio is always right —
+   a stylesheet cap on only ONE of the two axes (which is what used to be here) clamps that
+   axis alone once zoomed past the container's size, stretching the other and distorting the
+   map, since inline `width`/`height` don't override a separate `max-width`/`max-height` rule. */
+#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
 #gameLogPanel{
   width:280px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--border);
   display:flex;flex-direction:column;padding:12px;overflow:hidden;
@@ -277,11 +281,12 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #screen-game{overflow-y:hidden;}
   #gameBody{overflow:hidden;}
 
-  /* Let the map scale by whichever of width/height is more limiting (not just width),
-     so it actually fills the space it's given instead of sitting pinned to the top with
-     dead space below — this is the "ưu tiên hiển thị map đầy đủ" requirement. */
+  /* drawGameCanvas() already scales by whichever of width/height is more limiting (its own
+     fitScale = min(availW/nativeW, availH/nativeH, 1)) and sets both dimensions inline together,
+     so the map fills the space it's given without dead space AND without a stylesheet rule
+     fighting it on just one axis (see the #gameCanvas comment above re: the zoom distortion
+     that caused). Only the flex centering needs to stay mobile-specific here. */
   #gameCanvasWrap{align-items:center;}
-  #gameCanvas{max-height:100%;width:auto;height:auto;}
   /* The icon controls (continent/cards/menu) and the turn/phase info used to share one
      wrapping row, so whichever grew longer would shove the other off onto an inconsistent
      second line, making the icon buttons drift and miss-tap. Force two fixed rows instead:
