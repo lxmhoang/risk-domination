@@ -162,8 +162,7 @@ function drawGameCanvas(){
     Object.entries(positions).forEach(([cid,pos])=>{
       const cont = mapData.continents[cid]; if(!cont) return;
       const label = cont.name+' (+'+cont.bonus+')';
-      ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillText(label, pos.x+1, pos.y-19);
-      ctx.fillStyle='#fff'; ctx.fillText(label, pos.x, pos.y-20);
+      fillTextWithBackground(ctx, label, pos.x, pos.y-20);
     });
   }
 }

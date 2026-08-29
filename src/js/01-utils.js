@@ -58,6 +58,13 @@ function shadeColor(hex, percent){
   r=clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
   return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1).toUpperCase();
 }
+// Rough perceptual distance between 2 hex colors (Euclidean over RGB — good enough for picking
+// visually-distinct continent colors, no need for a proper color space here).
+function colorDistance(hexA, hexB){
+  const a = parseInt(hexA.slice(1),16), b = parseInt(hexB.slice(1),16);
+  const dr = ((a>>16)&255)-((b>>16)&255), dg = ((a>>8)&255)-((b>>8)&255), db = (a&255)-(b&255);
+  return Math.sqrt(dr*dr+dg*dg+db*db);
+}
 let _stripeTileCanvas = null;
 function getStripeTile(){
   if(_stripeTileCanvas) return _stripeTileCanvas;
@@ -79,6 +86,25 @@ function getStripeTile(){
 }
 function getStripePattern(ctx){ return ctx.createPattern(getStripeTile(), 'repeat'); }
 function rollDie(){ return 1+rand(6); }
+// Draws text centered at (x,y) — assumes ctx.textAlign='center', ctx.textBaseline='middle' —
+// on a translucent dark rounded-rect background. Continent labels sit directly on top of
+// whatever territory colors happen to be underneath (unlike army badges, which always sit on a
+// fixed dark circle), so a plain drop-shadow isn't reliably legible against every color; a
+// solid backing box is.
+function fillTextWithBackground(ctx, text, x, y){
+  const metrics = ctx.measureText(text);
+  const textW = metrics.width;
+  const ascent = metrics.actualBoundingBoxAscent || 12;
+  const descent = metrics.actualBoundingBoxDescent || 5;
+  const padX = 8, padY = 4;
+  const boxX = x-textW/2-padX, boxY = y-ascent-padY;
+  const boxW = textW+padX*2, boxH = ascent+descent+padY*2;
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 6); ctx.fill(); }
+  else ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(text, x, y);
+}
 // Real-world grounding for how big a freshly random-generated map's territories should be:
 // mobile touch-target guidelines (iOS Human Interface Guidelines, Android Material Design)
 // call for a minimum ~44px tappable area. Territories — not individual grid cells — are what

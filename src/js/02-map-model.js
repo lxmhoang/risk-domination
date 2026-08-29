@@ -764,11 +764,53 @@ function reassignContinents(map){
   });
 
   enforceMinContinentSize(map, 4);
+  assignContinentColors(map);
 
   // bonuses based on continent size
   Object.values(map.continents).forEach(cont=>{
     const size = Object.values(map.territories).filter(t=>t.continentId===cont.id).length;
     cont.bonus = Math.max(2, Math.round(size/2)+1);
+  });
+}
+
+// Colors continents (continent view / editor's "Xem châu lục" fill) so that any 2 continents
+// sharing a land border always get visually distinct colors, instead of colors falling out of
+// createContinent()'s arbitrary id-order assignment — which has no idea which continents will
+// end up adjacent, so 2 similar palette shades (e.g. 2 different greens) could easily land next
+// to each other with no visible seam between them. Greedy graph coloring: process continents
+// most-constrained (most neighbors) first, and for each pick whichever palette color is
+// unused by its already-colored neighbors and farthest (in RGB distance) from the ones that
+// are used, so even a palette color forced to repeat lands as far away as possible.
+function assignContinentColors(map){
+  const adjacency = {};
+  Object.values(map.territories).forEach(t=>{
+    if(t.continentId==null) return;
+    [...t.neighbors].forEach(nb=>{
+      const nc = map.territories[nb].continentId;
+      if(nc!=null && nc!==t.continentId){
+        (adjacency[t.continentId] = adjacency[t.continentId] || new Set()).add(nc);
+      }
+    });
+  });
+  const contIds = Object.keys(map.continents).map(Number);
+  const order = contIds.slice().sort((a,b)=> (adjacency[b]?adjacency[b].size:0) - (adjacency[a]?adjacency[a].size:0));
+  const assigned = {};
+  order.forEach(cid=>{
+    const neighborColors = [...(adjacency[cid]||[])].map(nid=>assigned[nid]).filter(Boolean);
+    let best=null, bestScore=-Infinity;
+    PALETTE_CONT.forEach(color=>{
+      if(neighborColors.includes(color)) return; // exact reuse only allowed if truly unavoidable
+      const score = neighborColors.length ? Math.min(...neighborColors.map(nc=>colorDistance(nc,color))) : Infinity;
+      if(score>bestScore){ bestScore=score; best=color; }
+    });
+    if(best===null){
+      PALETTE_CONT.forEach(color=>{
+        const score = neighborColors.length ? Math.min(...neighborColors.map(nc=>colorDistance(nc,color))) : Infinity;
+        if(score>bestScore){ bestScore=score; best=color; }
+      });
+    }
+    assigned[cid] = best;
+    map.continents[cid].color = best;
   });
 }
 
