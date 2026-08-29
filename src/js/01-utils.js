@@ -108,12 +108,12 @@ function fillTextWithBackground(ctx, text, x, y){
 // Real-world grounding for how big a freshly random-generated map's territories should be:
 // mobile touch-target guidelines (iOS Human Interface Guidelines, Android Material Design)
 // call for a minimum ~44px tappable area. Territories — not individual grid cells — are what
-// the player actually taps, so the target below is the AVERAGE territory footprint, set to
-// roughly 2.5x that minimum: BFS growth makes individual territories uneven in size, so the
-// average needs headroom for smaller-than-average ones to still clear 44px, plus room left
-// over to fit the army-count badge and name label drawn inside.
+// the player actually taps, so the target below is the AVERAGE territory footprint. It's set
+// equal to that 44px minimum (no headroom multiplier) — a smaller target means more, smaller
+// territories per map, which was chosen deliberately over guaranteeing every single
+// below-average territory clears the touch target too.
 const TOUCH_TARGET_PX = 44;
-const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*2.5;
+const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*1.5;
 
 // Rough estimate of the canvas's usable width share of the viewport, leaving room for the
 // surrounding overlay panels/chrome whose exact size isn't known before layout happens. Used by
