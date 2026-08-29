@@ -430,7 +430,7 @@ function generateWaterMask(cols, rows, waterRatio, spread){
 // continent floor that reassignContinents() enforces below, instead of each guessing its own
 // fixed continent count independent of how many territories the grid actually ends up with.
 function deriveMapGenCounts(cols, rows){
-  const numTerr = Math.max(8, Math.round(cols*rows/50));
+  const numTerr = Math.max(8, Math.round(cols*rows/CELLS_PER_TERRITORY));
   const numCont = clamp(Math.round(numTerr/6), 2, 8);
   return { numTerr, numCont };
 }
@@ -518,9 +518,28 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
 // continent if it has no land neighbor at all, e.g. a tiny separate island), so no continent
 // ends up too small to feel like a meaningful conquest goal. Continents with zero territories
 // are left alone — they're simply unused, not a violation of the minimum.
+// True if removing `removeId` from continent `contId` would leave its other territories all
+// still reachable from each other — used before stealing a border territory in
+// enforceMinContinentSize() so a "donor" continent never gets split into 2 disjoint blobs that
+// just happen to share a continentId (e.g. removeId was the only link across a narrow isthmus).
+function wouldStayConnectedAfterRemoving(map, contId, removeId){
+  const members = Object.values(map.territories).filter(t=>t.continentId===contId && t.id!==removeId).map(t=>t.id);
+  if(members.length<=1) return true;
+  const memberSet = new Set(members);
+  const seen = new Set([members[0]]);
+  const stack = [members[0]];
+  while(stack.length){
+    const cur = stack.pop();
+    map.territories[cur].neighbors.forEach(nb=>{
+      if(memberSet.has(nb) && !seen.has(nb)){ seen.add(nb); stack.push(nb); }
+    });
+  }
+  return seen.size === members.length;
+}
+
 function enforceMinContinentSize(map, minSize){
   let guard = 0;
-  while(guard++<200){
+  while(guard++<400){
     const contIds = Object.keys(map.continents).map(Number);
     if(contIds.length<=1) break;
     const sizeOf = {}; contIds.forEach(id=> sizeOf[id]=0);
@@ -530,22 +549,62 @@ function enforceMinContinentSize(map, minSize){
       if(sizeOf[id]>0 && sizeOf[id]<minSize && (target===null || sizeOf[id]<sizeOf[target])) target=id;
     });
     if(target===null) break;
-    const border = {};
+
+    // Territories in OTHER continents that border `target`, grouped by which continent they
+    // belong to — these are the candidates it could grow into.
+    const borderCandidates = {};
     Object.values(map.territories).forEach(t=>{
-      if(t.continentId!==target) return;
-      t.neighbors.forEach(nb=>{
-        const nc = map.territories[nb].continentId;
-        if(nc!=null && nc!==target) border[nc]=(border[nc]||0)+1;
-      });
+      if(t.continentId===target) return;
+      if([...t.neighbors].some(nb=> map.territories[nb].continentId===target)){
+        (borderCandidates[t.continentId] = borderCandidates[t.continentId]||[]).push(t.id);
+      }
     });
-    let mergeInto = null;
-    Object.keys(border).map(Number).forEach(id=>{ if(mergeInto===null || border[id]>border[mergeInto]) mergeInto=id; });
-    if(mergeInto===null){
-      contIds.forEach(id=>{ if(id!==target && (mergeInto===null || sizeOf[id]<sizeOf[mergeInto])) mergeInto=id; });
+    const donors = Object.keys(borderCandidates).map(Number);
+    if(donors.length===0) break; // no land neighbor at all (isolated) — nothing to grow into
+
+    // Prefer growing `target` by stealing one bordering territory at a time from whichever
+    // neighbor currently has the most to spare (without dropping that neighbor itself below
+    // the floor), rather than immediately dissolving it wholesale — a full merge collapses 2
+    // meaningfully-sized continents into 1 even when just nudging the small one up by a
+    // territory or two would have kept both viable.
+    donors.sort((a,b)=> sizeOf[b]-sizeOf[a]);
+    const donor = donors.find(id=> sizeOf[id]-1 >= minSize
+      && borderCandidates[id].some(tid=> wouldStayConnectedAfterRemoving(map, id, tid)));
+    if(donor!==undefined){
+      const validPicks = borderCandidates[donor].filter(tid=> wouldStayConnectedAfterRemoving(map, donor, tid));
+      const pick = randChoice(validPicks);
+      map.territories[pick].continentId = target;
+    } else {
+      const mergeInto = donors[0];
+      Object.values(map.territories).forEach(t=>{ if(t.continentId===target) t.continentId = mergeInto; });
     }
-    if(mergeInto===null) break;
-    Object.values(map.territories).forEach(t=>{ if(t.continentId===target) t.continentId = mergeInto; });
   }
+}
+
+// Picks k seed territories out of ids, spread as far apart from each other as possible
+// (greedy farthest-point sampling over territory centroids). Purely random seeds occasionally
+// land two continent seeds close together, or leave one stuck in a corner/peninsula with few
+// neighbors to grow into — its round-robin growth then stalls early and it ends up too small,
+// tripping enforceMinContinentSize() and collapsing into its neighbor. Starting seeds spread
+// out gives each one roughly equal room to grow into before meeting a rival.
+function pickSpreadSeeds(map, ids, k){
+  const pool = shuffle(ids.slice());
+  const chosen = [pool.pop()];
+  while(chosen.length<k && pool.length){
+    let bestIdx=0, bestDist=-1;
+    for(let i=0;i<pool.length;i++){
+      const c = map.territories[pool[i]].centroid;
+      let minD = Infinity;
+      for(const cid of chosen){
+        const cc = map.territories[cid].centroid;
+        const d = (c.x-cc.x)**2 + (c.y-cc.y)**2;
+        if(d<minD) minD = d;
+      }
+      if(minD>bestDist){ bestDist=minD; bestIdx=i; }
+    }
+    chosen.push(pool.splice(bestIdx,1)[0]);
+  }
+  return chosen;
 }
 
 // Reassigns every territory's continentId across the map's EXISTING continents — never
@@ -599,7 +658,7 @@ function reassignContinents(map){
     if(wantConts<=0) return;
     contOwnedByComponent[ci] = true;
     const myContIds = pool.splice(0, wantConts);
-    const seedIds = shuffle(comp.ids).slice(0, myContIds.length);
+    const seedIds = pickSpreadSeeds(map, comp.ids, myContIds.length);
     const assigned = {};
     // Round-robin growth (one claim per continent per pass, not a full-frontier flood) so
     // continents in the same landmass grow at an even rate — otherwise a seed that happens

@@ -79,21 +79,36 @@ function getStripeTile(){
 }
 function getStripePattern(ctx){ return ctx.createPattern(getStripeTile(), 'repeat'); }
 function rollDie(){ return 1+rand(6); }
-// Picks a grid size for a freshly random-generated map so cells don't render smaller than
-// minCellPx once the canvas is scaled to fit whatever the CURRENT device's viewport allows
-// (drawGameCanvas()'s fitScale always stretches the whole grid to fill the available area, so a
-// fixed col/row count that looks fine on desktop turns into tiny slivers on a small phone
-// screen). Only used at generation time — an already-generated/saved map keeps its own grid
-// regardless of what device later opens it.
-function computeViewportGridSize(minCellPx){
-  const mc = minCellPx || 16;
+// Real-world grounding for how big a freshly random-generated map's territories should be:
+// mobile touch-target guidelines (iOS Human Interface Guidelines, Android Material Design)
+// call for a minimum ~44px tappable area. Territories — not individual grid cells — are what
+// the player actually taps, so the target below is the AVERAGE territory footprint, set to
+// roughly 2.5x that minimum: BFS growth makes individual territories uneven in size, so the
+// average needs headroom for smaller-than-average ones to still clear 44px, plus room left
+// over to fit the army-count badge and name label drawn inside.
+const TOUCH_TARGET_PX = 44;
+const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*2.5;
+// How many grid cells make up one territory on average — shared with deriveMapGenCounts() in
+// 02-map-model.js so both agree on the same density.
+const CELLS_PER_TERRITORY = 50;
+
+// Picks a grid size for a freshly random-generated map so the average territory renders at
+// roughly AVG_TERRITORY_TARGET_PX once the canvas is scaled to fit whatever the CURRENT
+// device's viewport allows (drawGameCanvas()'s fitScale always stretches the whole grid to
+// fill the available area, so a fixed col/row count that looks fine on desktop turns into tiny
+// slivers on a small phone screen). Only used at generation time — an already-generated/saved
+// map keeps its own grid regardless of what device later opens it.
+function computeViewportGridSize(){
   const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
   // Rough estimate of the canvas's usable share of the viewport, leaving room for the
   // surrounding overlay panels/chrome whose exact size isn't known before layout happens.
   const availW = Math.max(320, vw*0.72);
   const availH = Math.max(220, vh*0.62);
-  const cols = clamp(Math.round(availW/mc), 18, 100);
-  const rows = clamp(Math.round(availH/mc), 12, 100);
+  // A territory spanning CELLS_PER_TERRITORY cells is roughly sqrt(CELLS_PER_TERRITORY) cells
+  // across each side — solve for the cell size that keeps that span at the target px.
+  const minCellPx = AVG_TERRITORY_TARGET_PX / Math.sqrt(CELLS_PER_TERRITORY);
+  const cols = clamp(Math.round(availW/minCellPx), 18, 100);
+  const rows = clamp(Math.round(availH/minCellPx), 12, 100);
   return { cols, rows };
 }
 function showScreen(id){
