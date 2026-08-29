@@ -28,6 +28,10 @@
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);height:100%;}
 body{display:flex;flex-direction:column;min-height:100vh;}
+/* The game screen is always full-bleed (see #screen-game below) — the outer app header would
+   just eat into that, so it's hidden for the whole time you're actually playing, on every
+   screen size (not just mobile). body.in-game-screen is set by showScreen() in 01-utils.js. */
+body.in-game-screen #topbar{display:none;}
 button{
   font-family:inherit;cursor:pointer;border:none;border-radius:10px;
   padding:10px 16px;font-size:14px;font-weight:600;background:var(--panel2);
@@ -152,70 +156,124 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .player-config select{width:100px;}
 .player-config input[type=text]{flex:1;min-width:0;padding:4px 6px;font-size:12px;}
 
-/* ---------- Game screen ---------- */
-#screen-game{flex-direction:column;overflow:hidden;}
-#gameTopbar{
-  display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);
-  border-bottom:1px solid var(--border);flex-wrap:wrap;
+/* ---------- Game screen ----------
+   Full-bleed canvas (#gameCanvasWrap, absolutely positioned to fill #screen-game) with
+   everything else floating over it as fixed-position overlays instead of sharing flex/grid
+   space with the map — so the map always gets the whole screen, and zoom/pan only ever
+   affects the map itself, never the overlays. Same layout on every screen size; the only
+   size-dependent behavior is #rotatePrompt (see below), which blocks play entirely on a
+   touch device held in portrait rather than trying to adapt the layout to it. */
+#screen-game{position:relative;overflow:hidden;padding:0;}
+#gameCanvasWrap{
+  position:absolute;inset:0;overflow:auto;display:flex;align-items:flex-start;
+  background:#0a0e18;touch-action:pan-x pan-y;
 }
-#gtInfo{display:flex;align-items:center;gap:14px;}
-#gtControls{display:flex;align-items:center;gap:14px;}
-.zoom-group{display:inline-flex;gap:3px;}
-#gameTopbar .turn-indicator{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;}
-#gameTopbar .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;}
-#gameTopbar .phase-badge{
+/* margin:auto on the canvas (not justify-content/align-items on the wrap, deliberately absent
+   here) centers it in BOTH axes when it fits. Auto margins collapse to 0 once zoomed past the
+   wrap's size in either direction, so scrolling stays normally top/left-anchored instead of the
+   flexbox centering-clips-the-start gotcha (see the setup-screen fix) — justify-content/
+   align-items:center on the WRAP would still hit that same trap on whichever axis actually
+   overflows, since auto margins only pre-empt them when there's positive free space to begin
+   with; a zoomed-in overflow has none.
+   No max-width/max-height/width:auto/height:auto here on purpose: drawGameCanvas() sets
+   width/height inline every render, computed together so the aspect ratio is always right —
+   a stylesheet cap on only ONE of the two axes clamps that axis alone once zoomed past the
+   container's size, stretching the other and distorting the map, since inline `width`/`height`
+   don't override a separate `max-width`/`max-height` rule. */
+#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
+
+/* Overlay scaffolding: a positioned column that centers itself vertically/horizontally and
+   scrolls internally if its content ever runs taller/wider than the screen (a short landscape
+   phone with many sections stacked, say) rather than overflowing off-screen. */
+.game-overlay{position:absolute;z-index:5;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 20px);}
+#gameControlsLeft{left:10px;top:50%;transform:translateY(-50%);align-items:center;overflow-y:auto;}
+#gamePlayerListWrap{right:10px;top:50%;transform:translateY(-50%);width:190px;overflow-y:auto;}
+#gameTurnInfo{
+  left:50%;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:10px;
+  max-height:none;white-space:nowrap;
+}
+
+.ov-section{
+  display:flex;flex-direction:column;gap:4px;align-items:center;
+  background:rgba(10,14,24,.88);backdrop-filter:blur(4px);border:1px solid var(--border);
+  border-radius:10px;padding:6px;
+}
+.ov-row{display:flex;flex-direction:row;gap:4px;align-items:center;justify-content:center;}
+.ov-btn{
+  width:42px;height:42px;border-radius:9px;background:var(--panel2);border:1px solid var(--border);
+  color:var(--text);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  position:relative;align-self:center;flex-shrink:0;
+}
+.ov-btn:hover{background:var(--panel);}
+.ov-btn.active{background:var(--accent);border-color:var(--accent);}
+.ov-btn:disabled{opacity:.4;cursor:default;}
+.ov-btn.small{width:34px;height:34px;font-size:14px;}
+.ov-label{font-size:10.5px;color:var(--warn);font-weight:700;text-align:center;white-space:nowrap;}
+.ov-badge{
+  position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;font-size:9px;
+  min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;
+}
+#phaseActionsSection{width:112px;}
+#actionHint{font-size:10.5px;color:var(--muted);text-align:center;min-height:0;line-height:1.3;}
+#phaseActions{display:flex;flex-direction:column;gap:4px;}
+#phaseActions button{width:100%;font-size:11px;padding:6px 4px;line-height:1.25;}
+
+#gameTurnInfo{background:rgba(10,14,24,.88);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
+.turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;flex-shrink:0;}
+.phase-badge{
   padding:4px 12px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;
   text-transform:uppercase;letter-spacing:.5px;color:var(--accent2);
 }
-.round-badge{
-  padding:4px 10px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;
-  color:var(--warn);white-space:nowrap;
-}
-#gameTopbar .spacer{flex:1;}
 #reinforceCounter{font-size:13px;color:var(--warn);font-weight:700;}
-#gameBody{flex:1;display:flex;overflow:hidden;}
-#gameSidebar{
-  width:270px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
-  overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;
-}
+
 #playerList{display:flex;flex-direction:column;gap:8px;}
-#gameCanvasWrap{flex:1;overflow:auto;display:flex;align-items:flex-start;padding:16px;position:relative;background:#0a0e18;touch-action:pan-x pan-y;}
-/* margin:auto on the canvas (not justify-content/align-items on the wrap — deliberately absent
-   here, including from the mobile override below) centers it in BOTH axes when it fits. Auto
-   margins collapse to 0 once zoomed past the wrap's size in either direction, so scrolling stays
-   normally top/left-anchored instead of the flexbox-centering-clips-the-start gotcha (see the
-   setup-screen fix) — justify-content/align-items:center on the WRAP would still hit that same
-   trap on whichever axis actually overflows, since auto margins only pre-empt them when there's
-   positive free space to begin with; a zoomed-in overflow has none.
-   touch-action:pan-x pan-y on the wrap lets native single-finger scrolling keep working while
-   leaving 2-finger pinch free for the custom zoom handler.
-   No max-width/max-height/width:auto/height:auto here on purpose: drawGameCanvas() sets
-   width/height inline every render, computed together so the aspect ratio is always right —
-   a stylesheet cap on only ONE of the two axes (which is what used to be here) clamps that
-   axis alone once zoomed past the container's size, stretching the other and distorting the
-   map, since inline `width`/`height` don't override a separate `max-width`/`max-height` rule. */
-#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
-#gameLogPanel{
-  width:280px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--border);
-  display:flex;flex-direction:column;padding:12px;overflow:hidden;
+.player-card{
+  background:rgba(10,14,24,.88);backdrop-filter:blur(4px);border:2px solid var(--border);
+  border-radius:10px;padding:10px;
 }
-/* Rarely-looked-at, so it's a toggle (via #btnToggleLog, in the top control row) on every
-   screen size, not just mobile — collapsed by default (see body.html) to give the map (and,
-   on desktop, the sidebar+canvas which get to reclaim the freed flex space) the room instead. */
+.player-card.active-turn{border-color:var(--accent);box-shadow:0 0 12px rgba(91,141,239,.3);}
+.player-card .pname{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px;}
+.player-card .pdot{width:12px;height:12px;border-radius:50%;}
+.player-card .pstats{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;color:var(--muted);}
+/* The right-edge player list is always a narrow column now (not just on mobile) — icon+number
+   reads fine on its own, the word after it doesn't fit and isn't needed. */
+.stat-label{display:none;}
+.player-card.eliminated{opacity:.35;}
+
+/* Floats over the map next to the left control column rather than sharing grid/flex space with
+   it — rarely looked at, so it's a toggle (#btnToggleLog, in the left column) on every screen
+   size, collapsed by default (see body.html). */
+#gameLogPanel{
+  position:absolute;left:64px;top:10px;bottom:10px;width:min(320px, calc(100% - 84px));
+  background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
+  display:flex;flex-direction:column;padding:12px;overflow:hidden;z-index:6;
+}
 #gameLogPanel.collapsed{display:none;}
+#gameLogTitle{font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;margin-bottom:6px;}
 #combatLog{flex:1;overflow-y:auto;font-size:12px;display:flex;flex-direction:column-reverse;gap:5px;padding-top:6px;}
 .log-entry{padding:6px 8px;border-radius:8px;background:var(--panel2);line-height:1.4;}
 .log-entry.attack{border-left:3px solid var(--danger);}
 .log-entry.capture{border-left:3px solid var(--good);}
 .log-entry.info{border-left:3px solid var(--accent);}
-.player-card{background:var(--panel2);border-radius:10px;padding:10px;border:2px solid transparent;}
-.player-card.active-turn{border-color:var(--accent);box-shadow:0 0 12px rgba(91,141,239,.3);}
-.player-card .pname{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px;}
-.player-card .pdot{width:12px;height:12px;border-radius:50%;}
-.player-card .pstats{display:flex;gap:12px;font-size:11px;color:var(--muted);}
-.player-card.eliminated{opacity:.35;}
-#actionHint{font-size:12.5px;color:var(--muted);background:var(--panel2);padding:10px;border-radius:10px;min-height:20px;}
-#phaseActions{display:flex;gap:8px;flex-wrap:wrap;padding:10px 16px;background:var(--panel);border-top:1px solid var(--border);}
+
+#rotatePrompt{display:none;}
+/* Touch device held in portrait: this layout only really works landscape (that's where a
+   phone's thumbs land near the left/right edges), so block play with a rotate prompt instead of
+   trying to adapt — hover:none + pointer:coarse targets an actual phone/tablet, not just a
+   narrow desktop browser window (which can't be "rotated" anyway, so it wouldn't help there). */
+@media (orientation:portrait) and (hover:none) and (pointer:coarse){
+  #screen-game.active #rotatePrompt{
+    display:flex;position:absolute;inset:0;z-index:999;background:#0a0e18;
+    flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    font-size:18px;text-align:center;color:var(--text);padding:24px;
+  }
+  #rotatePrompt div:first-child{font-size:48px;}
+  #screen-game.active #gameCanvasWrap,
+  #screen-game.active #gameControlsLeft,
+  #screen-game.active #gamePlayerListWrap,
+  #screen-game.active #gameTurnInfo,
+  #screen-game.active #gameLogPanel{display:none;}
+}
 
 /* dice */
 #diceBox{display:flex;gap:16px;align-items:center;justify-content:center;padding:10px;}
@@ -273,117 +331,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #editor-canvas-wrap{overflow:auto;padding:10px;}
   #editor-toolbar{position:sticky;top:0;z-index:5;}
 
-  /* Game screen: the outer app header is dead weight once you're actually playing —
-     hide it so the map gets the space instead. (body.in-game-screen is set by
-     showScreen() in 01-utils.js.) */
-  body.in-game-screen #topbar{display:none;}
-
-  /* Icon-only chrome: hide the trailing text on toggles/buttons and per-player stat
-     words, keep the emoji/number — the icon already reads as its own label at this size. */
-  .btn-label, .stat-label{display:none;}
-
-  #screen-game{overflow-y:hidden;}
-  #gameBody{overflow:hidden;}
-
-  /* drawGameCanvas() already scales by whichever of width/height is more limiting (its own
-     fitScale = min(availW/nativeW, availH/nativeH, 1)) and sets both dimensions inline together,
-     so the map fills the space it's given without dead space AND without a stylesheet rule
-     fighting it on just one axis (see the #gameCanvas comment above re: the zoom distortion
-     that caused). No align-items:center override needed here either — #gameCanvas's own
-     margin:auto already centers it in both axes when it fits, without the same trap the wrap's
-     own align-items/justify-content:center would have on an overflowing (zoomed-in) canvas. */
-  /* The icon controls (continent/cards/menu) and the turn/phase info used to share one
-     wrapping row, so whichever grew longer would shove the other off onto an inconsistent
-     second line, making the icon buttons drift and miss-tap. Force two fixed rows instead:
-     controls always on top (thumb-reachable, never moves), turn info always below. */
-  #gameTopbar{flex-direction:column;align-items:stretch;gap:6px;padding:8px 10px;position:sticky;top:0;z-index:6;}
-  #gameTopbar .spacer{display:none;}
-  #gtControls{order:-1;justify-content:flex-end;gap:10px;flex-wrap:nowrap;}
-  #gtInfo{flex-wrap:wrap;gap:8px 10px;}
-  #gameTopbar .turn-indicator{font-size:13px;}
-  #gameTopbar .phase-badge{font-size:11px;padding:4px 10px;}
-  .switch-row{font-size:11.5px;}
-
-  /* Layout direction follows the MAP's own aspect ratio (map-landscape / map-portrait,
-     set by updateGameLayoutOrientation() in 06-render-game.js), not the phone's — a wide
-     map keeps a wide viewport, a tall/square one gets a tall one. */
-
-  /* map wider than tall: map fills the left, a narrow icon rail (player status + the
-     collapsible log) sits on the right within thumb reach. */
-  #screen-game.map-landscape #gameBody{
-    display:grid;
-    grid-template-columns:1fr 150px;
-    grid-template-rows:1fr auto;
-    height:100%;
-  }
-  #screen-game.map-landscape #gameCanvasWrap{grid-column:1;grid-row:1/3;padding:6px;overflow:auto;}
-  #screen-game.map-landscape #gameSidebar{
-    grid-column:2;grid-row:1;width:auto;max-height:none;
-    border-right:none;border-left:1px solid var(--border);border-bottom:1px solid var(--border);
-    padding:8px;gap:8px;
-    scrollbar-gutter:stable; /* reserve the scrollbar's width up front so it never overlaps content */
-  }
-  #screen-game.map-landscape #gameLogPanel{
-    grid-column:2;grid-row:2;width:auto;max-height:40vh;
-    border-left:1px solid var(--border);border-top:none;
-  }
-  /* The rail is too narrow for the auto-fit multi-column grid (its 130px-per-card minimum
-     doesn't fit a 150px rail once padding/scrollbar are subtracted, which forced horizontal
-     overflow) — pin it to a single column here, and keep each player's stat row on one line
-     rather than letting it wrap (per-card icon/number pairs are short enough that they should). */
-  #screen-game.map-landscape #playerList{grid-template-columns:1fr;}
-  #screen-game.map-landscape .pstats{flex-wrap:nowrap;gap:2px 6px;font-size:10.5px;}
-
-  /* The log squeezed into that same 150px rail (stacked under the player list) is basically
-     unreadable — and the player only ever looks at ONE of map/log at a time anyway — so when
-     the log is open, swap them: log takes the big left area, map shrinks into the rail instead.
-     (screen-game.log-open is toggled by #btnToggleLog in 08-wiring.js. map-portrait doesn't
-     need this: there the log already gets its own full-width strip, nothing to swap.) */
-  #screen-game.map-landscape.log-open #gameBody{
-    /* Unlike the default arrangement (where the map spans both rows so row sizing doesn't
-       matter to it), here the map is confined to row 1 alongside a sidebar whose real content
-       height can easily outweigh a plain "1fr" — leaving the map a sliver. Give it a fixed,
-       still-legible minimum instead; the sidebar (row 2) gets the rest and scrolls if needed. */
-    grid-template-rows:110px 1fr;
-  }
-  #screen-game.map-landscape.log-open #gameLogPanel{
-    grid-column:1;grid-row:1/3;width:auto;max-height:none;
-    border-left:none;border-right:1px solid var(--border);
-  }
-  #screen-game.map-landscape.log-open #gameCanvasWrap{grid-column:2;grid-row:1;padding:4px;}
-  #screen-game.map-landscape.log-open #gameSidebar{grid-column:2;grid-row:2;max-height:none;}
-
-  /* map taller than or as tall as wide: map on top (as big as it can be), controls
-     stacked below it — reordered via flex `order`, DOM stays in its normal place. */
-  #screen-game.map-portrait #gameBody{display:flex;flex-direction:column;overflow-y:auto;}
-  #screen-game.map-portrait #gameCanvasWrap{order:0;overflow:auto;padding:10px;}
-  #screen-game.map-portrait #gameSidebar{
-    order:1;width:100%;max-height:none;
-    border-right:none;border-top:1px solid var(--border);
-  }
-  #screen-game.map-portrait #gameLogPanel{
-    order:2;width:100%;max-height:220px;
-    border-left:none;border-top:1px solid var(--border);
-  }
-
-  /* Compact per-player status cards, laid out as a grid instead of one-per-row so a
-     4-6 player game doesn't burn most of the screen just listing everyone's stats.
-     auto-fit + a ~130px minimum means it's 1 column in the narrow side rail (map-landscape)
-     and naturally 2+ columns in the full-width strip (map-portrait). */
-  #playerList{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;}
-  .player-card{padding:6px 8px;}
-  .player-card .pname{font-size:11px;gap:5px;margin-bottom:4px;}
-  .pstats{display:flex;flex-wrap:wrap;gap:3px 8px;font-size:11px;}
-  #actionHint{font-size:11px;padding:8px;}
-
-  /* #gameLogPanel.collapsed{display:none} is a general rule now (applies on desktop too,
-     see near the base #gameLogPanel rule) — #gameLogTitle stays mobile-only hidden since
-     the toggle button already carries that label there; desktop still shows it. */
-  #gameLogTitle{display:none;}
-
-  #phaseActions{padding:10px;gap:6px;position:sticky;bottom:0;z-index:6;box-shadow:0 -4px 12px rgba(0,0,0,.3);}
-  #phaseActions button{flex:1 1 auto;min-width:130px;}
-
   .setup-card{padding:20px;width:100%;}
   #screen-setup{padding:16px;}
 
@@ -396,7 +343,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   .menu-card{padding:16px;}
   .menu-card h3{font-size:14.5px;}
   .menu-card p{font-size:12px;}
-  #screen-game.map-landscape #gameBody{grid-template-columns:1fr 130px;}
 }
 </style>
 </head>
@@ -618,47 +564,66 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 </div>
 
 <!-- ============ GAME ============ -->
+<!-- Full-bleed canvas with everything else floating over it as fixed-position overlays
+     (left = clickable controls, right = player list, bottom-center = current turn), so the
+     map itself always gets the entire screen and zoom/pan only ever affects the map. -->
 <div class="screen" id="screen-game">
-  <div id="gameTopbar">
-    <div id="gtInfo">
-      <div class="turn-indicator"><span class="turn-dot" id="turnDot"></span><span id="turnName">—</span></div>
-      <div class="phase-badge" id="phaseBadge">—</div>
-      <span id="reinforceCounter"></span>
-    </div>
-    <div class="spacer"></div>
-    <div id="gtControls">
-      <span class="round-badge" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
-      <button class="small ghost icon-btn" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
-      <span class="zoom-group">
-        <button class="small ghost icon-btn" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
-        <button class="small ghost icon-btn" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
-        <button class="small ghost icon-btn" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
-      </span>
-      <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍<span class="btn-label"> Xem châu lục <span style="opacity:.6;">(Space)</span></span></label>
-      <button class="small ghost" id="btnToggleLog" aria-label="Thu gọn/mở nhật ký trận đấu">📜</button>
-      <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
-      <button class="small ghost" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾<span class="btn-label"> Lưu</span></button>
-      <button class="small ghost icon-btn" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
-      <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
-    </div>
+  <div id="gameCanvasWrap">
+    <canvas id="gameCanvas" width="960" height="600"></canvas>
   </div>
-  <div id="gameBody">
-    <div id="gameSidebar">
-      <div id="playerList"></div>
-      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+
+  <div id="gameControlsLeft" class="game-overlay">
+    <div class="ov-section">
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnQuitGame" title="Về Menu">🏠</button>
+        <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
+      </div>
+      <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾</button>
     </div>
-    <div id="gameCanvasWrap">
-      <canvas id="gameCanvas" width="960" height="600"></canvas>
-    </div>
-    <div id="gameLogPanel" class="collapsed">
-      <h4 id="gameLogTitle" style="font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;">📜 Nhật ký trận đấu</h4>
-      <div id="gameLogContent">
-        <div id="diceBox"></div>
-        <div id="combatLog"></div>
+    <div class="ov-section">
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
+        <button class="ov-btn small" id="btnCardsModal" title="Thẻ bài">🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
       </div>
     </div>
+    <div class="ov-section">
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
+        <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
+      </div>
+      <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
+        <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
+        <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
+      </div>
+    </div>
+    <div class="ov-section" id="phaseActionsSection">
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+      <div id="phaseActions"></div>
+    </div>
   </div>
-  <div id="phaseActions"></div>
+
+  <div id="gamePlayerListWrap" class="game-overlay">
+    <div id="playerList"></div>
+  </div>
+
+  <div id="gameTurnInfo" class="game-overlay">
+    <span class="turn-dot" id="turnDot"></span>
+    <span id="turnName">—</span>
+    <span class="phase-badge" id="phaseBadge">—</span>
+    <span id="reinforceCounter"></span>
+  </div>
+
+  <div id="gameLogPanel" class="collapsed">
+    <h4 id="gameLogTitle">📜 Nhật ký trận đấu</h4>
+    <div id="gameLogContent">
+      <div id="diceBox"></div>
+      <div id="combatLog"></div>
+    </div>
+  </div>
+
+  <div id="rotatePrompt"><div>📱↻</div><div>Xoay ngang điện thoại để chơi</div></div>
 </div>
 
 <div id="modalRoot"></div>
@@ -2480,7 +2445,10 @@ function pathFromLoops(ctx, loops){
 // zooming never has to touch or invalidate any of that; only this draw call's own resolution
 // and the inline CSS size it gives the canvas element change.
 let gameZoom = 1;
-const GAME_ZOOM_MIN = 0.4, GAME_ZOOM_MAX = 4;
+// Zoom can't go below 1 (the safe-area-fit baseline computed in drawGameCanvas) — that's the
+// "don't let the overlays end up sitting on top of the map" limit asked for, not an arbitrary
+// number, so it's enforced by what zoom=1 itself means rather than a separate floor.
+const GAME_ZOOM_MIN = 1, GAME_ZOOM_MAX = 4;
 function setGameZoom(z, anchorClientX, anchorClientY){
   const wrap = $('gameCanvasWrap');
   const wrapRect = wrap.getBoundingClientRect();
@@ -2504,11 +2472,18 @@ function drawGameCanvas(){
   const cs = mapData.cellSize;
   const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
   const wrap = $('gameCanvasWrap');
-  const wrapStyle = getComputedStyle(wrap);
-  const padX = parseFloat(wrapStyle.paddingLeft)+parseFloat(wrapStyle.paddingRight);
-  const padY = parseFloat(wrapStyle.paddingTop)+parseFloat(wrapStyle.paddingBottom);
-  const availW = Math.max(50, wrap.clientWidth-padX), availH = Math.max(50, wrap.clientHeight-padY);
-  const fitScale = Math.min(availW/nativeW, availH/nativeH, 1); // never upscale the baseline, only shrink to fit — same as the old max-width:100% behavior
+  // "Safe area" = the wrap's box minus the fixed overlays around the edges (left control
+  // column, right player list, bottom turn-info panel) plus a little breathing room. This is
+  // what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum zoom the overlays only ever
+  // sit over empty background, never over the map itself — "zoom out hết cỡ thì bản đồ lọt thỏm
+  // vào giữa, chừa khoảng trống 2 bên".
+  const margin = 16;
+  const leftW = $('gameControlsLeft').getBoundingClientRect().width;
+  const rightW = $('gamePlayerListWrap').getBoundingClientRect().width;
+  const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
+  const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
+  const availH = Math.max(50, wrap.clientHeight-bottomH-margin*2);
+  const fitScale = Math.min(availW/nativeW, availH/nativeH);
   const displayScale = fitScale*gameZoom;
   canvas.width = Math.max(1, Math.round(nativeW*displayScale));
   canvas.height = Math.max(1, Math.round(nativeH*displayScale));
@@ -2623,53 +2598,6 @@ function renderPlayerList(){
   });
 }
 
-// Picks side-by-side ("map-landscape": map left, narrow control rail right) vs stacked
-// ("map-portrait": map on top, controls below) for the mobile game screen — see the CSS
-// in style.css for the actual re-layout, this just decides which one to apply.
-//
-// Deciding this from the map's cols/rows alone (wide map -> side-by-side) sounds right but
-// backfires on an ordinary portrait phone: a wide map crammed into a side-by-side layout
-// only gets (screen width minus the rail) to work with, and since it's WIDE it needs a lot
-// of width per unit of height, so it ends up tiny — measured on a 390x844 viewport with a
-// 40x20 map, side-by-side rendered a 270x135 canvas vs 370x185 (~2x the area) when forced
-// to stack instead. So instead of trusting the map's shape in isolation, this picks whichever
-// candidate actually gives the map more room — the thing the "ưu tiên hiển thị map đầy đủ" ask
-// actually cares about. (Desktop is untouched: the CSS only acts on these classes below the
-// 980px breakpoint — kept wide enough to also cover phones held in landscape orientation.)
-//
-// This used to estimate the two candidates' available space from guessed pixel constants
-// (topbar height, rail width, ...), which drifted out of sync with the real CSS and badly
-// under/over-estimated on short landscape viewports (e.g. a 915x412 window ended up with a
-// tiny, height-bound map because the guessed "controls" height budget was way off). Instead,
-// this now toggles each class on for real, measures the actual #gameCanvasWrap box the CSS
-// produces, and keeps whichever real measurement wins — no guessed numbers to go stale.
-function updateGameLayoutOrientation(){
-  const el = $('screen-game');
-  if(window.innerWidth > 980){ el.classList.remove('map-landscape','map-portrait'); return; }
-
-  // .log-open (see 08-wiring.js) swaps the map and log's positions within map-landscape, which
-  // would otherwise throw off the measurement below (the map would measure as its shrunk,
-  // swapped-in-the-rail size instead of its normal one). Decide landscape-vs-portrait based on
-  // the default arrangement, then restore whatever the log's actual open/closed state was.
-  const wasLogOpen = el.classList.contains('log-open');
-  el.classList.remove('log-open');
-
-  const mapRatio = mapData.cols / mapData.rows; // width/height the canvas wants
-  // Max area of a mapRatio-shaped rectangle that fits in a w×h box (contain-fit).
-  const containArea = (w,h) => (w<=0||h<=0) ? 0 : ((w/h > mapRatio) ? h*h*mapRatio : w*w/mapRatio);
-  function measure(mode){
-    el.classList.remove('map-landscape','map-portrait');
-    el.classList.add(mode);
-    const box = $('gameCanvasWrap').getBoundingClientRect();
-    return containArea(box.width, box.height);
-  }
-  const areaLandscape = measure('map-landscape');
-  const areaPortrait = measure('map-portrait');
-  const landscape = areaLandscape >= areaPortrait;
-  el.classList.toggle('map-landscape', landscape);
-  el.classList.toggle('map-portrait', !landscape);
-  el.classList.toggle('log-open', wasLogOpen);
-}
 
 function renderCombatLog(){
   const wrap = $('combatLog');
@@ -2876,11 +2804,12 @@ function renderTopbar(){
 
 function renderGame(){
   if(!game) return;
-  updateGameLayoutOrientation();
   renderTopbar();
   renderPlayerList();
-  drawGameCanvas();
+  // Rendered before drawGameCanvas() since its fitScale computation measures the overlay
+  // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
+  drawGameCanvas();
   if(aiPaused && !currentPlayer().isHuman && !game.over){
     setActionHint('⏸️ Đã tạm dừng lượt của '+currentPlayer().name+'. Bấm ▶️ ở góc trên để tiếp tục.');
   }
@@ -3231,7 +3160,11 @@ document.querySelectorAll('.panel-header').forEach(h=>{
 
 // Continent view toggles
 $('toggleContinentView').addEventListener('change', (e)=>{ editorShowContinents = e.target.checked; drawEditorCanvas(); });
-$('toggleContinentViewGame').addEventListener('change', (e)=>{ showContinentsGame = e.target.checked; if(game) drawGameCanvas(); });
+$('btnToggleContinentView').addEventListener('click', ()=>{
+  showContinentsGame = !showContinentsGame;
+  $('btnToggleContinentView').classList.toggle('active', showContinentsGame);
+  if(game) drawGameCanvas();
+});
 
 // Editor wiring
 document.querySelectorAll('.tool-btn').forEach(btn=>{
@@ -3457,15 +3390,13 @@ $('btnPauseAI').addEventListener('click', ()=>{
   renderGame();
 });
 
-// Dice/combat log collapse toggle — collapsed by default on every screen size (see body.html;
-// rarely-looked-at, so it shouldn't cost permanent space even on desktop) and otherwise only
-// changes when the player taps this button — no auto-expand on new rolls.
+// Dice/combat log collapse toggle — collapsed by default (see body.html; rarely-looked-at, so
+// it shouldn't cost permanent screen space) and otherwise only changes when the player taps
+// this button — no auto-expand on new rolls. Floats over the map (see #gameLogPanel in
+// style.css) rather than sharing layout space with it, so there's nothing else to toggle here.
 $('btnToggleLog').addEventListener('click', ()=>{
   const collapsed = $('gameLogPanel').classList.toggle('collapsed');
   $('btnToggleLog').classList.toggle('active', !collapsed);
-  // In the narrow side-rail (map-landscape) mobile layout, opening the log swaps it with the
-  // map (log takes the big area, map shrinks into the rail) — see style.css's .log-open rules.
-  $('screen-game').classList.toggle('log-open', !collapsed);
 });
 
 // updateGameLayoutOrientation() (which decides map-landscape vs map-portrait) only ran as
@@ -3491,9 +3422,7 @@ window.addEventListener('keydown', (e)=>{
   const tag = document.activeElement && document.activeElement.tagName;
   if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT' || tag==='BUTTON') return;
   e.preventDefault();
-  const cb = $('toggleContinentViewGame');
-  cb.checked = !cb.checked;
-  cb.dispatchEvent(new Event('change'));
+  $('btnToggleContinentView').click();
 });
 
 // Phase-action keyboard shortcuts — attack: C = Công triệt để, T = Tấn công, K = Kết thúc tấn

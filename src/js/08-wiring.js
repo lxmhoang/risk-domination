@@ -175,7 +175,11 @@ document.querySelectorAll('.panel-header').forEach(h=>{
 
 // Continent view toggles
 $('toggleContinentView').addEventListener('change', (e)=>{ editorShowContinents = e.target.checked; drawEditorCanvas(); });
-$('toggleContinentViewGame').addEventListener('change', (e)=>{ showContinentsGame = e.target.checked; if(game) drawGameCanvas(); });
+$('btnToggleContinentView').addEventListener('click', ()=>{
+  showContinentsGame = !showContinentsGame;
+  $('btnToggleContinentView').classList.toggle('active', showContinentsGame);
+  if(game) drawGameCanvas();
+});
 
 // Editor wiring
 document.querySelectorAll('.tool-btn').forEach(btn=>{
@@ -401,15 +405,13 @@ $('btnPauseAI').addEventListener('click', ()=>{
   renderGame();
 });
 
-// Dice/combat log collapse toggle — collapsed by default on every screen size (see body.html;
-// rarely-looked-at, so it shouldn't cost permanent space even on desktop) and otherwise only
-// changes when the player taps this button — no auto-expand on new rolls.
+// Dice/combat log collapse toggle — collapsed by default (see body.html; rarely-looked-at, so
+// it shouldn't cost permanent screen space) and otherwise only changes when the player taps
+// this button — no auto-expand on new rolls. Floats over the map (see #gameLogPanel in
+// style.css) rather than sharing layout space with it, so there's nothing else to toggle here.
 $('btnToggleLog').addEventListener('click', ()=>{
   const collapsed = $('gameLogPanel').classList.toggle('collapsed');
   $('btnToggleLog').classList.toggle('active', !collapsed);
-  // In the narrow side-rail (map-landscape) mobile layout, opening the log swaps it with the
-  // map (log takes the big area, map shrinks into the rail) — see style.css's .log-open rules.
-  $('screen-game').classList.toggle('log-open', !collapsed);
 });
 
 // updateGameLayoutOrientation() (which decides map-landscape vs map-portrait) only ran as
@@ -435,9 +437,7 @@ window.addEventListener('keydown', (e)=>{
   const tag = document.activeElement && document.activeElement.tagName;
   if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT' || tag==='BUTTON') return;
   e.preventDefault();
-  const cb = $('toggleContinentViewGame');
-  cb.checked = !cb.checked;
-  cb.dispatchEvent(new Event('change'));
+  $('btnToggleContinentView').click();
 });
 
 // Phase-action keyboard shortcuts — attack: C = Công triệt để, T = Tấn công, K = Kết thúc tấn

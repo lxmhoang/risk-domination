@@ -215,47 +215,66 @@
 </div>
 
 <!-- ============ GAME ============ -->
+<!-- Full-bleed canvas with everything else floating over it as fixed-position overlays
+     (left = clickable controls, right = player list, bottom-center = current turn), so the
+     map itself always gets the entire screen and zoom/pan only ever affects the map. -->
 <div class="screen" id="screen-game">
-  <div id="gameTopbar">
-    <div id="gtInfo">
-      <div class="turn-indicator"><span class="turn-dot" id="turnDot"></span><span id="turnName">—</span></div>
-      <div class="phase-badge" id="phaseBadge">—</div>
-      <span id="reinforceCounter"></span>
-    </div>
-    <div class="spacer"></div>
-    <div id="gtControls">
-      <span class="round-badge" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
-      <button class="small ghost icon-btn" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
-      <span class="zoom-group">
-        <button class="small ghost icon-btn" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
-        <button class="small ghost icon-btn" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
-        <button class="small ghost icon-btn" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
-      </span>
-      <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍<span class="btn-label"> Xem châu lục <span style="opacity:.6;">(Space)</span></span></label>
-      <button class="small ghost" id="btnToggleLog" aria-label="Thu gọn/mở nhật ký trận đấu">📜</button>
-      <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
-      <button class="small ghost" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾<span class="btn-label"> Lưu</span></button>
-      <button class="small ghost icon-btn" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
-      <button class="small ghost" id="btnQuitGame">🏠 Menu</button>
-    </div>
+  <div id="gameCanvasWrap">
+    <canvas id="gameCanvas" width="960" height="600"></canvas>
   </div>
-  <div id="gameBody">
-    <div id="gameSidebar">
-      <div id="playerList"></div>
-      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+
+  <div id="gameControlsLeft" class="game-overlay">
+    <div class="ov-section">
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnQuitGame" title="Về Menu">🏠</button>
+        <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
+      </div>
+      <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾</button>
     </div>
-    <div id="gameCanvasWrap">
-      <canvas id="gameCanvas" width="960" height="600"></canvas>
-    </div>
-    <div id="gameLogPanel" class="collapsed">
-      <h4 id="gameLogTitle" style="font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;">📜 Nhật ký trận đấu</h4>
-      <div id="gameLogContent">
-        <div id="diceBox"></div>
-        <div id="combatLog"></div>
+    <div class="ov-section">
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
+        <button class="ov-btn small" id="btnCardsModal" title="Thẻ bài">🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
       </div>
     </div>
+    <div class="ov-section">
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
+        <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
+      </div>
+      <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+      <div class="ov-row">
+        <button class="ov-btn small" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
+        <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
+        <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
+      </div>
+    </div>
+    <div class="ov-section" id="phaseActionsSection">
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+      <div id="phaseActions"></div>
+    </div>
   </div>
-  <div id="phaseActions"></div>
+
+  <div id="gamePlayerListWrap" class="game-overlay">
+    <div id="playerList"></div>
+  </div>
+
+  <div id="gameTurnInfo" class="game-overlay">
+    <span class="turn-dot" id="turnDot"></span>
+    <span id="turnName">—</span>
+    <span class="phase-badge" id="phaseBadge">—</span>
+    <span id="reinforceCounter"></span>
+  </div>
+
+  <div id="gameLogPanel" class="collapsed">
+    <h4 id="gameLogTitle">📜 Nhật ký trận đấu</h4>
+    <div id="gameLogContent">
+      <div id="diceBox"></div>
+      <div id="combatLog"></div>
+    </div>
+  </div>
+
+  <div id="rotatePrompt"><div>📱↻</div><div>Xoay ngang điện thoại để chơi</div></div>
 </div>
 
 <div id="modalRoot"></div>

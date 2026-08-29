@@ -24,7 +24,10 @@ function pathFromLoops(ctx, loops){
 // zooming never has to touch or invalidate any of that; only this draw call's own resolution
 // and the inline CSS size it gives the canvas element change.
 let gameZoom = 1;
-const GAME_ZOOM_MIN = 0.4, GAME_ZOOM_MAX = 4;
+// Zoom can't go below 1 (the safe-area-fit baseline computed in drawGameCanvas) — that's the
+// "don't let the overlays end up sitting on top of the map" limit asked for, not an arbitrary
+// number, so it's enforced by what zoom=1 itself means rather than a separate floor.
+const GAME_ZOOM_MIN = 1, GAME_ZOOM_MAX = 4;
 function setGameZoom(z, anchorClientX, anchorClientY){
   const wrap = $('gameCanvasWrap');
   const wrapRect = wrap.getBoundingClientRect();
@@ -48,11 +51,18 @@ function drawGameCanvas(){
   const cs = mapData.cellSize;
   const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
   const wrap = $('gameCanvasWrap');
-  const wrapStyle = getComputedStyle(wrap);
-  const padX = parseFloat(wrapStyle.paddingLeft)+parseFloat(wrapStyle.paddingRight);
-  const padY = parseFloat(wrapStyle.paddingTop)+parseFloat(wrapStyle.paddingBottom);
-  const availW = Math.max(50, wrap.clientWidth-padX), availH = Math.max(50, wrap.clientHeight-padY);
-  const fitScale = Math.min(availW/nativeW, availH/nativeH, 1); // never upscale the baseline, only shrink to fit — same as the old max-width:100% behavior
+  // "Safe area" = the wrap's box minus the fixed overlays around the edges (left control
+  // column, right player list, bottom turn-info panel) plus a little breathing room. This is
+  // what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum zoom the overlays only ever
+  // sit over empty background, never over the map itself — "zoom out hết cỡ thì bản đồ lọt thỏm
+  // vào giữa, chừa khoảng trống 2 bên".
+  const margin = 16;
+  const leftW = $('gameControlsLeft').getBoundingClientRect().width;
+  const rightW = $('gamePlayerListWrap').getBoundingClientRect().width;
+  const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
+  const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
+  const availH = Math.max(50, wrap.clientHeight-bottomH-margin*2);
+  const fitScale = Math.min(availW/nativeW, availH/nativeH);
   const displayScale = fitScale*gameZoom;
   canvas.width = Math.max(1, Math.round(nativeW*displayScale));
   canvas.height = Math.max(1, Math.round(nativeH*displayScale));
@@ -167,53 +177,6 @@ function renderPlayerList(){
   });
 }
 
-// Picks side-by-side ("map-landscape": map left, narrow control rail right) vs stacked
-// ("map-portrait": map on top, controls below) for the mobile game screen — see the CSS
-// in style.css for the actual re-layout, this just decides which one to apply.
-//
-// Deciding this from the map's cols/rows alone (wide map -> side-by-side) sounds right but
-// backfires on an ordinary portrait phone: a wide map crammed into a side-by-side layout
-// only gets (screen width minus the rail) to work with, and since it's WIDE it needs a lot
-// of width per unit of height, so it ends up tiny — measured on a 390x844 viewport with a
-// 40x20 map, side-by-side rendered a 270x135 canvas vs 370x185 (~2x the area) when forced
-// to stack instead. So instead of trusting the map's shape in isolation, this picks whichever
-// candidate actually gives the map more room — the thing the "ưu tiên hiển thị map đầy đủ" ask
-// actually cares about. (Desktop is untouched: the CSS only acts on these classes below the
-// 980px breakpoint — kept wide enough to also cover phones held in landscape orientation.)
-//
-// This used to estimate the two candidates' available space from guessed pixel constants
-// (topbar height, rail width, ...), which drifted out of sync with the real CSS and badly
-// under/over-estimated on short landscape viewports (e.g. a 915x412 window ended up with a
-// tiny, height-bound map because the guessed "controls" height budget was way off). Instead,
-// this now toggles each class on for real, measures the actual #gameCanvasWrap box the CSS
-// produces, and keeps whichever real measurement wins — no guessed numbers to go stale.
-function updateGameLayoutOrientation(){
-  const el = $('screen-game');
-  if(window.innerWidth > 980){ el.classList.remove('map-landscape','map-portrait'); return; }
-
-  // .log-open (see 08-wiring.js) swaps the map and log's positions within map-landscape, which
-  // would otherwise throw off the measurement below (the map would measure as its shrunk,
-  // swapped-in-the-rail size instead of its normal one). Decide landscape-vs-portrait based on
-  // the default arrangement, then restore whatever the log's actual open/closed state was.
-  const wasLogOpen = el.classList.contains('log-open');
-  el.classList.remove('log-open');
-
-  const mapRatio = mapData.cols / mapData.rows; // width/height the canvas wants
-  // Max area of a mapRatio-shaped rectangle that fits in a w×h box (contain-fit).
-  const containArea = (w,h) => (w<=0||h<=0) ? 0 : ((w/h > mapRatio) ? h*h*mapRatio : w*w/mapRatio);
-  function measure(mode){
-    el.classList.remove('map-landscape','map-portrait');
-    el.classList.add(mode);
-    const box = $('gameCanvasWrap').getBoundingClientRect();
-    return containArea(box.width, box.height);
-  }
-  const areaLandscape = measure('map-landscape');
-  const areaPortrait = measure('map-portrait');
-  const landscape = areaLandscape >= areaPortrait;
-  el.classList.toggle('map-landscape', landscape);
-  el.classList.toggle('map-portrait', !landscape);
-  el.classList.toggle('log-open', wasLogOpen);
-}
 
 function renderCombatLog(){
   const wrap = $('combatLog');
@@ -420,11 +383,12 @@ function renderTopbar(){
 
 function renderGame(){
   if(!game) return;
-  updateGameLayoutOrientation();
   renderTopbar();
   renderPlayerList();
-  drawGameCanvas();
+  // Rendered before drawGameCanvas() since its fitScale computation measures the overlay
+  // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
+  drawGameCanvas();
   if(aiPaused && !currentPlayer().isHuman && !game.over){
     setActionHint('⏸️ Đã tạm dừng lượt của '+currentPlayer().name+'. Bấm ▶️ ở góc trên để tiếp tục.');
   }
