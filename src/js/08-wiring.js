@@ -366,22 +366,35 @@ $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
   })
 );
 // Click-and-drag panning (mouse only — touch already pans natively via touch-action, and pinch
-// is handled separately above). setPointerCapture keeps move/up events targeting the wrap even
-// if the cursor drifts outside it mid-drag. A drag past a few px sets suppressNextClick (see
+// is handled separately above). A drag past a few px sets suppressNextClick (see
 // gameCanvasClick in 06-render-game.js) so the click that naturally follows mouseup doesn't also
 // get treated as a territory selection.
-let dragPan = null; // {startX, startY, startScrollLeft, startScrollTop, dragged}
+//
+// setPointerCapture is deliberately NOT called on every pointerdown (only once a drag is
+// actually confirmed, in pointermove below): capturing redirects the pointer's eventual
+// mouseup/click to target the capturing element instead of whatever's really under the cursor —
+// so an ordinary, no-movement click would have its 'click' redirected from #gameCanvas to
+// #gameCanvasWrap, meaning the territory-selection listener (bound specifically to #gameCanvas)
+// would never see it at all. Deferring capture to only-once-dragging avoids that for every
+// normal click, while still keeping move/up tracking the wrap once a real drag is underway.
+let dragPan = null; // {startX, startY, startScrollLeft, startScrollTop, dragged, pointerId}
 $('gameCanvasWrap').addEventListener('pointerdown', (e)=>{
   if(e.pointerType!=='mouse' || e.button!==0) return;
   const wrap = $('gameCanvasWrap');
-  dragPan = { startX:e.clientX, startY:e.clientY, startScrollLeft:wrap.scrollLeft, startScrollTop:wrap.scrollTop, dragged:false };
-  wrap.setPointerCapture(e.pointerId);
+  dragPan = { startX:e.clientX, startY:e.clientY, startScrollLeft:wrap.scrollLeft, startScrollTop:wrap.scrollTop, dragged:false, pointerId:e.pointerId };
 });
 $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
   if(!dragPan || e.pointerType!=='mouse') return;
   const wrap = $('gameCanvasWrap');
   const dx = e.clientX-dragPan.startX, dy = e.clientY-dragPan.startY;
-  if(!dragPan.dragged && Math.hypot(dx,dy)>4){ dragPan.dragged = true; document.body.style.cursor = 'grabbing'; }
+  // A real mouse always jitters a few px between press and release — too tight a threshold
+  // here misreads ordinary clicks as drags and suppresses the territory selection they should
+  // have made (see gameCanvasClick's suppressNextClick check).
+  if(!dragPan.dragged && Math.hypot(dx,dy)>10){
+    dragPan.dragged = true;
+    document.body.style.cursor = 'grabbing';
+    wrap.setPointerCapture(dragPan.pointerId);
+  }
   if(dragPan.dragged){
     wrap.scrollLeft = dragPan.startScrollLeft-dx;
     wrap.scrollTop = dragPan.startScrollTop-dy;
