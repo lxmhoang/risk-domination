@@ -18,14 +18,50 @@ function pathFromLoops(ctx, loops){
   });
 }
 
+// gameZoom=1 reproduces the old "shrink to fit the wrap, never enlarge" behavior exactly;
+// >1/<1 scale that baseline up/down. Kept separate from mapData.cellSize (which stays the
+// fixed base unit everything else — centroids, boundary-loop cache — is computed in) so
+// zooming never has to touch or invalidate any of that; only this draw call's own resolution
+// and the inline CSS size it gives the canvas element change.
+let gameZoom = 1;
+const GAME_ZOOM_MIN = 0.4, GAME_ZOOM_MAX = 4;
+function setGameZoom(z, anchorClientX, anchorClientY){
+  const wrap = $('gameCanvasWrap');
+  const wrapRect = wrap.getBoundingClientRect();
+  // Anchor: keep whatever map point is under (anchorClientX, anchorClientY) fixed on screen
+  // across the zoom change (defaults to the wrap's own center when no anchor is given, e.g.
+  // for the +/- buttons and keyboard shortcuts).
+  const ax = anchorClientX!=null ? anchorClientX-wrapRect.left : wrap.clientWidth/2;
+  const ay = anchorClientY!=null ? anchorClientY-wrapRect.top : wrap.clientHeight/2;
+  const contentX = wrap.scrollLeft+ax, contentY = wrap.scrollTop+ay;
+  const oldZoom = gameZoom;
+  gameZoom = clamp(z, GAME_ZOOM_MIN, GAME_ZOOM_MAX);
+  if(gameZoom===oldZoom) return;
+  renderGame();
+  const ratio = gameZoom/oldZoom;
+  wrap.scrollLeft = contentX*ratio-ax;
+  wrap.scrollTop = contentY*ratio-ay;
+}
+
 function drawGameCanvas(){
   const canvas = $('gameCanvas');
   const cs = mapData.cellSize;
-  canvas.width = mapData.cols*cs;
-  canvas.height = mapData.rows*cs;
+  const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
+  const wrap = $('gameCanvasWrap');
+  const wrapStyle = getComputedStyle(wrap);
+  const padX = parseFloat(wrapStyle.paddingLeft)+parseFloat(wrapStyle.paddingRight);
+  const padY = parseFloat(wrapStyle.paddingTop)+parseFloat(wrapStyle.paddingBottom);
+  const availW = Math.max(50, wrap.clientWidth-padX), availH = Math.max(50, wrap.clientHeight-padY);
+  const fitScale = Math.min(availW/nativeW, availH/nativeH, 1); // never upscale the baseline, only shrink to fit — same as the old max-width:100% behavior
+  const displayScale = fitScale*gameZoom;
+  canvas.width = Math.max(1, Math.round(nativeW*displayScale));
+  canvas.height = Math.max(1, Math.round(nativeH*displayScale));
+  canvas.style.width = canvas.width+'px';
+  canvas.style.height = canvas.height+'px';
   const ctx = canvas.getContext('2d');
+  ctx.scale(displayScale, displayScale); // canvas.width/height assignment above already reset the transform to identity
   ctx.fillStyle='#123a56';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillRect(0,0,nativeW,nativeH);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
   terrs.forEach(t=>{
@@ -51,7 +87,7 @@ function drawGameCanvas(){
       pathFromLoops(ctx, mine.flatMap(t=>getTerritoryBoundaryLoops(mapData, t.id)));
       ctx.clip();
       ctx.fillStyle = getStripePattern(ctx);
-      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillRect(0,0,nativeW,nativeH);
       ctx.restore();
     }
   }
@@ -400,7 +436,11 @@ function getTerritoryFromCanvasEvent(canvas, evt){
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const x=(evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
-  const c=Math.floor(x/mapData.cellSize), r=Math.floor(y/mapData.cellSize);
+  // Cell size in bitmap px, derived from the canvas's actual current size rather than the base
+  // mapData.cellSize, so this stays correct at any zoom level (drawGameCanvas resizes the
+  // canvas by the zoom/fit scale but never touches mapData.cellSize itself).
+  const cellW = canvas.width/mapData.cols, cellH = canvas.height/mapData.rows;
+  const c=Math.floor(x/cellW), r=Math.floor(y/cellH);
   if(!inBounds(mapData,c,r)) return -1;
   return mapData.cellTerritory[cellIndex(mapData,c,r)];
 }

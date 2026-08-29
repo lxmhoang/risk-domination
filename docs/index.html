@@ -160,6 +160,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #gtInfo{display:flex;align-items:center;gap:14px;}
 #gtControls{display:flex;align-items:center;gap:14px;}
+.zoom-group{display:inline-flex;gap:3px;}
 #gameTopbar .turn-indicator{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;}
 #gameTopbar .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;}
 #gameTopbar .phase-badge{
@@ -178,8 +179,14 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;
 }
 #playerList{display:flex;flex-direction:column;gap:8px;}
-#gameCanvasWrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;position:relative;background:#0a0e18;}
-#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;max-width:100%;height:auto;}
+#gameCanvasWrap{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:16px;position:relative;background:#0a0e18;touch-action:pan-x pan-y;}
+/* margin:auto (not justify-content on the wrap) centers the canvas when it fits — auto margins
+   collapse to 0 once zoomed past the wrap's size, so scrolling stays normally top/left-anchored
+   instead of the flexbox-centering-clips-the-start gotcha (see the setup-screen fix). Explicit
+   width/height are set inline by drawGameCanvas() per zoom level, so max-width/height here are
+   just a pre-JS fallback. touch-action:pan-x pan-y on the wrap lets native single-finger
+   scrolling keep working while leaving 2-finger pinch free for the custom zoom handler. */
+#gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;max-width:100%;height:auto;margin:auto;}
 #gameLogPanel{
   width:280px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--border);
   display:flex;flex-direction:column;padding:12px;overflow:hidden;
@@ -612,6 +619,11 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <div id="gtControls">
       <span class="round-badge" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
       <button class="small ghost icon-btn" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
+      <span class="zoom-group">
+        <button class="small ghost icon-btn" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
+        <button class="small ghost icon-btn" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
+        <button class="small ghost icon-btn" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
+      </span>
       <label class="switch-row" title="Có thể bấm phím Space để bật/tắt nhanh"><input type="checkbox" id="toggleContinentViewGame"> 🌍<span class="btn-label"> Xem châu lục <span style="opacity:.6;">(Space)</span></span></label>
       <button class="small ghost" id="btnToggleLog" aria-label="Thu gọn/mở nhật ký trận đấu">📜</button>
       <button class="small ghost" id="btnCardsModal">🃏 Thẻ bài (<span id="cardCountBadge">0</span>)</button>
@@ -1683,6 +1695,7 @@ function tradeInValue(rule, tradeCount, personalTradeCount){
 function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule){
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
+  gameZoom = 1;
   const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
   // the per-turn capturedThisTurn/killedThisTurn flags which reset every endTurn().
@@ -2098,6 +2111,7 @@ function importGameJSON(obj){
   game = obj.game;
   spectatorMode = !!obj.spectatorMode;
   aiPaused = false; pendingAIResume = null;
+  gameZoom = 1;
   showScreen('screen-game');
   renderGame();
   renderCombatLog();
@@ -2450,14 +2464,50 @@ function pathFromLoops(ctx, loops){
   });
 }
 
+// gameZoom=1 reproduces the old "shrink to fit the wrap, never enlarge" behavior exactly;
+// >1/<1 scale that baseline up/down. Kept separate from mapData.cellSize (which stays the
+// fixed base unit everything else — centroids, boundary-loop cache — is computed in) so
+// zooming never has to touch or invalidate any of that; only this draw call's own resolution
+// and the inline CSS size it gives the canvas element change.
+let gameZoom = 1;
+const GAME_ZOOM_MIN = 0.4, GAME_ZOOM_MAX = 4;
+function setGameZoom(z, anchorClientX, anchorClientY){
+  const wrap = $('gameCanvasWrap');
+  const wrapRect = wrap.getBoundingClientRect();
+  // Anchor: keep whatever map point is under (anchorClientX, anchorClientY) fixed on screen
+  // across the zoom change (defaults to the wrap's own center when no anchor is given, e.g.
+  // for the +/- buttons and keyboard shortcuts).
+  const ax = anchorClientX!=null ? anchorClientX-wrapRect.left : wrap.clientWidth/2;
+  const ay = anchorClientY!=null ? anchorClientY-wrapRect.top : wrap.clientHeight/2;
+  const contentX = wrap.scrollLeft+ax, contentY = wrap.scrollTop+ay;
+  const oldZoom = gameZoom;
+  gameZoom = clamp(z, GAME_ZOOM_MIN, GAME_ZOOM_MAX);
+  if(gameZoom===oldZoom) return;
+  renderGame();
+  const ratio = gameZoom/oldZoom;
+  wrap.scrollLeft = contentX*ratio-ax;
+  wrap.scrollTop = contentY*ratio-ay;
+}
+
 function drawGameCanvas(){
   const canvas = $('gameCanvas');
   const cs = mapData.cellSize;
-  canvas.width = mapData.cols*cs;
-  canvas.height = mapData.rows*cs;
+  const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
+  const wrap = $('gameCanvasWrap');
+  const wrapStyle = getComputedStyle(wrap);
+  const padX = parseFloat(wrapStyle.paddingLeft)+parseFloat(wrapStyle.paddingRight);
+  const padY = parseFloat(wrapStyle.paddingTop)+parseFloat(wrapStyle.paddingBottom);
+  const availW = Math.max(50, wrap.clientWidth-padX), availH = Math.max(50, wrap.clientHeight-padY);
+  const fitScale = Math.min(availW/nativeW, availH/nativeH, 1); // never upscale the baseline, only shrink to fit — same as the old max-width:100% behavior
+  const displayScale = fitScale*gameZoom;
+  canvas.width = Math.max(1, Math.round(nativeW*displayScale));
+  canvas.height = Math.max(1, Math.round(nativeH*displayScale));
+  canvas.style.width = canvas.width+'px';
+  canvas.style.height = canvas.height+'px';
   const ctx = canvas.getContext('2d');
+  ctx.scale(displayScale, displayScale); // canvas.width/height assignment above already reset the transform to identity
   ctx.fillStyle='#123a56';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillRect(0,0,nativeW,nativeH);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
   terrs.forEach(t=>{
@@ -2483,7 +2533,7 @@ function drawGameCanvas(){
       pathFromLoops(ctx, mine.flatMap(t=>getTerritoryBoundaryLoops(mapData, t.id)));
       ctx.clip();
       ctx.fillStyle = getStripePattern(ctx);
-      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillRect(0,0,nativeW,nativeH);
       ctx.restore();
     }
   }
@@ -2832,7 +2882,11 @@ function getTerritoryFromCanvasEvent(canvas, evt){
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const x=(evt.clientX-rect.left)*scaleX, y=(evt.clientY-rect.top)*scaleY;
-  const c=Math.floor(x/mapData.cellSize), r=Math.floor(y/mapData.cellSize);
+  // Cell size in bitmap px, derived from the canvas's actual current size rather than the base
+  // mapData.cellSize, so this stays correct at any zoom level (drawGameCanvas resizes the
+  // canvas by the zoom/fit scale but never touches mapData.cellSize itself).
+  const cellW = canvas.width/mapData.cols, cellH = canvas.height/mapData.rows;
+  const c=Math.floor(x/cellW), r=Math.floor(y/cellH);
   if(!inBounds(mapData,c,r)) return -1;
   return mapData.cellTerritory[cellIndex(mapData,c,r)];
 }
@@ -3292,6 +3346,62 @@ $('gameCanvas').addEventListener('pointerdown', (e)=>{
 );
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
 $('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
+
+// ---------------- Map zoom (buttons, +/-/0 keys, mouse wheel, 2-finger pinch) ----------------
+const ZOOM_STEP = 1.25;
+$('btnZoomIn').addEventListener('click', ()=> setGameZoom(gameZoom*ZOOM_STEP));
+$('btnZoomOut').addEventListener('click', ()=> setGameZoom(gameZoom/ZOOM_STEP));
+$('btnZoomReset').addEventListener('click', ()=> setGameZoom(1));
+window.addEventListener('keydown', (e)=>{
+  if(!game) return;
+  const activeScreen = document.querySelector('.screen.active');
+  if(!activeScreen || activeScreen.id!=='screen-game') return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+  if(e.key==='+' || e.key==='='){ e.preventDefault(); setGameZoom(gameZoom*ZOOM_STEP); }
+  else if(e.key==='-' || e.key==='_'){ e.preventDefault(); setGameZoom(gameZoom/ZOOM_STEP); }
+  else if(e.key==='0'){ e.preventDefault(); setGameZoom(1); }
+});
+// Plain wheel zooms (rather than scrolls) the map, anchored under the cursor — panning is still
+// available via the scrollbars or, on a trackpad, its native 2-finger scroll (untouched, since
+// this only intercepts the wheel event specifically).
+$('gameCanvasWrap').addEventListener('wheel', (e)=>{
+  if(!game) return;
+  e.preventDefault();
+  setGameZoom(gameZoom*Math.pow(ZOOM_STEP, -e.deltaY/100), e.clientX, e.clientY);
+}, {passive:false});
+// 2-finger pinch (touch-action:pan-x pan-y on the wrap — see style.css — disables the browser's
+// own pinch-to-zoom there so this owns the gesture instead, while 1-finger native pan is unaffected).
+const pinchPointers = new Map(); // pointerId -> {x,y}
+let pinchStartDist = null, pinchStartZoom = 1;
+function pinchDist(){
+  const pts = [...pinchPointers.values()];
+  return Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+}
+function pinchMidpoint(){
+  const pts = [...pinchPointers.values()];
+  return { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 };
+}
+$('gameCanvasWrap').addEventListener('pointerdown', (e)=>{
+  if(e.pointerType!=='touch') return;
+  pinchPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinchPointers.size===2){ pinchStartDist = pinchDist(); pinchStartZoom = gameZoom; }
+});
+$('gameCanvasWrap').addEventListener('pointermove', (e)=>{
+  if(!pinchPointers.has(e.pointerId)) return;
+  pinchPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinchPointers.size===2 && pinchStartDist){
+    e.preventDefault();
+    const mid = pinchMidpoint();
+    setGameZoom(pinchStartZoom*(pinchDist()/pinchStartDist), mid.x, mid.y);
+  }
+});
+['pointerup','pointercancel','pointerleave'].forEach(evtName=>
+  $('gameCanvasWrap').addEventListener(evtName, (e)=>{
+    pinchPointers.delete(e.pointerId);
+    if(pinchPointers.size<2) pinchStartDist = null;
+  })
+);
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });
@@ -3459,6 +3569,7 @@ window.__debug = {
   tradeCards, tradeInValue, findTradeCombo, drawEditorCanvas, drawGameCanvas,
   getTerritoryBoundaryLoops, getContinentBoundaryLoops, paintCell,
   attemptSetupPlacement, canKeepHoldingSetupPlacement, allOutAttack, doSingleAttack,
+  setGameZoom, get gameZoom(){ return gameZoom; },
   get editorCurrentTerrId(){ return editorCurrentTerrId; }
 };
 

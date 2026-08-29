@@ -39,6 +39,7 @@ function tradeInValue(rule, tradeCount, personalTradeCount){
 function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule){
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
+  gameZoom = 1;
   const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
   // the per-turn capturedThisTurn/killedThisTurn flags which reset every endTurn().
@@ -454,6 +455,7 @@ function importGameJSON(obj){
   game = obj.game;
   spectatorMode = !!obj.spectatorMode;
   aiPaused = false; pendingAIResume = null;
+  gameZoom = 1;
   showScreen('screen-game');
   renderGame();
   renderCombatLog();

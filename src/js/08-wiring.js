@@ -305,6 +305,62 @@ $('gameCanvas').addEventListener('pointerdown', (e)=>{
 );
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
 $('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
+
+// ---------------- Map zoom (buttons, +/-/0 keys, mouse wheel, 2-finger pinch) ----------------
+const ZOOM_STEP = 1.25;
+$('btnZoomIn').addEventListener('click', ()=> setGameZoom(gameZoom*ZOOM_STEP));
+$('btnZoomOut').addEventListener('click', ()=> setGameZoom(gameZoom/ZOOM_STEP));
+$('btnZoomReset').addEventListener('click', ()=> setGameZoom(1));
+window.addEventListener('keydown', (e)=>{
+  if(!game) return;
+  const activeScreen = document.querySelector('.screen.active');
+  if(!activeScreen || activeScreen.id!=='screen-game') return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+  if(e.key==='+' || e.key==='='){ e.preventDefault(); setGameZoom(gameZoom*ZOOM_STEP); }
+  else if(e.key==='-' || e.key==='_'){ e.preventDefault(); setGameZoom(gameZoom/ZOOM_STEP); }
+  else if(e.key==='0'){ e.preventDefault(); setGameZoom(1); }
+});
+// Plain wheel zooms (rather than scrolls) the map, anchored under the cursor — panning is still
+// available via the scrollbars or, on a trackpad, its native 2-finger scroll (untouched, since
+// this only intercepts the wheel event specifically).
+$('gameCanvasWrap').addEventListener('wheel', (e)=>{
+  if(!game) return;
+  e.preventDefault();
+  setGameZoom(gameZoom*Math.pow(ZOOM_STEP, -e.deltaY/100), e.clientX, e.clientY);
+}, {passive:false});
+// 2-finger pinch (touch-action:pan-x pan-y on the wrap — see style.css — disables the browser's
+// own pinch-to-zoom there so this owns the gesture instead, while 1-finger native pan is unaffected).
+const pinchPointers = new Map(); // pointerId -> {x,y}
+let pinchStartDist = null, pinchStartZoom = 1;
+function pinchDist(){
+  const pts = [...pinchPointers.values()];
+  return Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+}
+function pinchMidpoint(){
+  const pts = [...pinchPointers.values()];
+  return { x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2 };
+}
+$('gameCanvasWrap').addEventListener('pointerdown', (e)=>{
+  if(e.pointerType!=='touch') return;
+  pinchPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinchPointers.size===2){ pinchStartDist = pinchDist(); pinchStartZoom = gameZoom; }
+});
+$('gameCanvasWrap').addEventListener('pointermove', (e)=>{
+  if(!pinchPointers.has(e.pointerId)) return;
+  pinchPointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinchPointers.size===2 && pinchStartDist){
+    e.preventDefault();
+    const mid = pinchMidpoint();
+    setGameZoom(pinchStartZoom*(pinchDist()/pinchStartDist), mid.x, mid.y);
+  }
+});
+['pointerup','pointercancel','pointerleave'].forEach(evtName=>
+  $('gameCanvasWrap').addEventListener(evtName, (e)=>{
+    pinchPointers.delete(e.pointerId);
+    if(pinchPointers.size<2) pinchStartDist = null;
+  })
+);
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });
@@ -472,5 +528,6 @@ window.__debug = {
   tradeCards, tradeInValue, findTradeCombo, drawEditorCanvas, drawGameCanvas,
   getTerritoryBoundaryLoops, getContinentBoundaryLoops, paintCell,
   attemptSetupPlacement, canKeepHoldingSetupPlacement, allOutAttack, doSingleAttack,
+  setGameZoom, get gameZoom(){ return gameZoom; },
   get editorCurrentTerrId(){ return editorCurrentTerrId; }
 };
