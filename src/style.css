@@ -170,12 +170,18 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    don't override a separate `max-width`/`max-height` rule. */
 #gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
 
-/* Overlay scaffolding: a positioned column that centers itself vertically/horizontally and
-   scrolls internally if its content ever runs taller/wider than the screen (a short landscape
-   phone with many sections stacked, say) rather than overflowing off-screen. */
+/* Overlay scaffolding: a positioned bar/column that centers itself and scrolls internally if
+   its content ever runs longer than the screen has room for (a short/narrow viewport with many
+   sections, say) rather than overflowing off-screen. */
 .game-overlay{position:absolute;z-index:5;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 20px);}
-#gameControlsLeft{left:10px;top:50%;transform:translateY(-50%);align-items:center;overflow-y:auto;}
-#gamePlayerListWrap{right:10px;top:50%;transform:translateY(-50%);width:190px;overflow-y:auto;}
+#gameControlsTop{
+  top:10px;left:50%;transform:translateX(-50%);
+  flex-direction:row;align-items:center;
+  max-height:none;max-width:calc(100% - 20px);overflow-x:auto;overflow-y:hidden;
+}
+#gameControlsTop .ov-section{flex-direction:row;}
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:190px;overflow-y:auto;}
+#gamePhaseActionsWrap{right:10px;top:50%;transform:translateY(-50%);overflow-y:auto;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:10px;
   max-height:none;white-space:nowrap;
@@ -227,11 +233,12 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .stat-label{display:none;}
 .player-card.eliminated{opacity:.35;}
 
-/* Floats over the map next to the left control column rather than sharing grid/flex space with
-   it — rarely looked at, so it's a toggle (#btnToggleLog, in the left column) on every screen
-   size, collapsed by default (see body.html). */
+/* Floats over the map below the top control bar, centered, rather than sharing grid/flex space
+   with anything — rarely looked at, so it's a toggle (#btnToggleLog, in the top bar) on every
+   screen size, collapsed by default (see body.html). */
 #gameLogPanel{
-  position:absolute;left:64px;top:10px;bottom:10px;width:min(320px, calc(100% - 84px));
+  position:absolute;top:64px;left:50%;transform:translateX(-50%);bottom:10px;
+  width:min(360px, calc(100% - 20px));
   background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
   display:flex;flex-direction:column;padding:12px;overflow:hidden;z-index:6;
 }
@@ -256,8 +263,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   }
   #rotatePrompt div:first-child{font-size:48px;}
   #screen-game.active #gameCanvasWrap,
-  #screen-game.active #gameControlsLeft,
+  #screen-game.active #gameControlsTop,
   #screen-game.active #gamePlayerListWrap,
+  #screen-game.active #gamePhaseActionsWrap,
   #screen-game.active #gameTurnInfo,
   #screen-game.active #gameLogPanel{display:none;}
 }

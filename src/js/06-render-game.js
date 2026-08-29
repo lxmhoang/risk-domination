@@ -51,17 +51,18 @@ function drawGameCanvas(){
   const cs = mapData.cellSize;
   const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
   const wrap = $('gameCanvasWrap');
-  // "Safe area" = the wrap's box minus the fixed overlays around the edges (left control
-  // column, right player list, bottom turn-info panel) plus a little breathing room. This is
-  // what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum zoom the overlays only ever
-  // sit over empty background, never over the map itself — "zoom out hết cỡ thì bản đồ lọt thỏm
-  // vào giữa, chừa khoảng trống 2 bên".
+  // "Safe area" = the wrap's box minus the fixed overlays around the edges (top icon controls,
+  // left player list, right phase-action buttons, bottom turn-info panel) plus a little
+  // breathing room. This is what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum
+  // zoom the overlays only ever sit over empty background, never over the map itself — "zoom
+  // out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa khoảng trống xung quanh".
   const margin = 16;
-  const leftW = $('gameControlsLeft').getBoundingClientRect().width;
-  const rightW = $('gamePlayerListWrap').getBoundingClientRect().width;
+  const topH = $('gameControlsTop').getBoundingClientRect().height;
+  const leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
+  const rightW = $('gamePhaseActionsWrap').getBoundingClientRect().width;
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
   const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
-  const availH = Math.max(50, wrap.clientHeight-bottomH-margin*2);
+  const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
   const fitScale = Math.min(availW/nativeW, availH/nativeH);
   const displayScale = fitScale*gameZoom;
   canvas.width = Math.max(1, Math.round(nativeW*displayScale));

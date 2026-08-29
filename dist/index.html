@@ -182,12 +182,18 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    don't override a separate `max-width`/`max-height` rule. */
 #gameCanvas{background:#141b2e;border-radius:10px;box-shadow:0 0 0 1px var(--border);cursor:pointer;margin:auto;}
 
-/* Overlay scaffolding: a positioned column that centers itself vertically/horizontally and
-   scrolls internally if its content ever runs taller/wider than the screen (a short landscape
-   phone with many sections stacked, say) rather than overflowing off-screen. */
+/* Overlay scaffolding: a positioned bar/column that centers itself and scrolls internally if
+   its content ever runs longer than the screen has room for (a short/narrow viewport with many
+   sections, say) rather than overflowing off-screen. */
 .game-overlay{position:absolute;z-index:5;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 20px);}
-#gameControlsLeft{left:10px;top:50%;transform:translateY(-50%);align-items:center;overflow-y:auto;}
-#gamePlayerListWrap{right:10px;top:50%;transform:translateY(-50%);width:190px;overflow-y:auto;}
+#gameControlsTop{
+  top:10px;left:50%;transform:translateX(-50%);
+  flex-direction:row;align-items:center;
+  max-height:none;max-width:calc(100% - 20px);overflow-x:auto;overflow-y:hidden;
+}
+#gameControlsTop .ov-section{flex-direction:row;}
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:190px;overflow-y:auto;}
+#gamePhaseActionsWrap{right:10px;top:50%;transform:translateY(-50%);overflow-y:auto;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:10px;
   max-height:none;white-space:nowrap;
@@ -239,11 +245,12 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .stat-label{display:none;}
 .player-card.eliminated{opacity:.35;}
 
-/* Floats over the map next to the left control column rather than sharing grid/flex space with
-   it — rarely looked at, so it's a toggle (#btnToggleLog, in the left column) on every screen
-   size, collapsed by default (see body.html). */
+/* Floats over the map below the top control bar, centered, rather than sharing grid/flex space
+   with anything — rarely looked at, so it's a toggle (#btnToggleLog, in the top bar) on every
+   screen size, collapsed by default (see body.html). */
 #gameLogPanel{
-  position:absolute;left:64px;top:10px;bottom:10px;width:min(320px, calc(100% - 84px));
+  position:absolute;top:64px;left:50%;transform:translateX(-50%);bottom:10px;
+  width:min(360px, calc(100% - 20px));
   background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
   display:flex;flex-direction:column;padding:12px;overflow:hidden;z-index:6;
 }
@@ -268,8 +275,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   }
   #rotatePrompt div:first-child{font-size:48px;}
   #screen-game.active #gameCanvasWrap,
-  #screen-game.active #gameControlsLeft,
+  #screen-game.active #gameControlsTop,
   #screen-game.active #gamePlayerListWrap,
+  #screen-game.active #gamePhaseActionsWrap,
   #screen-game.active #gameTurnInfo,
   #screen-game.active #gameLogPanel{display:none;}
 }
@@ -564,14 +572,15 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 <!-- ============ GAME ============ -->
 <!-- Full-bleed canvas with everything else floating over it as fixed-position overlays
-     (left = clickable controls, right = player list, bottom-center = current turn), so the
-     map itself always gets the entire screen and zoom/pan only ever affects the map. -->
+     (top-center = clickable icon controls, left-center = player list, right-center = the
+     current phase's action buttons, bottom-center = current turn), so the map itself always
+     gets the entire screen and zoom/pan only ever affects the map. -->
 <div class="screen" id="screen-game">
   <div id="gameCanvasWrap">
     <canvas id="gameCanvas" width="960" height="600"></canvas>
   </div>
 
-  <div id="gameControlsLeft" class="game-overlay">
+  <div id="gameControlsTop" class="game-overlay">
     <div class="ov-section">
       <button class="ov-btn small" id="btnQuitGame" title="Về Menu">🏠</button>
       <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
@@ -589,14 +598,17 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
       <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
     </div>
-    <div class="ov-section" id="phaseActionsSection">
-      <div id="actionHint">Chào mừng đến với ván chơi!</div>
-      <div id="phaseActions"></div>
-    </div>
   </div>
 
   <div id="gamePlayerListWrap" class="game-overlay">
     <div id="playerList"></div>
+  </div>
+
+  <div id="gamePhaseActionsWrap" class="game-overlay">
+    <div class="ov-section" id="phaseActionsSection">
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+      <div id="phaseActions"></div>
+    </div>
   </div>
 
   <div id="gameTurnInfo" class="game-overlay">
@@ -2463,17 +2475,18 @@ function drawGameCanvas(){
   const cs = mapData.cellSize;
   const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
   const wrap = $('gameCanvasWrap');
-  // "Safe area" = the wrap's box minus the fixed overlays around the edges (left control
-  // column, right player list, bottom turn-info panel) plus a little breathing room. This is
-  // what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum zoom the overlays only ever
-  // sit over empty background, never over the map itself — "zoom out hết cỡ thì bản đồ lọt thỏm
-  // vào giữa, chừa khoảng trống 2 bên".
+  // "Safe area" = the wrap's box minus the fixed overlays around the edges (top icon controls,
+  // left player list, right phase-action buttons, bottom turn-info panel) plus a little
+  // breathing room. This is what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum
+  // zoom the overlays only ever sit over empty background, never over the map itself — "zoom
+  // out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa khoảng trống xung quanh".
   const margin = 16;
-  const leftW = $('gameControlsLeft').getBoundingClientRect().width;
-  const rightW = $('gamePlayerListWrap').getBoundingClientRect().width;
+  const topH = $('gameControlsTop').getBoundingClientRect().height;
+  const leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
+  const rightW = $('gamePhaseActionsWrap').getBoundingClientRect().width;
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
   const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
-  const availH = Math.max(50, wrap.clientHeight-bottomH-margin*2);
+  const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
   const fitScale = Math.min(availW/nativeW, availH/nativeH);
   const displayScale = fitScale*gameZoom;
   canvas.width = Math.max(1, Math.round(nativeW*displayScale));

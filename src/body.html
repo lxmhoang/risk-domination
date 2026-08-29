@@ -216,14 +216,15 @@
 
 <!-- ============ GAME ============ -->
 <!-- Full-bleed canvas with everything else floating over it as fixed-position overlays
-     (left = clickable controls, right = player list, bottom-center = current turn), so the
-     map itself always gets the entire screen and zoom/pan only ever affects the map. -->
+     (top-center = clickable icon controls, left-center = player list, right-center = the
+     current phase's action buttons, bottom-center = current turn), so the map itself always
+     gets the entire screen and zoom/pan only ever affects the map. -->
 <div class="screen" id="screen-game">
   <div id="gameCanvasWrap">
     <canvas id="gameCanvas" width="960" height="600"></canvas>
   </div>
 
-  <div id="gameControlsLeft" class="game-overlay">
+  <div id="gameControlsTop" class="game-overlay">
     <div class="ov-section">
       <button class="ov-btn small" id="btnQuitGame" title="Về Menu">🏠</button>
       <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
@@ -241,14 +242,17 @@
       <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
       <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
     </div>
-    <div class="ov-section" id="phaseActionsSection">
-      <div id="actionHint">Chào mừng đến với ván chơi!</div>
-      <div id="phaseActions"></div>
-    </div>
   </div>
 
   <div id="gamePlayerListWrap" class="game-overlay">
     <div id="playerList"></div>
+  </div>
+
+  <div id="gamePhaseActionsWrap" class="game-overlay">
+    <div class="ov-section" id="phaseActionsSection">
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
+      <div id="phaseActions"></div>
+    </div>
   </div>
 
   <div id="gameTurnInfo" class="game-overlay">
