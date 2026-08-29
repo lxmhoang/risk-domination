@@ -334,9 +334,49 @@ function bridgeComponentOut(map, compTerrIds){
   }
 }
 
+// Lays down a jagged coastal band of water hugging all 4 edges of the grid, with an
+// organic (random-walk + smoothing), varying depth per edge column/row instead of a
+// straight-ruled ring — so territories that grow up against it later trace a natural-looking
+// coastline rather than following the map's rectangular bounding box. Runs before territories
+// (and before the interior lake blobs below) are generated, and independently of the
+// water-ratio slider, since it's about edge shape rather than total lake area.
+function applyCoastalBand(water, cols, rows){
+  const minDim = Math.min(cols, rows);
+  const minDepth = clamp(Math.round(minDim*0.06), 1, 3);
+  const maxDepth = clamp(Math.round(minDim*0.18), minDepth+2, Math.max(minDepth+2, Math.floor(minDim/3)));
+  function walkDepths(length){
+    const raw = new Array(length);
+    let d = minDepth + rand(maxDepth-minDepth+1);
+    for(let i=0;i<length;i++){ d = clamp(d + rand(3)-1, minDepth, maxDepth); raw[i] = d; }
+    // two smoothing passes turn the per-step jitter into gentle, coastline-like curves
+    let smoothed = raw;
+    for(let pass=0; pass<2; pass++){
+      const src = smoothed, next = new Array(length);
+      for(let i=0;i<length;i++){
+        let sum=0, cnt=0;
+        for(let k=-2;k<=2;k++){ const j=i+k; if(j>=0 && j<length){ sum+=src[j]; cnt++; } }
+        next[i] = Math.round(sum/cnt);
+      }
+      smoothed = next;
+    }
+    return smoothed;
+  }
+  const topDepth = walkDepths(cols), bottomDepth = walkDepths(cols);
+  const leftDepth = walkDepths(rows), rightDepth = walkDepths(rows);
+  for(let c=0;c<cols;c++){
+    for(let r=0;r<topDepth[c];r++) water[r*cols+c]=1;
+    for(let r=0;r<bottomDepth[c];r++) water[(rows-1-r)*cols+c]=1;
+  }
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<leftDepth[r];c++) water[r*cols+c]=1;
+    for(let c=0;c<rightDepth[r];c++) water[r*cols+(cols-1-c)]=1;
+  }
+}
+
 function generateWaterMask(cols, rows, waterRatio, spread){
   const total = cols*rows;
   const water = new Uint8Array(total);
+  applyCoastalBand(water, cols, rows);
   const targetWater = Math.round(total*clamp(waterRatio,0,0.7));
   if(targetWater<=0) return water;
   // spread (0-1): how scattered the water is. At 0, few big blobs grow into large lakes/seas
@@ -381,10 +421,6 @@ function generateWaterMask(cols, rows, waterRatio, spread){
     }
     frontier = next;
   }
-  // Force the outer ring of cells to be water, so a randomly generated map never comes out
-  // with the map's rectangular bounding box itself as a visible straight-edged coastline.
-  for(let c=0;c<cols;c++){ water[c]=1; water[(rows-1)*cols+c]=1; }
-  for(let r=0;r<rows;r++){ water[r*cols]=1; water[r*cols+cols-1]=1; }
   return water;
 }
 
