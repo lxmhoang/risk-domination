@@ -2,8 +2,7 @@
    NAVIGATION / WIRING
    ========================================================================= */
 $('btnQuickPlay').addEventListener('click', ()=>{
-  const {cols, rows} = computeViewportGridSize();
-  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan();
   mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
   goToSetup();
 });
@@ -221,8 +220,8 @@ $('btnClearMap').addEventListener('click', ()=>{
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnApplyGrid').addEventListener('click', ()=>{
-  const cols = clamp(Number($('gridCols').value)||100,10,200);
-  const rows = clamp(Number($('gridRows').value)||100,10,200);
+  const cols = clamp(Number($('gridCols').value)||100,10,500);
+  const rows = clamp(Number($('gridRows').value)||100,10,500);
   if(!confirm('Đổi kích thước lưới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
   mapData = newMap(cols,rows,$('mapNameInput').value);
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
@@ -548,6 +547,8 @@ updateTopbarActions();
 // Debug hook (read-only introspection for QA; harmless to leave in production)
 window.__debug = {
   get game(){ return game; }, get mapData(){ return mapData; },
+  generateRandomMap, deriveMapGenCounts, computeMapGenPlan,
+  getTerritoryBoundaryLoops, getContinentBoundaryLoops,
   clickTerritory(terrId){ if(!game) return; const t=mapData.territories[terrId]; if(!t) return null; return {x:t.centroid.x,y:t.centroid.y}; },
   forceFinishSetup(){
     let guard=0;

@@ -424,20 +424,85 @@ function generateWaterMask(cols, rows, waterRatio, spread){
   return water;
 }
 
-// Territory/continent counts for a freshly random-generated map of a given grid size — kept
-// as one shared formula so every call site (quick play, editor's initial map, editor's
-// "Ngẫu nhiên" button) derives numCont with enough headroom above the min-4-territories-per-
-// continent floor that reassignContinents() enforces below, instead of each guessing its own
-// fixed continent count independent of how many territories the grid actually ends up with.
+// Grid resolution is fixed and viewport-independent: always fine enough that territory
+// boundaries have plenty of points for the Chaikin smoothing in getTerritoryBoundaryLoops() to
+// round into organic-looking coastlines, instead of the old approach of shrinking cols/rows to
+// hit a target on-screen size directly — a coarse mobile grid (e.g. 16 rows) gives each
+// territory only a handful of boundary cells to work with, so it comes out blocky no matter how
+// well the target px size was tuned. 150 was picked from benchmarking generateRandomMap() +
+// boundary computation together: a 300x150 grid (2:1 aspect) generates in well under 300ms even
+// under simulated 4x CPU throttling, so it stays imperceptible on slow devices.
+const MIN_GRID_DIM = 150;
+
+// How many of those fixed-resolution cells go into one territory is what actually depends on
+// the viewport: on-screen px per cell shrinks as the physical screen shrinks, so more cells are
+// needed per territory on a small phone to keep its footprint near AVG_TERRITORY_TARGET_PX.
+function computeCellsPerTerritory(cols){
+  const { availW } = estimateCanvasArea();
+  const cellPx = availW/cols;
+  return Math.max(8, Math.round((AVG_TERRITORY_TARGET_PX/cellPx)**2));
+}
+
+// Territory/continent counts for a random map of a given grid size — kept as one shared formula
+// so every call site (quick play, editor's initial map, editor's "Ngẫu nhiên" button) derives
+// numCont with enough headroom above the min-4-territories-per-continent floor that
+// reassignContinents() enforces below, instead of each guessing its own fixed continent count
+// independent of how many territories the grid actually ends up with.
 function deriveMapGenCounts(cols, rows){
-  const numTerr = Math.max(8, Math.round(cols*rows/CELLS_PER_TERRITORY));
+  const cellsPerTerritory = computeCellsPerTerritory(cols);
+  const numTerr = Math.max(8, Math.round(cols*rows/cellsPerTerritory));
   const numCont = clamp(Math.round(numTerr/6), 2, 8);
   return { numTerr, numCont };
+}
+
+// Full plan for a freshly random-generated map: grid size is fixed at MIN_GRID_DIM on its
+// shorter side (aspect-matched to the current viewport so the grid isn't oddly cropped), and
+// numTerr/numCont are derived from that grid via deriveMapGenCounts(). Only used at generation
+// time — an already-generated/saved map keeps its own grid regardless of what device later
+// opens it.
+function computeMapGenPlan(){
+  const { availW, availH } = estimateCanvasArea();
+  const aspect = clamp(availW/availH, 0.5, 3);
+  let cols, rows;
+  if(aspect>=1){ rows = MIN_GRID_DIM; cols = Math.round(MIN_GRID_DIM*aspect); }
+  else { cols = MIN_GRID_DIM; rows = Math.round(MIN_GRID_DIM/aspect); }
+  const { numTerr, numCont } = deriveMapGenCounts(cols, rows);
+  return { cols, rows, numTerr, numCont };
+}
+
+// Flood-cell-fills the connected land components of a water mask and turns any component
+// smaller than minCells back into water. At a fine grid resolution (MIN_GRID_DIM), the jagged
+// coastal band and interior lake blobs routinely pinch off tiny stray slivers of land — without
+// this cleanup, generateRandomMap()'s "claim leftover unclaimed land as its own territory"
+// fallback below turns every one of those slivers into a full, separately-named 1-3 cell
+// territory, flooding the map with unplayable micro-territories.
+function submergeTinyLandIslands(water, cols, rows, minCells){
+  const total = cols*rows;
+  const visited = new Uint8Array(total);
+  for(let start=0; start<total; start++){
+    if(water[start] || visited[start]) continue;
+    const comp = [start];
+    visited[start] = 1;
+    for(let qi=0; qi<comp.length; qi++){
+      const idx = comp[qi], c = idx%cols, r = (idx/cols)|0;
+      for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nc=c+dc, nr=r+dr;
+        if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
+        const nidx = nr*cols+nc;
+        if(!water[nidx] && !visited[nidx]){ visited[nidx]=1; comp.push(nidx); }
+      }
+    }
+    if(comp.length < minCells) comp.forEach(idx=> water[idx]=1);
+  }
 }
 
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
   const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
+  // A land component smaller than this fraction of one territory's average cell target isn't
+  // worth keeping as its own territory — see submergeTinyLandIslands() above.
+  const avgCellsPerTerritory = (cols*rows)/Math.max(1,numTerr);
+  submergeTinyLandIslands(water, cols, rows, Math.max(6, Math.round(avgCellsPerTerritory*0.15)));
   map.water = water; // keep for reference/export if needed later
 
   const landCells = [];

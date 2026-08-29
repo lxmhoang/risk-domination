@@ -413,8 +413,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
         <input type="text" id="mapNameInput" value="Bản đồ của tôi" style="width:100%;margin-bottom:8px;">
         <div class="field-row"><span>Cột × Hàng</span>
           <span style="display:flex;gap:4px;">
-            <input type="number" id="gridCols" value="100" min="10" max="200" style="width:52px;">
-            <input type="number" id="gridRows" value="100" min="10" max="200" style="width:52px;">
+            <input type="number" id="gridCols" value="100" min="10" max="500" style="width:52px;">
+            <input type="number" id="gridRows" value="100" min="10" max="500" style="width:52px;">
           </span>
         </div>
         <button class="small ghost" id="btnApplyGrid" style="width:100%;margin-bottom:8px;">Áp dụng lưới mới</button>
@@ -744,28 +744,13 @@ function rollDie(){ return 1+rand(6); }
 // over to fit the army-count badge and name label drawn inside.
 const TOUCH_TARGET_PX = 44;
 const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*2.5;
-// How many grid cells make up one territory on average — shared with deriveMapGenCounts() in
-// 02-map-model.js so both agree on the same density.
-const CELLS_PER_TERRITORY = 50;
 
-// Picks a grid size for a freshly random-generated map so the average territory renders at
-// roughly AVG_TERRITORY_TARGET_PX once the canvas is scaled to fit whatever the CURRENT
-// device's viewport allows (drawGameCanvas()'s fitScale always stretches the whole grid to
-// fill the available area, so a fixed col/row count that looks fine on desktop turns into tiny
-// slivers on a small phone screen). Only used at generation time — an already-generated/saved
-// map keeps its own grid regardless of what device later opens it.
-function computeViewportGridSize(){
+// Rough estimate of the canvas's usable share of the viewport, leaving room for the
+// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Shared
+// by computeMapGenPlan() and computeCellsPerTerritory() in 02-map-model.js.
+function estimateCanvasArea(){
   const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
-  // Rough estimate of the canvas's usable share of the viewport, leaving room for the
-  // surrounding overlay panels/chrome whose exact size isn't known before layout happens.
-  const availW = Math.max(320, vw*0.72);
-  const availH = Math.max(220, vh*0.62);
-  // A territory spanning CELLS_PER_TERRITORY cells is roughly sqrt(CELLS_PER_TERRITORY) cells
-  // across each side — solve for the cell size that keeps that span at the target px.
-  const minCellPx = AVG_TERRITORY_TARGET_PX / Math.sqrt(CELLS_PER_TERRITORY);
-  const cols = clamp(Math.round(availW/minCellPx), 18, 100);
-  const rows = clamp(Math.round(availH/minCellPx), 12, 100);
-  return { cols, rows };
+  return { availW: Math.max(320, vw*0.72), availH: Math.max(220, vh*0.62) };
 }
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -1248,20 +1233,85 @@ function generateWaterMask(cols, rows, waterRatio, spread){
   return water;
 }
 
-// Territory/continent counts for a freshly random-generated map of a given grid size — kept
-// as one shared formula so every call site (quick play, editor's initial map, editor's
-// "Ngẫu nhiên" button) derives numCont with enough headroom above the min-4-territories-per-
-// continent floor that reassignContinents() enforces below, instead of each guessing its own
-// fixed continent count independent of how many territories the grid actually ends up with.
+// Grid resolution is fixed and viewport-independent: always fine enough that territory
+// boundaries have plenty of points for the Chaikin smoothing in getTerritoryBoundaryLoops() to
+// round into organic-looking coastlines, instead of the old approach of shrinking cols/rows to
+// hit a target on-screen size directly — a coarse mobile grid (e.g. 16 rows) gives each
+// territory only a handful of boundary cells to work with, so it comes out blocky no matter how
+// well the target px size was tuned. 150 was picked from benchmarking generateRandomMap() +
+// boundary computation together: a 300x150 grid (2:1 aspect) generates in well under 300ms even
+// under simulated 4x CPU throttling, so it stays imperceptible on slow devices.
+const MIN_GRID_DIM = 150;
+
+// How many of those fixed-resolution cells go into one territory is what actually depends on
+// the viewport: on-screen px per cell shrinks as the physical screen shrinks, so more cells are
+// needed per territory on a small phone to keep its footprint near AVG_TERRITORY_TARGET_PX.
+function computeCellsPerTerritory(cols){
+  const { availW } = estimateCanvasArea();
+  const cellPx = availW/cols;
+  return Math.max(8, Math.round((AVG_TERRITORY_TARGET_PX/cellPx)**2));
+}
+
+// Territory/continent counts for a random map of a given grid size — kept as one shared formula
+// so every call site (quick play, editor's initial map, editor's "Ngẫu nhiên" button) derives
+// numCont with enough headroom above the min-4-territories-per-continent floor that
+// reassignContinents() enforces below, instead of each guessing its own fixed continent count
+// independent of how many territories the grid actually ends up with.
 function deriveMapGenCounts(cols, rows){
-  const numTerr = Math.max(8, Math.round(cols*rows/CELLS_PER_TERRITORY));
+  const cellsPerTerritory = computeCellsPerTerritory(cols);
+  const numTerr = Math.max(8, Math.round(cols*rows/cellsPerTerritory));
   const numCont = clamp(Math.round(numTerr/6), 2, 8);
   return { numTerr, numCont };
+}
+
+// Full plan for a freshly random-generated map: grid size is fixed at MIN_GRID_DIM on its
+// shorter side (aspect-matched to the current viewport so the grid isn't oddly cropped), and
+// numTerr/numCont are derived from that grid via deriveMapGenCounts(). Only used at generation
+// time — an already-generated/saved map keeps its own grid regardless of what device later
+// opens it.
+function computeMapGenPlan(){
+  const { availW, availH } = estimateCanvasArea();
+  const aspect = clamp(availW/availH, 0.5, 3);
+  let cols, rows;
+  if(aspect>=1){ rows = MIN_GRID_DIM; cols = Math.round(MIN_GRID_DIM*aspect); }
+  else { cols = MIN_GRID_DIM; rows = Math.round(MIN_GRID_DIM/aspect); }
+  const { numTerr, numCont } = deriveMapGenCounts(cols, rows);
+  return { cols, rows, numTerr, numCont };
+}
+
+// Flood-cell-fills the connected land components of a water mask and turns any component
+// smaller than minCells back into water. At a fine grid resolution (MIN_GRID_DIM), the jagged
+// coastal band and interior lake blobs routinely pinch off tiny stray slivers of land — without
+// this cleanup, generateRandomMap()'s "claim leftover unclaimed land as its own territory"
+// fallback below turns every one of those slivers into a full, separately-named 1-3 cell
+// territory, flooding the map with unplayable micro-territories.
+function submergeTinyLandIslands(water, cols, rows, minCells){
+  const total = cols*rows;
+  const visited = new Uint8Array(total);
+  for(let start=0; start<total; start++){
+    if(water[start] || visited[start]) continue;
+    const comp = [start];
+    visited[start] = 1;
+    for(let qi=0; qi<comp.length; qi++){
+      const idx = comp[qi], c = idx%cols, r = (idx/cols)|0;
+      for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nc=c+dc, nr=r+dr;
+        if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
+        const nidx = nr*cols+nc;
+        if(!water[nidx] && !visited[nidx]){ visited[nidx]=1; comp.push(nidx); }
+      }
+    }
+    if(comp.length < minCells) comp.forEach(idx=> water[idx]=1);
+  }
 }
 
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
   const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
+  // A land component smaller than this fraction of one territory's average cell target isn't
+  // worth keeping as its own territory — see submergeTinyLandIslands() above.
+  const avgCellsPerTerritory = (cols*rows)/Math.max(1,numTerr);
+  submergeTinyLandIslands(water, cols, rows, Math.max(6, Math.round(avgCellsPerTerritory*0.15)));
   map.water = water; // keep for reference/export if needed later
 
   const landCells = [];
@@ -1565,8 +1615,7 @@ function getWaterSpread(){
 }
 
 function initEditorMap(){
-  const {cols, rows} = computeViewportGridSize();
-  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan();
   mapData = generateRandomMap(cols, rows, numTerr, numCont, "Bản đồ của tôi", getWaterRatio(), getWaterSpread());
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols;
@@ -3209,8 +3258,7 @@ function showGameOver(winner){
    NAVIGATION / WIRING
    ========================================================================= */
 $('btnQuickPlay').addEventListener('click', ()=>{
-  const {cols, rows} = computeViewportGridSize();
-  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan();
   mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
   goToSetup();
 });
@@ -3428,8 +3476,8 @@ $('btnClearMap').addEventListener('click', ()=>{
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnApplyGrid').addEventListener('click', ()=>{
-  const cols = clamp(Number($('gridCols').value)||100,10,200);
-  const rows = clamp(Number($('gridRows').value)||100,10,200);
+  const cols = clamp(Number($('gridCols').value)||100,10,500);
+  const rows = clamp(Number($('gridRows').value)||100,10,500);
   if(!confirm('Đổi kích thước lưới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
   mapData = newMap(cols,rows,$('mapNameInput').value);
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
@@ -3755,6 +3803,8 @@ updateTopbarActions();
 // Debug hook (read-only introspection for QA; harmless to leave in production)
 window.__debug = {
   get game(){ return game; }, get mapData(){ return mapData; },
+  generateRandomMap, deriveMapGenCounts, computeMapGenPlan,
+  getTerritoryBoundaryLoops, getContinentBoundaryLoops,
   clickTerritory(terrId){ if(!game) return; const t=mapData.territories[terrId]; if(!t) return null; return {x:t.centroid.x,y:t.centroid.y}; },
   forceFinishSetup(){
     let guard=0;

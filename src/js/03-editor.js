@@ -31,8 +31,7 @@ function getWaterSpread(){
 }
 
 function initEditorMap(){
-  const {cols, rows} = computeViewportGridSize();
-  const {numTerr, numCont} = deriveMapGenCounts(cols, rows);
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan();
   mapData = generateRandomMap(cols, rows, numTerr, numCont, "Bản đồ của tôi", getWaterRatio(), getWaterSpread());
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols;
