@@ -2950,14 +2950,27 @@ function drawGameCanvas(){
   // overlay when they're all roughly the same size on their axis. The player list and the
   // phase-action panel are NOT the same width, so relying on symmetric auto-centering could
   // let the map creep under the wider one at low zoom while leaving extra clearance on the
-  // narrower side. Explicit margin-left/top (overriding the CSS margin:auto for just those two
-  // properties) position it precisely between the actual measured edges instead.
+  // narrower side. Explicit margins (overriding the CSS margin:auto) position it precisely
+  // between the actual measured edges instead.
+  //
+  // All 4 margins need a floor at the overlay-clearance size (safeLeft/safeTop and their right/
+  // bottom mirrors), NOT a flat `margin` constant — once zoomed in past the safe area, scrolling
+  // to an extreme shows content exactly at marginLeft/marginTop/etc from the wrap's edge, so a
+  // floor smaller than the actual overlay size leaves that overlay permanently covering the last
+  // stretch of map on that side, unreachable no matter how far you scroll. (This previously only
+  // happened on the right/bottom, which were hardcoded to a flat 0 with no clearance logic at
+  // all — but the left/top floor of a flat 16px was equally wrong, just less noticeable since
+  // those overlays happen to be narrower.)
   const safeLeft = leftW+margin, safeRight = wrap.clientWidth-rightW-margin;
   const safeTop = topH+margin, safeBottom = wrap.clientHeight-bottomH-margin;
-  canvas.style.marginLeft = Math.max(margin, (safeLeft+safeRight)/2 - canvas.width/2)+'px';
-  canvas.style.marginTop = Math.max(margin, (safeTop+safeBottom)/2 - canvas.height/2)+'px';
-  canvas.style.marginRight = '0';
-  canvas.style.marginBottom = '0';
+  const marginLeftPx = Math.max(safeLeft, (safeLeft+safeRight)/2 - canvas.width/2);
+  const marginTopPx = Math.max(safeTop, (safeTop+safeBottom)/2 - canvas.height/2);
+  const rightReserve = wrap.clientWidth - safeRight; // = rightW+margin
+  const bottomReserve = wrap.clientHeight - safeBottom; // = bottomH+margin
+  canvas.style.marginLeft = marginLeftPx+'px';
+  canvas.style.marginTop = marginTopPx+'px';
+  canvas.style.marginRight = Math.max(rightReserve, wrap.clientWidth-marginLeftPx-canvas.width)+'px';
+  canvas.style.marginBottom = Math.max(bottomReserve, wrap.clientHeight-marginTopPx-canvas.height)+'px';
   const ctx = canvas.getContext('2d');
   ctx.scale(displayScale, displayScale); // canvas.width/height assignment above already reset the transform to identity
   ctx.fillStyle=OCEAN_COLOR;
