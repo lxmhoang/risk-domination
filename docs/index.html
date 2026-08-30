@@ -1337,6 +1337,124 @@ function submergeTinyLandIslands(water, cols, rows, minCells){
   }
 }
 
+// True if removing cells[removeIdx] would leave the rest of that cell list all still reachable
+// from each other via 4-directional adjacency — the cell-grid-level equivalent of
+// wouldStayConnectedAfterRemoving() below, used by enforceMinTerritorySize() so stealing a
+// border cell never splits the donor territory into 2 disjoint blobs.
+function cellsStayConnectedWithoutOne(map, cells, removeIdx){
+  const remaining = cells.filter((_,i)=>i!==removeIdx);
+  if(remaining.length<=1) return true;
+  const key = ([c,r])=> r*map.cols+c;
+  const remainingSet = new Set(remaining.map(key));
+  const seen = new Set([key(remaining[0])]);
+  const stack = [remaining[0]];
+  while(stack.length){
+    const [c,r] = stack.pop();
+    for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nc=c+dc, nr=r+dr, k=nr*map.cols+nc;
+      if(remainingSet.has(k) && !seen.has(k)){ seen.add(k); stack.push([nc,nr]); }
+    }
+  }
+  return seen.size === remaining.length;
+}
+
+// Grows any territory under minCells by stealing border cells, one at a time, from whichever
+// neighboring territory currently has the most to spare (never dropping that donor itself below
+// the floor), verifying each candidate cell isn't a cut-vertex for the donor first. Operates
+// directly on map.cellTerritory/t.cells — must run before recomputeGraph() rebuilds the
+// territory-level neighbor sets and centroids from the final cell layout.
+// One growth pass: steals cells into undersized territories until every one still under
+// minCells is "stuck" (no viable donor, or every candidate cell would disconnect its donor).
+// Returns true if it managed at least 1 steal — a stuck territory can become fixable in a LATER
+// pass once some other territory's growth has changed the local layout, so the caller retries
+// this until a full pass makes zero progress (see enforceMinTerritorySize below).
+function growUndersizedTerritoriesOnce(map, minCells){
+  const stuck = new Set();
+  let madeProgress = false;
+  let guard = 0;
+  while(guard++<20000){
+    let target = null;
+    Object.values(map.territories).forEach(t=>{
+      if(t.cells.length>0 && t.cells.length<minCells && !stuck.has(t.id)
+         && (!target || t.cells.length<target.cells.length)) target=t;
+    });
+    if(!target) break; // nothing left to grow (or everything left is stuck)
+
+    const cellSet = new Set(target.cells.map(([c,r])=> r*map.cols+c));
+    const borderByOwner = {};
+    target.cells.forEach(([c,r])=>{
+      for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nc=c+dc, nr=r+dr;
+        if(!inBounds(map,nc,nr)) continue;
+        const idx = cellIndex(map,nc,nr);
+        if(cellSet.has(idx)) continue;
+        const ownerId = map.cellTerritory[idx];
+        if(ownerId===-1 || ownerId===target.id) continue;
+        (borderByOwner[ownerId]=borderByOwner[ownerId]||[]).push([nc,nr]);
+      }
+    });
+    const donorIds = Object.keys(borderByOwner).map(Number);
+    if(donorIds.length===0){ stuck.add(target.id); continue; } // boxed in by water/map edge only
+
+    donorIds.sort((a,b)=> map.territories[b].cells.length - map.territories[a].cells.length);
+    const donorId = donorIds.find(id=> map.territories[id].cells.length-1 >= minCells);
+    if(donorId===undefined){ stuck.add(target.id); continue; } // no neighbor can spare a cell
+
+    const donor = map.territories[donorId];
+    let pick = null;
+    for(const [c,r] of shuffle(borderByOwner[donorId])){
+      const idxInDonor = donor.cells.findIndex(([dc,dr])=> dc===c && dr===r);
+      if(cellsStayConnectedWithoutOne(map, donor.cells, idxInDonor)){ pick=[c,r]; break; }
+    }
+    if(!pick){ stuck.add(target.id); continue; } // every candidate is a cut-vertex for the donor
+
+    donor.cells = donor.cells.filter(([dc,dr])=> !(dc===pick[0]&&dr===pick[1]));
+    target.cells.push(pick);
+    map.cellTerritory[cellIndex(map,pick[0],pick[1])] = target.id;
+    madeProgress = true;
+  }
+  return madeProgress;
+}
+
+function enforceMinTerritorySize(map, minCells){
+  let pass = 0;
+  while(pass++<8 && growUndersizedTerritoriesOnce(map, minCells)){}
+}
+
+// Picks k territory seeds spread across the map instead of fully at random — purely random
+// seeds occasionally land 2 close together, or leave one in a tight corner with few open
+// neighbors, so its BFS growth stalls early and it ends up needing heavy rescue from
+// enforceMinTerritorySize() (or can't be fully rescued at all if it's boxed in on every side).
+// Cheap grid-bucket stratification: divide the map into ~k buckets sized to its aspect ratio
+// and take 1 random land cell from each non-empty one, topping up randomly if the coastline is
+// too sparse/irregular to fill every bucket.
+function pickStratifiedSeeds(landCells, cols, rows, k){
+  if(k>=landCells.length) return shuffle(landCells.slice());
+  const aspect = cols/rows;
+  const bucketsY = Math.max(1, Math.round(Math.sqrt(k/aspect)));
+  const bucketsX = Math.max(1, Math.ceil(k/bucketsY));
+  const bucketW = cols/bucketsX, bucketH = rows/bucketsY;
+  const buckets = new Map();
+  landCells.forEach(([c,r])=>{
+    const bx = Math.min(bucketsX-1, Math.floor(c/bucketW));
+    const by = Math.min(bucketsY-1, Math.floor(r/bucketH));
+    const key = bx+','+by;
+    if(!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push([c,r]);
+  });
+  const seeds = [];
+  shuffle([...buckets.values()]).forEach(cells=>{
+    if(seeds.length<k) seeds.push(randChoice(cells));
+  });
+  if(seeds.length<k){
+    const seedSet = new Set(seeds.map(([c,r])=>r*cols+c));
+    shuffle(landCells.filter(([c,r])=>!seedSet.has(r*cols+c))).forEach(cell=>{
+      if(seeds.length<k) seeds.push(cell);
+    });
+  }
+  return seeds;
+}
+
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
   const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
@@ -1355,7 +1473,7 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
   }
 
   const effectiveNumTerr = Math.max(1, Math.min(numTerr, landCells.length));
-  const seeds = shuffle(landCells).slice(0, effectiveNumTerr);
+  const seeds = pickStratifiedSeeds(landCells, cols, rows, effectiveNumTerr);
   const terrs = seeds.map((s)=> createTerritory(map));
   const frontier = []; // {c,r,terrId}
   seeds.forEach((s,i)=>{
@@ -1411,6 +1529,12 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
       q = next;
     }
   }
+  // A territory whose seed got boxed in early during the multi-source BFS above can end up as
+  // just a handful of cells (even 1) next to neighbors hundreds of cells large — seeds are
+  // placed fully at random with no spatial spreading, unlike continent seeding. Grow any such
+  // sliver up to a reasonable floor before finalizing the graph/centroids below.
+  enforceMinTerritorySize(map, Math.max(4, Math.round(avgCellsPerTerritory*0.2)));
+
   recomputeGraph(map);
   ensureNoIsolatedTerritories(map);
 
