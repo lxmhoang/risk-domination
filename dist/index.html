@@ -779,9 +779,17 @@ const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*1.5;
 // Rough estimate of the canvas's usable width share of the viewport, leaving room for the
 // surrounding overlay panels/chrome whose exact size isn't known before layout happens. Used by
 // computeCellsPerTerritory() in 02-map-model.js.
+// A generated map's grid/territory count is baked into its data — it doesn't get re-partitioned
+// when later opened on a different device. So this is deliberately NOT the current device's
+// actual window.innerWidth: sizing off whatever screen happens to generate the map would make a
+// map generated on desktop (more territories, calibrated to desktop's wider canvas) unplayably
+// cramped if later opened on mobile, even though the reverse (mobile-generated map opened on
+// desktop — same content, just rendered bigger on the larger canvas) is always fine. Fixed at a
+// conservative mobile-landscape width instead, so every map is comfortable on the smallest
+// supported device by construction and only ever looks BIGGER, never smaller, elsewhere.
+const MOBILE_BASELINE_WIDTH = 700;
 function estimateCanvasWidth(){
-  const vw = window.innerWidth || 1280;
-  return Math.max(320, vw*0.72);
+  return Math.max(320, MOBILE_BASELINE_WIDTH*0.72);
 }
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
