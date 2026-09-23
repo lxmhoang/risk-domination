@@ -2,10 +2,22 @@
    AI LOGIC
    ---------------------------------------------------------------------
    No external file/spec — this comment block IS the AI's "design doc".
-   Each AI turn runs four steps in sequence (reinforce -> attack -> fortify
-   -> end turn), and every decision is a simple weighted-scoring heuristic,
-   not lookahead/minimax or ML. Three strategic layers on top of the basic
-   "attack the best odds" behavior:
+   Every decision is a simple weighted-scoring heuristic, not lookahead/
+   minimax or ML. But the turn isn't just four independently-scored steps
+   run back to back — it starts with ONE overall campaign decision that the
+   rest of the turn serves:
+
+   0. TURN INTENT (see pickAITurnIntent()): before touching any armies, the
+      AI looks at the WHOLE board once and commits to a single campaign for
+      the turn — finish a continent, kill off a crippled opponent, brace a
+      threatened border, or just push at its weakest front. Reinforce,
+      attack AND fortify then all read that same intent and bias their
+      scoring toward it, instead of each step re-deciding "what matters"
+      from scratch in isolation. This is the one part of the AI that
+      resembles how a human actually plans a turn.
+
+   Everything below is scoring detail for the four steps that CARRY OUT that
+   intent, run in sequence (reinforce -> attack -> fortify -> end turn):
 
    1. RESERVE AWARENESS ("biết giữ quân"): before attacking FROM a territory,
       the AI first sets aside a defensive reserve sized to the strongest
@@ -77,7 +89,73 @@ function completesContinentFor(pid, terrId){
   return contTerrs.every(x=> x.id===terrId || game.owner[x.id]===pid);
 }
 
-function pickAIReinforceTarget(pid, mine){
+// ---------------------------------------------------------------------
+// TURN INTENT ("chiến lược tổng thể của lượt"): computed ONCE at the start
+// of the turn (aiRunFullTurn), before reinforce/attack/fortify run. Rather
+// than each of those three steps scoring its own options in isolation, they
+// all read the same `intent` and bias their scoring toward it — a turn spent
+// "closing out a continent" reinforces, attacks AND fortifies toward that
+// continent instead of three unrelated locally-greedy choices that just
+// happen to run back to back. This mirrors how a human plans a turn: look at
+// the whole board first, decide the ONE thing this turn is for, then spend
+// every action in service of that — rather than re-deciding from scratch at
+// every step.
+//
+// Picked in priority order, first match wins (a human commits to one
+// campaign per turn, not several at once):
+//   1. finish_continent — one territory away from completing a continent,
+//      and that missing territory already borders one of mine (i.e. it's
+//      actually reachable this turn, not just "close" on the map).
+//   2. kill_weak        — a live opponent down to <=2 territories exists and
+//      borders one of mine (finishing them off steals their whole hand).
+//   3. defend           — my worst-outgunned border is badly threatened and
+//      I'm not the strongest player on the board (can't afford to ignore it
+//      to go adventuring elsewhere).
+//   4. expand           — no urgent campaign: fall back to pushing at my
+//      weakest local front (same territory `defend` would have picked, just
+//      without the "danger" framing).
+function pickAITurnIntent(pid){
+  const mine = ownedTerritories(pid);
+  const myPower = evaluatePlayerPower(pid);
+  const opponents = game.players.filter(pl=>pl.alive && pl.id!==pid);
+  let leaderPower = -1;
+  opponents.forEach(pl=>{ leaderPower = Math.max(leaderPower, evaluatePlayerPower(pl.id)); });
+
+  const continentIds = new Set(mine.map(id=>mapData.territories[id].continentId).filter(c=>c!=null));
+  for(const contId of continentIds){
+    const contTerrs = Object.values(mapData.territories).filter(t=>t.continentId===contId);
+    const missing = contTerrs.filter(t=>game.owner[t.id]!==pid);
+    if(missing.length===1 && [...missing[0].neighbors].some(n=>game.owner[n]===pid)){
+      return {type:'finish_continent', continentId:contId, focusTerrId:missing[0].id};
+    }
+  }
+
+  let weakTarget=null, weakCount=Infinity;
+  opponents.forEach(pl=>{
+    const terrs = ownedTerritories(pl.id);
+    if(terrs.length===0 || terrs.length>2) return;
+    const reachable = terrs.some(tid=>[...mapData.territories[tid].neighbors].some(n=>game.owner[n]===pid));
+    if(reachable && terrs.length<weakCount){ weakCount=terrs.length; weakTarget=pl.id; }
+  });
+  if(weakTarget!=null) return {type:'kill_weak', targetPlayerId:weakTarget};
+
+  let worstBorder=null, worstDeficit=-Infinity;
+  mine.forEach(id=>{
+    const t = mapData.territories[id];
+    const enemyNb = [...t.neighbors].filter(n=>game.owner[n]!==pid);
+    if(!enemyNb.length) return;
+    const maxEnemy = Math.max(...enemyNb.map(n=>game.armies[n]));
+    const deficit = maxEnemy - game.armies[id];
+    if(deficit>worstDeficit){ worstDeficit=deficit; worstBorder=id; }
+  });
+  if(worstBorder!=null && worstDeficit>=2 && myPower<leaderPower){
+    return {type:'defend', focusTerrId:worstBorder};
+  }
+
+  return {type:'expand', focusTerrId:worstBorder};
+}
+
+function pickAIReinforceTarget(pid, mine, intent){
   let best=null, bestScore=-Infinity;
   mine.forEach(id=>{
     const t = mapData.territories[id];
@@ -91,6 +169,14 @@ function pickAIReinforceTarget(pid, mine){
       if(ownedCount===contTerrs.length) score += 1.5;       // defend a continent I already hold
       else if(ownedCount>=contTerrs.length-1) score += 0.8; // one territory away from completing it
     }
+    // Nudge reinforcement toward wherever this turn's chosen campaign (see
+    // pickAITurnIntent) is actually happening, so troops don't land on some
+    // unrelated border just because it scored marginally higher locally.
+    if(intent){
+      if(intent.type==='finish_continent' && t.continentId===intent.continentId) score += 1.2;
+      else if(intent.type==='kill_weak' && enemyNb.some(n=>game.owner[n]===intent.targetPlayerId)) score += 1.2;
+      else if((intent.type==='defend'||intent.type==='expand') && id===intent.focusTerrId) score += 1.0;
+    }
     if(score>bestScore){ bestScore=score; best=id; }
   });
   if(best===null) best = randChoice(mine);
@@ -99,21 +185,23 @@ function pickAIReinforceTarget(pid, mine){
 
 function aiRunFullTurn(pid){
   setActionHint(game.players[pid].name+' đang suy nghĩ...');
-  aiSchedule(()=>{ aiReinforceStep(pid); }, aiDelay(300));
+  const intent = pickAITurnIntent(pid);
+  aiSchedule(()=>{ aiReinforceStep(pid, intent); }, aiDelay(300));
 }
 
-function aiReinforceStep(pid){
+function aiReinforceStep(pid, intent){
+  intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   const p = game.players[pid];
   aiTryTradeCards(p);
   let guard=0;
   while(game.reinforceRemaining>0 && guard++<200){
     const mine = ownedTerritories(pid);
-    const target = pickAIReinforceTarget(pid, mine);
+    const target = pickAIReinforceTarget(pid, mine, intent);
     game.armies[target]++;
     game.reinforceRemaining--;
   }
   renderGame();
-  aiSchedule(()=> aiAttackStep(pid), aiDelay(350));
+  aiSchedule(()=> aiAttackStep(pid, intent), aiDelay(350));
 }
 
 function aiTryTradeCards(p){
@@ -163,7 +251,8 @@ function tradeCards(p, indices){
   renderGame();
 }
 
-function aiAttackStep(pid){
+function aiAttackStep(pid, intent){
+  intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   game.phase='attack';
   const p = game.players[pid];
   const profile = difficultyProfile(game.difficulty, p.personality);
@@ -202,6 +291,12 @@ function aiAttackStep(pid){
         else bonus -= 0.8;                        // reluctant to fight a fellow underdog instead
       }
     }
+    // Keep this attack aligned with this turn's chosen campaign (see
+    // pickAITurnIntent) instead of chasing whatever pair scores highest in
+    // isolation this round.
+    if(intent.type==='finish_continent' && mapData.territories[toId].continentId===intent.continentId) bonus += 0.8;
+    else if(intent.type==='kill_weak' && defenderId===intent.targetPlayerId) bonus += 1.0;
+    else if(intent.type==='defend') bonus -= 0.3; // hold back this turn rather than adventure elsewhere
     return {ratio, score:ratio+bonus, bonus};
   }
 
@@ -212,14 +307,19 @@ function aiAttackStep(pid){
   // rounds get folded into one combat-log line, since the in-between rounds have no delay
   // to actually be seen anyway.
   const BATCH_GUARD = 5000;
-  function battleBatch(fromId, toId, fromName, toName, defenderName){
+  // force: skip the normal odds threshold (still bound by attackScore's reserve/usable
+  // safety floor, just not "is this a good idea") — used by the "guarantee a card every
+  // turn" rule below to push through a marginal fight it would otherwise walk away from.
+  function battleBatch(fromId, toId, fromName, toName, defenderName, force){
     let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
     while(rounds<BATCH_GUARD){
       if(game.armies[fromId]<2) break;
       const ev = attackScore(fromId, toId);
       if(!ev) break;
-      const threshold = Math.max(1.05, profile.baseThreshold - ev.bonus*0.3);
-      if(ev.ratio<threshold) break;
+      if(!force){
+        const threshold = Math.max(1.05, profile.baseThreshold - ev.bonus*0.3);
+        if(ev.ratio<threshold) break;
+      }
       lastRes = doBattle(fromId, toId, {silent:true});
       rounds++;
       attLossTotal += lastRes.attLoss;
@@ -234,11 +334,24 @@ function aiAttackStep(pid){
     return {rounds, attLossTotal, defLossTotal, captured, lastRes};
   }
 
+  // EXPERIMENTAL RULE: every AI turn must land at least 1 card-earning action (a capture
+  // under 'on_capture'/default, a kill under 'on_kill'; 'on_turn_end' always awards one
+  // regardless so there's nothing to force). Checked fresh each step() call against the
+  // player's own capturedThisTurn/killedThisTurn flags (same ones endTurn() reads), so it
+  // stops forcing the instant the requirement is already met — normal odds-based attacking
+  // resumes right after.
+  function stillNeedsCardThisTurn(){
+    const mode = RUNTIME_CONFIG.cardAwardEvent;
+    if(mode==='on_turn_end') return false;
+    if(mode==='on_kill') return !p.killedThisTurn;
+    return !p.capturedThisTurn; // 'on_capture' (default)
+  }
+
   let guard=0;
   function step(){
     if(game.over) return;
     guard++;
-    if(guard>60){ aiFortifyStep(pid); return; }
+    if(guard>60){ aiFortifyStep(pid, intent); return; }
     const mine = ownedTerritories(pid);
     let bestOpt=null, bestEval=null;
     for(const from of mine){
@@ -254,12 +367,15 @@ function aiAttackStep(pid){
     // bonuses (continent completion / finishing off a weak player) justify taking slightly
     // worse pure odds than the difficulty's base threshold would normally allow.
     const effectiveThreshold = bestEval ? Math.max(1.05, profile.baseThreshold - bestEval.bonus*0.3) : Infinity;
-    if(!bestOpt || bestEval.ratio<effectiveThreshold){ aiFortifyStep(pid); return; }
+    const meetsThreshold = !!bestOpt && bestEval.ratio>=effectiveThreshold;
+    const forcedForCard = !meetsThreshold && !!bestOpt && stillNeedsCardThisTurn();
+    if(!bestOpt || (!meetsThreshold && !forcedForCard)){ aiFortifyStep(pid, intent); return; }
 
     const { from, to } = bestOpt;
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
     const defenderName = game.players[game.owner[to]].name;
-    const result = battleBatch(from, to, fromName, toName, defenderName);
+    if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.');
+    const result = battleBatch(from, to, fromName, toName, defenderName, forcedForCard);
     if(result.rounds>0){
       const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
       logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`);
@@ -275,7 +391,8 @@ function aiAttackStep(pid){
   step();
 }
 
-function aiFortifyStep(pid){
+function aiFortifyStep(pid, intent){
+  intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   game.phase='fortify';
   renderGame();
   const p = game.players[pid];
@@ -289,10 +406,21 @@ function aiFortifyStep(pid){
     const t = mapData.territories[id];
     return [...t.neighbors].some(n=>game.owner[n]!==pid);
   });
-  if(interior.length && borders.length){
+  // A border isn't just "a border" — prefer whichever one IS this turn's
+  // chosen campaign (see pickAITurnIntent) before falling back to whichever
+  // border a path happens to reach first, so the army sent forward actually
+  // lands on next turn's front instead of a border unrelated to the plan.
+  function isIntentFront(id){
+    const t = mapData.territories[id];
+    if(intent.type==='finish_continent') return t.continentId===intent.continentId;
+    if(intent.type==='kill_weak') return [...t.neighbors].some(n=>game.owner[n]===intent.targetPlayerId);
+    return id===intent.focusTerrId; // defend / expand
+  }
+  const orderedBorders = [...borders].sort((a,b)=> (isIntentFront(b)?1:0) - (isIntentFront(a)?1:0));
+  if(interior.length && orderedBorders.length){
     const src = interior.sort((a,b)=>game.armies[b]-game.armies[a])[0];
     let bestDst=null;
-    for(const dst of borders){
+    for(const dst of orderedBorders){
       if(pathExistsOwned(src,dst,pid) && src!==dst){ bestDst=dst; break; }
     }
     if(bestDst){

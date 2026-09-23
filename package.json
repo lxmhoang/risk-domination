@@ -5,6 +5,7 @@
   "description": "Single-player-vs-AI Risk-style territory conquest game with a custom map editor. Ships as one self-contained HTML file (no build tooling required to play).",
   "scripts": {
     "build": "node build.js",
-    "serve:mobile": "node serve-mobile.js"
+    "serve:mobile": "node serve-mobile.js",
+    "test:ai": "node test/ai-smoke-test.js"
   }
 }
