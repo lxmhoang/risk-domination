@@ -254,7 +254,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #gameLogPanel.collapsed{display:none;}
 #gameLogTitle{font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;margin-bottom:6px;}
-#combatLog{flex:1;overflow-y:auto;font-size:12px;display:flex;flex-direction:column-reverse;gap:5px;padding-top:6px;}
+#combatLog{flex:1;overflow-y:auto;font-size:12px;display:flex;flex-direction:column;gap:5px;padding-top:6px;}
 .log-entry{padding:6px 8px;border-radius:8px;background:var(--panel2);line-height:1.4;}
 .log-entry.attack{border-left:3px solid var(--danger);}
 .log-entry.capture{border-left:3px solid var(--good);}

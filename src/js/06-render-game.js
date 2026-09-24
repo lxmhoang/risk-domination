@@ -246,6 +246,10 @@ function doSingleAttack(){
   recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
   if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
   renderGame();
+  showAttackResultModal(fromId, toId, {
+    captured: res.captured, attLoss: res.attLoss, defLoss: res.defLoss, rounds: 1,
+    moving: res.moving, maxMovable: res.maxMovable,
+  });
 }
 // Keeps attacking the same target back-to-back (same silent-round-then-summarize approach as
 // the AI's battleBatch() in 05-ai.js) until the source runs dry or the target is captured.
@@ -270,6 +274,12 @@ function allOutAttack(){
   }
   if(game.armies[fromId]<2) game.selectedFrom=null;
   renderGame();
+  if(rounds>0){
+    showAttackResultModal(fromId, toId, {
+      captured, attLoss: attLossTotal, defLoss: defLossTotal, rounds,
+      moving: lastRes ? lastRes.moving : null, maxMovable: lastRes ? lastRes.maxMovable : null,
+    });
+  }
 }
 // Shared by the fortify-phase button and its keyboard shortcut (08-wiring.js).
 function canFortifyNow(p){

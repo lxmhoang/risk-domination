@@ -167,22 +167,31 @@ function beginReinforcePhase(){
 }
 
 /* ---------------- Reinforcement ---------------- */
-function computeReinforcements(pid){
+// Same math computeReinforcements() used to do inline, just broken out into its parts (base
+// from territory count + which continents kicked in a bonus) so the reinforce-phase log line
+// can show WHERE the number came from instead of just the final total.
+function reinforcementBreakdown(pid){
   const mine = ownedTerritories(pid);
-  let base = Math.max(3, Math.floor(mine.length/3));
+  const base = Math.max(3, Math.floor(mine.length/3));
+  const continentBonuses = [];
   Object.values(mapData.continents).forEach(cont=>{
     const contTerrs = Object.values(mapData.territories).filter(t=>t.continentId===cont.id).map(t=>t.id);
-    if(contTerrs.length>0 && contTerrs.every(id=>game.owner[id]===pid)) base += cont.bonus;
+    if(contTerrs.length>0 && contTerrs.every(id=>game.owner[id]===pid)) continentBonuses.push({name:cont.name, bonus:cont.bonus});
   });
-  return base;
+  const total = base + continentBonuses.reduce((s,c)=>s+c.bonus, 0);
+  return {total, base, territoryCount:mine.length, continentBonuses};
 }
+function computeReinforcements(pid){ return reinforcementBreakdown(pid).total; }
 
 function startReinforce(){
   const p = currentPlayer();
   game.phase='reinforce';
-  game.reinforceRemaining = computeReinforcements(p.id);
+  const breakdown = reinforcementBreakdown(p.id);
+  game.reinforceRemaining = breakdown.total;
   p.totalReinforced += game.reinforceRemaining;
-  logMsg('info', p.name+' nhận '+game.reinforceRemaining+' quân tăng viện.');
+  const parts = [`${breakdown.territoryCount} lãnh thổ → ${breakdown.base}`]
+    .concat(breakdown.continentBonuses.map(c=>`${c.name} +${c.bonus}`));
+  logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`);
   if(!p.isHuman){
     aiRunFullTurn(p.id);
   } else {
@@ -249,16 +258,17 @@ function doBattle(fromId,toId,opts){
   if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
   attP.totalKills += defLoss; // cumulative since game start, shown in the topbar
   if(!silent) logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
-  let captured=false;
+  let captured=false, moving=null, maxMovable=null;
   if(game.armies[toId]<=0){
     captured=true;
-    // Risk rule: must move at least as many armies as dice used in the winning roll. Apply that
-    // guaranteed minimum immediately so game state is always valid, then — for the human player —
-    // offer a styled modal to move more (up to everything but 1) instead of blocking with a
-    // native browser prompt.
+    // Risk rule: must move at least as many armies as dice used in the winning roll. Apply
+    // that guaranteed minimum immediately so game state is always valid; the caller (human
+    // attack entry points in 06-render-game.js) decides whether to offer a modal to move
+    // more — doBattle() itself doesn't, since it's also called silently by the AI/all-out
+    // batch loop where no modal should ever appear mid-batch.
     const conquerMin = attDice;
-    const maxMovable = game.armies[fromId]-1;
-    const moving = Math.max(1, Math.min(conquerMin, maxMovable));
+    maxMovable = game.armies[fromId]-1;
+    moving = Math.max(1, Math.min(conquerMin, maxMovable));
     const oldOwner = game.owner[toId];
     game.owner[toId] = game.owner[fromId];
     game.armies[toId] = moving;
@@ -266,21 +276,53 @@ function doBattle(fromId,toId,opts){
     attP.capturedThisTurn = true;
     if(!silent) logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`);
     checkElimination(oldOwner, attP.id);
-    if(attP.isHuman && maxMovable>moving){
-      openCaptureMoveModal(fromId, toId, moving, maxMovable);
-    }
   }
   if(!silent) renderGame();
-  return {attLoss,defLoss,captured,ad,dd,results};
+  return {attLoss,defLoss,captured,ad,dd,results,moving,maxMovable};
 }
 
-function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
+// Shown by the human attack entry points (doSingleAttack()/allOutAttack() in
+// 06-render-game.js) after a fight resolves — folds "kết quả trận đánh" (who lost how many,
+// over how many rounds) into the same dialog as the "chiếm được" troop-move decision when the
+// attack also captured the territory, instead of only ever showing that decision (and only
+// when there was a non-trivial amount to redistribute) while every other outcome sat in the
+// combat log alone.
+function showAttackResultModal(fromId, toId, info){
+  // info: {captured, attLoss, defLoss, rounds, moving, maxMovable} — moving/maxMovable are
+  // only meaningful when captured is true.
   const fromName = mapData.territories[fromId].name;
   const toName = mapData.territories[toId].name;
-  const extraMax = maxMovable - alreadyMoved; // how many MORE can move beyond the guaranteed minimum
   const overlay = el('div','modal-overlay');
   const modal = el('div','modal');
+  let keyHandler = null;
+  function close(){
+    if(keyHandler) document.removeEventListener('keydown', keyHandler);
+    document.body.removeChild(overlay);
+  }
+  function addCloseButton(){
+    const closeBtn = el('button','primary',withShortcut('Đóng','X')); closeBtn.title='Phím tắt: X';
+    closeBtn.addEventListener('click', close);
+    modal.appendChild(closeBtn);
+    keyHandler = e=>{ if(e.key.toLowerCase()==='x'){ e.preventDefault(); close(); } };
+    document.addEventListener('keydown', keyHandler);
+  }
+
+  const roundsLabel = info.rounds>1 ? ` qua ${info.rounds} hiệp` : '';
+  const resultLine = `Bạn mất ${info.attLoss} quân, đối phương mất ${info.defLoss} quân${roundsLabel}.`;
+
+  if(!info.captured){
+    modal.appendChild(el('h3','', `⚔️ Không chiếm được "${toName}"`));
+    modal.appendChild(el('p','', resultLine));
+    addCloseButton();
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    return;
+  }
+
+  const alreadyMoved = info.moving, maxMovableArg = info.maxMovable;
+  const extraMax = maxMovableArg - alreadyMoved; // how many MORE can move beyond the guaranteed minimum
   modal.appendChild(el('h3','', `🎉 Chiếm được "${toName}"!`));
+  modal.appendChild(el('p','', resultLine));
   modal.appendChild(el('p','', `Bạn có thể chuyển thêm quân từ "${fromName}" sang "${toName}" (đã chuyển tối thiểu ${alreadyMoved} quân theo luật).`));
 
   const bigRow = el('div','');
@@ -295,7 +337,6 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
   bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
   modal.appendChild(bigRow);
 
-  let keyHandler = null;
   if(extraMax>0){
     const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
     const slider = document.createElement('input');
@@ -338,11 +379,8 @@ function openCaptureMoveModal(fromId, toId, alreadyMoved, maxMovable){
     // sync the big from/to numbers with the slider's initial value (defaults to max extra) —
     // without this they show the pre-transfer counts until the user drags the slider once.
     slider.dispatchEvent(new Event('input'));
-  }
-
-  function close(){
-    if(keyHandler) document.removeEventListener('keydown', keyHandler);
-    document.body.removeChild(overlay);
+  } else {
+    addCloseButton();
   }
 
   overlay.appendChild(modal);
