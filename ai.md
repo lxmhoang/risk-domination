@@ -147,6 +147,21 @@ Ngược lại, nếu ô đó thuộc về người chơi đang dẫn đầu (`e
 tính bằng tổng quân + 2×số lãnh thổ) và bản thân AI chưa mạnh hơn họ ít nhất 10%, AI bị
 trừ `−0.6` điểm — dè chừng gây sự với kẻ mạnh nhất bàn.
 
+### c.5) Liên minh chống người dẫn đầu (tuỳ chọn, `game.allianceEnabled`)
+Chỉ bật khi tick "🤝 Liên minh chống người dẫn đầu" lúc setup ván. `findAllianceLeader()`
+([05-ai.js:66](src/js/05-ai.js#L66)) quét TẤT CẢ người chơi còn sống (kể cả chính AI đang
+xét — khác với mục c ở trên, vốn chỉ so với đối thủ), sắp theo `evaluatePlayerPower`, và
+chỉ công nhận có "leader" nếu người mạnh nhất vượt người nhì ít nhất `ALLIANCE_LEADER_MARGIN`
+lần (mặc định 1.2 = hơn 20%) — tránh việc hễ nhỉnh hơn 1 quân trong 1 ván sát nút cũng bị
+coi là "đang dẫn đầu" mỗi lượt.
+
+Nếu có leader thật sự và bản thân AI không phải leader đó:
+```
++1.2  nếu ô địch thuộc về chính leader   → dồn lực đánh kẻ mạnh nhất
+−0.8  nếu ô địch thuộc về đối thủ khác   → miễn cưỡng đánh "đồng cảnh ngộ"
+```
+Chính leader thì được miễn hoàn toàn (chơi bình thường, không bị cộng/trừ gì ở đây).
+
 ### d) Ưu tiên theo ý định của lượt
 Cộng thêm dựa trên `intent` đã chốt ở mục 3, để việc tấn công không "lạc đề" khỏi chiến
 dịch đã chọn dù có 1 cặp lãnh thổ khác lỡ chấm điểm nhỉnh hơn ở vòng lặp này:

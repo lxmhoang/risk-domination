@@ -44,11 +44,12 @@
       `personality` (see AI_PERSONALITIES) that nudges the same knobs — how
       big a reserve to keep, how eager to chase continents/kills — so AIs at
       the same difficulty still play distinctly from each other.
-   5. ALLIANCE (optional, game.allianceEnabled): when on, an AI that isn't
-      currently the strongest player is reluctant to fight OTHER non-leaders
-      and instead prefers piling onto whoever IS the leader — a loose "gang
-      up on the leader" dynamic instead of every AI treating all rivals the
-      same.
+   5. ALLIANCE (optional, game.allianceEnabled): when on, and one player has
+      pulled CLEARLY ahead of the field (findAllianceLeader() — margin-gated,
+      not just "whoever's highest this turn"), every OTHER AI is reluctant to
+      fight fellow non-leaders and instead prefers piling onto the leader — a
+      loose "gang up on the leader" dynamic instead of every AI treating all
+      rivals the same. The leader itself is exempt and just plays normally.
    ========================================================================= */
 
 const AI_PERSONALITIES = {
@@ -57,6 +58,29 @@ const AI_PERSONALITIES = {
   rusher:      { label:'Xông pha (háo chiến)',   thresholdAdj:-0.35,  reserveMult:0.4, killBonusMult:1.0, continentBonusMult:0.8 },
   opportunist: { label:'Cơ hội (săn con mồi yếu)', thresholdAdj:-0.1, reserveMult:0.9, killBonusMult:1.8, continentBonusMult:0.9 },
 };
+
+// How far ahead (by evaluatePlayerPower) the #1 player must be over the #2 player before the
+// alliance mechanic (game.allianceEnabled) recognizes anyone as "the leader" worth ganging up
+// on — see findAllianceLeader() below. Without a margin, whoever happens to be marginally
+// ahead in a near-tied game would get crowned leader every single turn.
+const ALLIANCE_LEADER_MARGIN = 1.2;
+
+// Alliance-specific "who's the leader" check — considers EVERY alive player (including
+// whoever is currently acting), unlike the plain "wary of the strongest opponent" logic in
+// attackScore() which only ever looks at OTHER players. That distinction matters here:
+// without including self, the actual strongest player on the board could never recognize
+// ITSELF as the leader, and would end up applying the "gang up"/reluctance bonuses to its own
+// attacks instead of being exempt from them. Also requires a real margin (see
+// ALLIANCE_LEADER_MARGIN) over the runner-up — a 1-army edge in an otherwise close game isn't
+// a "runaway leader" worth forming an alliance against. Returns null when no one qualifies.
+function findAllianceLeader(){
+  const powers = game.players.filter(pl=>pl.alive)
+    .map(pl=>({id:pl.id, power:evaluatePlayerPower(pl.id)}))
+    .sort((a,b)=>b.power-a.power);
+  if(powers.length<2) return null;
+  if(powers[0].power < powers[1].power*ALLIANCE_LEADER_MARGIN) return null;
+  return powers[0].id;
+}
 
 function difficultyProfile(diff, personality){
   // baseThreshold: minimum armies-vs-armies ratio required to attack at all.
@@ -260,7 +284,10 @@ function aiAttackStep(pid, intent){
   const myPower = evaluatePlayerPower(pid);
   let leaderId = null, leaderPower = -1;
   opponents.forEach(pl=>{ const pw = evaluatePlayerPower(pl.id); if(pw>leaderPower){ leaderPower=pw; leaderId=pl.id; } });
-  const iAmLeader = pid===leaderId;
+  // Only computed when the setting is on — findAllianceLeader() scans every alive player
+  // (self included) and requires a real margin over the runner-up (see its own comment).
+  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
+  const iAmAllianceLeader = pid!=null && pid===allianceLeaderId;
 
   // How many armies a territory should keep in reserve, sized to the strongest
   // enemy neighbor it borders OTHER than the one currently being considered.
@@ -286,9 +313,9 @@ function aiAttackStep(pid, intent){
       const defTerrCount = ownedTerritories(defenderId).length;
       if(defTerrCount<=2) bonus += (1.5 + defP.cards.length*0.4)*profile.killBonusMult; // finish them off for the cards
       if(defenderId===leaderId && myPower<leaderPower*1.1) bonus -= 0.6; // wary of picking a fight I can't afford
-      if(game.allianceEnabled && !iAmLeader){
-        if(defenderId===leaderId) bonus += 1.2;   // gang up on whoever is currently strongest
-        else bonus -= 0.8;                        // reluctant to fight a fellow underdog instead
+      if(allianceLeaderId!=null && !iAmAllianceLeader){
+        if(defenderId===allianceLeaderId) bonus += 1.2; // gang up on the runaway leader
+        else bonus -= 0.8;                              // reluctant to fight a fellow underdog instead
       }
     }
     // Keep this attack aligned with this turn's chosen campaign (see
