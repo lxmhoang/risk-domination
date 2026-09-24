@@ -2249,7 +2249,40 @@ function autoPlaceInitialArmies(){
 function beginReinforcePhase(){
   game.turnIdx = 0;
   game.phase = 'reinforce';
+  // Captured here (not at initGame time) since this is the point where territory/army
+  // placement is actually finalized — reached the same way whether that came from the
+  // auto-place fast path or a full manual setup-place sequence. Read back by
+  // replaySameGame() so "Chơi lại" on the game-over screen can restart from this exact
+  // starting position (same map/players/territories/armies) instead of a fresh shuffle.
+  game.startSnapshot = {
+    players: game.players.map(p=>({name:p.name, isHuman:p.isHuman, color:p.color, personality:p.personality})),
+    owner: {...game.owner},
+    armies: {...game.armies},
+    turnOrder: [...game.turnOrder],
+    difficulty: game.difficulty,
+    allianceEnabled: game.allianceEnabled,
+    tradeRule: game.tradeRule,
+    spectatorMode: spectatorMode,
+  };
   startReinforce();
+}
+
+// "Chơi lại" (game-over screen): rebuilds the exact starting position captured by
+// beginReinforcePhase() — same map (mapData is untouched since game-over), same players/
+// difficulty/settings, same territory-owner/army layout — then plays out fresh from there.
+// Dice rolls, AI randomness, and any human choices are NOT replayed, so the match itself
+// will very likely unfold differently this time; only the starting position is identical.
+function replaySameGame(){
+  const snap = game.startSnapshot;
+  if(!snap) return;
+  const playerConfigs = snap.players.map(p=>({name:p.name, isHuman:p.isHuman, color:p.color, personality:p.personality}));
+  initGame(playerConfigs, snap.difficulty, snap.spectatorMode, snap.allianceEnabled, snap.tradeRule);
+  game.owner = {...snap.owner};
+  game.armies = {...snap.armies};
+  game.turnOrder = [...snap.turnOrder];
+  game.players.forEach(p=>{ game.pool[p.id] = 0; });
+  showScreen('screen-game');
+  beginReinforcePhase();
 }
 
 /* ---------------- Reinforcement ---------------- */
@@ -3641,7 +3674,13 @@ function showGameOver(winner){
   }
 
   overlay.innerHTML = html;
-  const backBtn = el('button','primary','Về Menu chính');
+  if(game.startSnapshot){
+    const replayBtn = el('button','primary','🔁 Chơi lại ván này');
+    replayBtn.title = 'Chơi lại đúng vị trí lãnh thổ/quân xuất phát ban đầu — diễn biến sau đó (xúc xắc, quyết định AI) có thể khác lần trước.';
+    replayBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); replaySameGame(); });
+    overlay.appendChild(replayBtn);
+  }
+  const backBtn = el('button', game.startSnapshot?'ghost':'primary', 'Về Menu chính');
   backBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); showScreen('screen-menu'); });
   overlay.appendChild(backBtn);
   document.body.appendChild(overlay);

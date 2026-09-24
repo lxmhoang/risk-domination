@@ -105,7 +105,13 @@ function showGameOver(winner){
   }
 
   overlay.innerHTML = html;
-  const backBtn = el('button','primary','Về Menu chính');
+  if(game.startSnapshot){
+    const replayBtn = el('button','primary','🔁 Chơi lại ván này');
+    replayBtn.title = 'Chơi lại đúng vị trí lãnh thổ/quân xuất phát ban đầu — diễn biến sau đó (xúc xắc, quyết định AI) có thể khác lần trước.';
+    replayBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); replaySameGame(); });
+    overlay.appendChild(replayBtn);
+  }
+  const backBtn = el('button', game.startSnapshot?'ghost':'primary', 'Về Menu chính');
   backBtn.addEventListener('click', ()=>{ document.body.removeChild(overlay); showScreen('screen-menu'); });
   overlay.appendChild(backBtn);
   document.body.appendChild(overlay);
