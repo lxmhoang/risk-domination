@@ -59,27 +59,35 @@ const AI_PERSONALITIES = {
   opportunist: { label:'Cơ hội (săn con mồi yếu)', thresholdAdj:-0.1, reserveMult:0.9, killBonusMult:1.8, continentBonusMult:0.9 },
 };
 
-// How far ahead (by evaluatePlayerPower) the #1 player must be over the #2 player before the
-// alliance mechanic (game.allianceEnabled) recognizes anyone as "the leader" worth ganging up
-// on — see findAllianceLeader() below. Without a margin, whoever happens to be marginally
-// ahead in a near-tied game would get crowned leader every single turn.
-const ALLIANCE_LEADER_MARGIN = 1.2;
+// Two gates the #1 player (by evaluatePlayerPower) must BOTH clear before the alliance
+// mechanic (game.allianceEnabled) recognizes them as "the leader" worth ganging up on — see
+// findAllianceLeader() below:
+//  - ALLIANCE_LEADER_VS_FIELD_RATIO: strong enough to threaten the WHOLE rest of the field,
+//    not just edge out the closest rival — e.g. with 5 other players, being 1.3x the #2 player
+//    means little if the #1 is still weaker than the other 4 combined, since they wouldn't
+//    need to team up to handle him.
+//  - ALLIANCE_LEADER_MARGIN: clearly ahead of the single closest rival specifically — without
+//    this, a 1-army edge in an otherwise close 2-player-ish spread could still pass the field
+//    check above.
+const ALLIANCE_LEADER_VS_FIELD_RATIO = 0.8;
+const ALLIANCE_LEADER_MARGIN = 1.3;
 
 // Alliance-specific "who's the leader" check — considers EVERY alive player (including
 // whoever is currently acting), unlike the plain "wary of the strongest opponent" logic in
 // attackScore() which only ever looks at OTHER players. That distinction matters here:
 // without including self, the actual strongest player on the board could never recognize
 // ITSELF as the leader, and would end up applying the "gang up"/reluctance bonuses to its own
-// attacks instead of being exempt from them. Also requires a real margin (see
-// ALLIANCE_LEADER_MARGIN) over the runner-up — a 1-army edge in an otherwise close game isn't
-// a "runaway leader" worth forming an alliance against. Returns null when no one qualifies.
+// attacks instead of being exempt from them. Returns null when no one clears both gates above.
 function findAllianceLeader(){
   const powers = game.players.filter(pl=>pl.alive)
     .map(pl=>({id:pl.id, power:evaluatePlayerPower(pl.id)}))
     .sort((a,b)=>b.power-a.power);
   if(powers.length<2) return null;
-  if(powers[0].power < powers[1].power*ALLIANCE_LEADER_MARGIN) return null;
-  return powers[0].id;
+  const top = powers[0], rest = powers.slice(1);
+  const restTotal = rest.reduce((s,x)=>s+x.power, 0);
+  if(top.power < restTotal*ALLIANCE_LEADER_VS_FIELD_RATIO) return null;
+  if(top.power < rest[0].power*ALLIANCE_LEADER_MARGIN) return null;
+  return top.id;
 }
 
 function difficultyProfile(diff, personality){

@@ -149,11 +149,18 @@ trừ `−0.6` điểm — dè chừng gây sự với kẻ mạnh nhất bàn.
 
 ### c.5) Liên minh chống người dẫn đầu (tuỳ chọn, `game.allianceEnabled`)
 Chỉ bật khi tick "🤝 Liên minh chống người dẫn đầu" lúc setup ván. `findAllianceLeader()`
-([05-ai.js:66](src/js/05-ai.js#L66)) quét TẤT CẢ người chơi còn sống (kể cả chính AI đang
+([05-ai.js:77](src/js/05-ai.js#L77)) quét TẤT CẢ người chơi còn sống (kể cả chính AI đang
 xét — khác với mục c ở trên, vốn chỉ so với đối thủ), sắp theo `evaluatePlayerPower`, và
-chỉ công nhận có "leader" nếu người mạnh nhất vượt người nhì ít nhất `ALLIANCE_LEADER_MARGIN`
-lần (mặc định 1.2 = hơn 20%) — tránh việc hễ nhỉnh hơn 1 quân trong 1 ván sát nút cũng bị
-coi là "đang dẫn đầu" mỗi lượt.
+chỉ công nhận có "leader" nếu người mạnh nhất vượt qua CẢ HAI ngưỡng:
+
+```
+sức mạnh top-1 ≥ tổng sức mạnh TẤT CẢ người còn lại × ALLIANCE_LEADER_VS_FIELD_RATIO (0.8)
+sức mạnh top-1 ≥ sức mạnh người thứ nhì               × ALLIANCE_LEADER_MARGIN        (1.3)
+```
+
+Ngưỡng đầu đảm bảo leader thực sự đe doạ được CẢ BÀN gộp lại (không chỉ nhỉnh hơn 1 người),
+ngưỡng sau đảm bảo leader rõ ràng vượt trội người bám sát nhất — thiếu 1 trong 2 thì không
+có ai được công nhận là "đang dẫn đầu" lượt đó, cơ chế liên minh coi như tắt.
 
 Nếu có leader thật sự và bản thân AI không phải leader đó:
 ```
