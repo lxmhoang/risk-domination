@@ -424,6 +424,7 @@ function aiAttackStep(pid, intent){
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
     const defenderId = game.owner[to];
     const defenderName = game.players[defenderId].name;
+    const attackerColor = p.color, defenderColor = game.players[defenderId].color;
     if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.', [pid, defenderId]);
     const fromCountBefore = game.armies[from], toCountBefore = game.armies[to];
     const result = battleBatch(from, to, fromName, toName, defenderName, forcedForCard);
@@ -449,7 +450,7 @@ function aiAttackStep(pid, intent){
     // after the battle resolves, same as the human attack flow.
     startAttackAnim({
       fromId:from, toId:to, attLoss:result.attLossTotal, defLoss:result.defLossTotal, captured:result.captured,
-      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
     }, nextDecision);
     renderGame();
   }

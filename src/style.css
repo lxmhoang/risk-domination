@@ -287,6 +287,11 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    z-index 6, one below that wrap's 7, so it can freely overlap the top controls/phase-action
    buttons above it (accepted — see body.html comment) without ever covering them. */
 #gameLogPanel{
+  /* top is set in JS (positionLogPanel(), 06-render-game.js) to track #gameRightPanelWrap's
+     actual rendered height — that panel's height varies (phase-action buttons come and go, the
+     zoom row wraps differently per screen width), so a fixed px here previously left the log
+     panel starting too high up and overlapping it once the top bar moved into that same
+     right-side column. Static value here is just a sane first-paint fallback before JS runs. */
   position:absolute;top:64px;right:10px;bottom:10px;
   width:min(360px, calc(100% - 20px));
   background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
@@ -329,8 +334,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #btnZoomOut, #btnZoomReset, #btnZoomIn{display:none;}
 }
 
-/* dice */
-#diceBox{display:flex;gap:16px;align-items:center;justify-content:center;padding:10px;}
+/* dice — hidden in the combat log (reads as noise there); showDice() still runs and populates
+   it harmlessly, so nothing on the JS side needs to change. */
+#diceBox{display:none;}
 .dice-group{display:flex;gap:6px;}
 .die{
   width:34px;height:34px;border-radius:8px;background:#fff;color:#222;font-weight:800;
@@ -343,6 +349,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 /* modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(4,7,14,.7);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px);animation:modalOverlayIn .18s ease;}
+/* showCaptureMoveModal()'s slider is meant to be checked against the live map underneath —
+   blurring it out from under the modal would defeat that. */
+.modal-overlay.no-blur{backdrop-filter:none;}
 .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;animation:modalPopIn .22s cubic-bezier(.34,1.56,.64,1);}
 .modal h3{margin-bottom:12px;}
 @keyframes modalOverlayIn{from{opacity:0;}to{opacity:1;}}

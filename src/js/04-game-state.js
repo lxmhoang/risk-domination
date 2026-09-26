@@ -339,7 +339,10 @@ function doBattle(fromId,toId,opts){
 function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   const fromName = mapData.territories[fromId].name;
   const toName = mapData.territories[toId].name;
-  const overlay = el('div','modal-overlay');
+  // no-blur: unlike other modals, dragging this slider is meant to be checked against the map
+  // live (see the slider's 'input' handler below) — blurring it out from under the modal would
+  // defeat the point.
+  const overlay = el('div','modal-overlay no-blur');
   const modal = el('div','modal');
   let keyHandler = null;
   function close(){
@@ -371,11 +374,25 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
   slider.style.flex='1';
   const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
+  // Applied LIVE (not just previewed) on every drag — appliedExtra tracks how much of the
+  // transfer is already reflected in game.armies, so each new slider position only moves the
+  // DELTA from there instead of re-applying the whole amount. The map badges are seeded into
+  // lastDrawnArmies before renderGame() so they jump straight to the new value instead of
+  // kicking off the usual ~350ms count-up/down tween on every single drag tick, which would
+  // otherwise lag visibly behind wherever the slider actually is.
+  let appliedExtra = 0;
   slider.addEventListener('input', ()=>{
     const extra = Number(slider.value);
+    const delta = extra-appliedExtra;
+    game.armies[fromId] -= delta;
+    game.armies[toId] += delta;
+    appliedExtra = extra;
     sliderLabel.textContent = '+'+extra;
-    fromCount.textContent = String(game.armies[fromId]-extra);
-    toCount.textContent = String(game.armies[toId]+extra);
+    fromCount.textContent = String(game.armies[fromId]);
+    toCount.textContent = String(game.armies[toId]);
+    lastDrawnArmies[fromId] = game.armies[fromId];
+    lastDrawnArmies[toId] = game.armies[toId];
+    renderGame();
   });
   sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
   modal.appendChild(sliderRow);
@@ -386,14 +403,10 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
   const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
   quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
+  // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
+  // closes the modal, nothing left to actually move.
   const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
-  confirmBtn.addEventListener('click', ()=>{
-    const extra = Number(slider.value);
-    game.armies[fromId] -= extra;
-    game.armies[toId] += extra;
-    close();
-    renderGame();
-  });
+  confirmBtn.addEventListener('click', ()=>{ close(); renderGame(); });
   btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
   modal.appendChild(btnRow);
 

@@ -299,6 +299,11 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    z-index 6, one below that wrap's 7, so it can freely overlap the top controls/phase-action
    buttons above it (accepted — see body.html comment) without ever covering them. */
 #gameLogPanel{
+  /* top is set in JS (positionLogPanel(), 06-render-game.js) to track #gameRightPanelWrap's
+     actual rendered height — that panel's height varies (phase-action buttons come and go, the
+     zoom row wraps differently per screen width), so a fixed px here previously left the log
+     panel starting too high up and overlapping it once the top bar moved into that same
+     right-side column. Static value here is just a sane first-paint fallback before JS runs. */
   position:absolute;top:64px;right:10px;bottom:10px;
   width:min(360px, calc(100% - 20px));
   background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
@@ -341,8 +346,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #btnZoomOut, #btnZoomReset, #btnZoomIn{display:none;}
 }
 
-/* dice */
-#diceBox{display:flex;gap:16px;align-items:center;justify-content:center;padding:10px;}
+/* dice — hidden in the combat log (reads as noise there); showDice() still runs and populates
+   it harmlessly, so nothing on the JS side needs to change. */
+#diceBox{display:none;}
 .dice-group{display:flex;gap:6px;}
 .die{
   width:34px;height:34px;border-radius:8px;background:#fff;color:#222;font-weight:800;
@@ -355,6 +361,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 /* modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(4,7,14,.7);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px);animation:modalOverlayIn .18s ease;}
+/* showCaptureMoveModal()'s slider is meant to be checked against the live map underneath —
+   blurring it out from under the modal would defeat that. */
+.modal-overlay.no-blur{backdrop-filter:none;}
 .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;animation:modalPopIn .22s cubic-bezier(.34,1.56,.64,1);}
 .modal h3{margin-bottom:12px;}
 @keyframes modalOverlayIn{from{opacity:0;}to{opacity:1;}}
@@ -2705,7 +2714,10 @@ function doBattle(fromId,toId,opts){
 function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   const fromName = mapData.territories[fromId].name;
   const toName = mapData.territories[toId].name;
-  const overlay = el('div','modal-overlay');
+  // no-blur: unlike other modals, dragging this slider is meant to be checked against the map
+  // live (see the slider's 'input' handler below) — blurring it out from under the modal would
+  // defeat the point.
+  const overlay = el('div','modal-overlay no-blur');
   const modal = el('div','modal');
   let keyHandler = null;
   function close(){
@@ -2737,11 +2749,25 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
   slider.style.flex='1';
   const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
+  // Applied LIVE (not just previewed) on every drag — appliedExtra tracks how much of the
+  // transfer is already reflected in game.armies, so each new slider position only moves the
+  // DELTA from there instead of re-applying the whole amount. The map badges are seeded into
+  // lastDrawnArmies before renderGame() so they jump straight to the new value instead of
+  // kicking off the usual ~350ms count-up/down tween on every single drag tick, which would
+  // otherwise lag visibly behind wherever the slider actually is.
+  let appliedExtra = 0;
   slider.addEventListener('input', ()=>{
     const extra = Number(slider.value);
+    const delta = extra-appliedExtra;
+    game.armies[fromId] -= delta;
+    game.armies[toId] += delta;
+    appliedExtra = extra;
     sliderLabel.textContent = '+'+extra;
-    fromCount.textContent = String(game.armies[fromId]-extra);
-    toCount.textContent = String(game.armies[toId]+extra);
+    fromCount.textContent = String(game.armies[fromId]);
+    toCount.textContent = String(game.armies[toId]);
+    lastDrawnArmies[fromId] = game.armies[fromId];
+    lastDrawnArmies[toId] = game.armies[toId];
+    renderGame();
   });
   sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
   modal.appendChild(sliderRow);
@@ -2752,14 +2778,10 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
   const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
   quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
+  // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
+  // closes the modal, nothing left to actually move.
   const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
-  confirmBtn.addEventListener('click', ()=>{
-    const extra = Number(slider.value);
-    game.armies[fromId] -= extra;
-    game.armies[toId] += extra;
-    close();
-    renderGame();
-  });
+  confirmBtn.addEventListener('click', ()=>{ close(); renderGame(); });
   btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
   modal.appendChild(btnRow);
 
@@ -3334,6 +3356,7 @@ function aiAttackStep(pid, intent){
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
     const defenderId = game.owner[to];
     const defenderName = game.players[defenderId].name;
+    const attackerColor = p.color, defenderColor = game.players[defenderId].color;
     if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.', [pid, defenderId]);
     const fromCountBefore = game.armies[from], toCountBefore = game.armies[to];
     const result = battleBatch(from, to, fromName, toName, defenderName, forcedForCard);
@@ -3359,7 +3382,7 @@ function aiAttackStep(pid, intent){
     // after the battle resolves, same as the human attack flow.
     startAttackAnim({
       fromId:from, toId:to, attLoss:result.attLossTotal, defLoss:result.defLossTotal, captured:result.captured,
-      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
     }, nextDecision);
     renderGame();
   }
@@ -3539,7 +3562,7 @@ function spawnCaptureParticles(x, y, color){
       This replaces the old always-a-popup result dialog with something that reads at a glance
       without interrupting play.
    ========================================================================= */
-const ATTACK_FLY_MS = 260, ATTACK_IMPACT_MS = 550, ATTACK_RETURN_MS = 320;
+const ATTACK_FLY_MS = 260, ATTACK_IMPACT_MS = 825, ATTACK_RETURN_MS = 320;
 let attackAnim = null; // see startAttackAnim() for the shape of the info object passed in
 
 // "Cụng ly" (clink glasses): the attacking badge pulls back a little first, THEN dashes in fast
@@ -3648,12 +3671,17 @@ function drawAttackAnimBadges(ctx, now){
     ctx.globalAlpha = 1-p;
     ctx.font='800 28px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillStyle='#ff3b3b';
-    const dmgY = toPos.y-24-p*22;
-    ctx.strokeText('-'+a.attLoss, toPos.x-26, dmgY);
-    ctx.fillText('-'+a.attLoss, toPos.x-26, dmgY);
-    ctx.strokeText('-'+a.defLoss, toPos.x+26, dmgY);
-    ctx.fillText('-'+a.defLoss, toPos.x+26, dmgY);
+    const riseY = p*22;
+    // "-x" (what the ATTACKER lost) rises above the attacker's own home badge, in the
+    // attacker's color; "-y" (what the DEFENDER lost) rises above the defender's badge, in the
+    // defender's color — each number sits with the side it's actually about, instead of both
+    // clustered at the collision point.
+    ctx.fillStyle = a.attackerColor || '#ff3b3b';
+    ctx.strokeText('-'+a.attLoss, fromPos.x, fromPos.y-24-riseY);
+    ctx.fillText('-'+a.attLoss, fromPos.x, fromPos.y-24-riseY);
+    ctx.fillStyle = a.defenderColor || '#ff3b3b';
+    ctx.strokeText('-'+a.defLoss, toPos.x, toPos.y-24-riseY);
+    ctx.fillText('-'+a.defLoss, toPos.x, toPos.y-24-riseY);
     ctx.restore();
   }
 }
@@ -4091,7 +4119,9 @@ function doSingleAttack(){
   if(!canAttackNow(p)) return;
   const fromId = game.selectedFrom, toId = game.selectedTo;
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderName = game.players[game.owner[toId]].name;
+  const defenderId = game.owner[toId];
+  const defenderName = game.players[defenderId].name;
+  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
   const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
   const res = doBattle(fromId, toId);
   recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
@@ -4099,7 +4129,7 @@ function doSingleAttack(){
   if(fromCountAfter<2) game.selectedFrom=null;
   startAttackAnim({
     fromId, toId, attLoss:res.attLoss, defLoss:res.defLoss, captured:res.captured,
-    fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+    fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
   }, ()=>{
     if(res.captured && res.maxMovable>res.moving) showCaptureMoveModal(fromId, toId, res.moving, res.maxMovable);
   });
@@ -4114,6 +4144,7 @@ function allOutAttack(){
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
   const defenderId = game.owner[toId];
   const defenderName = game.players[defenderId].name;
+  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
   const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
   let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
   while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
@@ -4133,7 +4164,7 @@ function allOutAttack(){
   if(rounds>0){
     startAttackAnim({
       fromId, toId, attLoss:attLossTotal, defLoss:defLossTotal, captured,
-      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
     }, ()=>{
       if(captured && lastRes.maxMovable>lastRes.moving) showCaptureMoveModal(fromId, toId, lastRes.moving, lastRes.maxMovable);
     });
@@ -4173,6 +4204,17 @@ function showFloatingAttackButtons(){
 }
 // Called every attack-phase frame from drawGameCanvas() (so panning/zooming keeps it aligned)
 // as well as once right after showFloatingAttackButtons() shows it fresh.
+// #gameLogPanel sits right below #gameRightPanelWrap instead of a fixed px offset (see that
+// CSS rule's comment) — that panel's own height varies (phase-action buttons come and go, the
+// zoom-controls row wraps differently per screen width), so this is recomputed on every render
+// rather than relying on any one fixed value staying correct.
+function positionLogPanel(){
+  const panel = $('gameLogPanel');
+  const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
+  const screenRect = $('screen-game').getBoundingClientRect();
+  panel.style.top = Math.max(10, wrapRect.bottom-screenRect.top+10)+'px';
+}
+
 function positionFloatingAttackButtons(){
   const wrap = $('floatingAttackButtons');
   if(wrap.hidden) return;
@@ -4334,6 +4376,8 @@ function renderGame(){
   // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
   drawGameCanvas();
+  positionLogPanel(); // after renderPhaseActions() specifically — #gameRightPanelWrap's height
+                       // (which this tracks) depends on how many phase-action buttons it just drew
   if(aiPaused && !currentPlayer().isHuman && !game.over){
     setActionHint('⏸️ Đã tạm dừng lượt của '+currentPlayer().name+'. Bấm ▶️ ở góc trên để tiếp tục.');
   }

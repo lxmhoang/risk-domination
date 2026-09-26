@@ -126,7 +126,7 @@ function spawnCaptureParticles(x, y, color){
       This replaces the old always-a-popup result dialog with something that reads at a glance
       without interrupting play.
    ========================================================================= */
-const ATTACK_FLY_MS = 260, ATTACK_IMPACT_MS = 550, ATTACK_RETURN_MS = 320;
+const ATTACK_FLY_MS = 260, ATTACK_IMPACT_MS = 825, ATTACK_RETURN_MS = 320;
 let attackAnim = null; // see startAttackAnim() for the shape of the info object passed in
 
 // "Cụng ly" (clink glasses): the attacking badge pulls back a little first, THEN dashes in fast
@@ -235,12 +235,17 @@ function drawAttackAnimBadges(ctx, now){
     ctx.globalAlpha = 1-p;
     ctx.font='800 28px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillStyle='#ff3b3b';
-    const dmgY = toPos.y-24-p*22;
-    ctx.strokeText('-'+a.attLoss, toPos.x-26, dmgY);
-    ctx.fillText('-'+a.attLoss, toPos.x-26, dmgY);
-    ctx.strokeText('-'+a.defLoss, toPos.x+26, dmgY);
-    ctx.fillText('-'+a.defLoss, toPos.x+26, dmgY);
+    const riseY = p*22;
+    // "-x" (what the ATTACKER lost) rises above the attacker's own home badge, in the
+    // attacker's color; "-y" (what the DEFENDER lost) rises above the defender's badge, in the
+    // defender's color — each number sits with the side it's actually about, instead of both
+    // clustered at the collision point.
+    ctx.fillStyle = a.attackerColor || '#ff3b3b';
+    ctx.strokeText('-'+a.attLoss, fromPos.x, fromPos.y-24-riseY);
+    ctx.fillText('-'+a.attLoss, fromPos.x, fromPos.y-24-riseY);
+    ctx.fillStyle = a.defenderColor || '#ff3b3b';
+    ctx.strokeText('-'+a.defLoss, toPos.x, toPos.y-24-riseY);
+    ctx.fillText('-'+a.defLoss, toPos.x, toPos.y-24-riseY);
     ctx.restore();
   }
 }
@@ -678,7 +683,9 @@ function doSingleAttack(){
   if(!canAttackNow(p)) return;
   const fromId = game.selectedFrom, toId = game.selectedTo;
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderName = game.players[game.owner[toId]].name;
+  const defenderId = game.owner[toId];
+  const defenderName = game.players[defenderId].name;
+  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
   const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
   const res = doBattle(fromId, toId);
   recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
@@ -686,7 +693,7 @@ function doSingleAttack(){
   if(fromCountAfter<2) game.selectedFrom=null;
   startAttackAnim({
     fromId, toId, attLoss:res.attLoss, defLoss:res.defLoss, captured:res.captured,
-    fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+    fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
   }, ()=>{
     if(res.captured && res.maxMovable>res.moving) showCaptureMoveModal(fromId, toId, res.moving, res.maxMovable);
   });
@@ -701,6 +708,7 @@ function allOutAttack(){
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
   const defenderId = game.owner[toId];
   const defenderName = game.players[defenderId].name;
+  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
   const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
   let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
   while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
@@ -720,7 +728,7 @@ function allOutAttack(){
   if(rounds>0){
     startAttackAnim({
       fromId, toId, attLoss:attLossTotal, defLoss:defLossTotal, captured,
-      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
     }, ()=>{
       if(captured && lastRes.maxMovable>lastRes.moving) showCaptureMoveModal(fromId, toId, lastRes.moving, lastRes.maxMovable);
     });
@@ -760,6 +768,17 @@ function showFloatingAttackButtons(){
 }
 // Called every attack-phase frame from drawGameCanvas() (so panning/zooming keeps it aligned)
 // as well as once right after showFloatingAttackButtons() shows it fresh.
+// #gameLogPanel sits right below #gameRightPanelWrap instead of a fixed px offset (see that
+// CSS rule's comment) — that panel's own height varies (phase-action buttons come and go, the
+// zoom-controls row wraps differently per screen width), so this is recomputed on every render
+// rather than relying on any one fixed value staying correct.
+function positionLogPanel(){
+  const panel = $('gameLogPanel');
+  const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
+  const screenRect = $('screen-game').getBoundingClientRect();
+  panel.style.top = Math.max(10, wrapRect.bottom-screenRect.top+10)+'px';
+}
+
 function positionFloatingAttackButtons(){
   const wrap = $('floatingAttackButtons');
   if(wrap.hidden) return;
@@ -921,6 +940,8 @@ function renderGame(){
   // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
   drawGameCanvas();
+  positionLogPanel(); // after renderPhaseActions() specifically — #gameRightPanelWrap's height
+                       // (which this tracks) depends on how many phase-action buttons it just drew
   if(aiPaused && !currentPlayer().isHuman && !game.over){
     setActionHint('⏸️ Đã tạm dừng lượt của '+currentPlayer().name+'. Bấm ▶️ ở góc trên để tiếp tục.');
   }
