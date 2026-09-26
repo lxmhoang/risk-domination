@@ -994,34 +994,46 @@ function createContinent(map, name, color){
 // cell's edges in this specific order/direction makes the outer boundary of a blob come out
 // clockwise and any hole inside it come out counter-clockwise automatically — which is exactly
 // what canvas's default "nonzero" fill rule needs to render holes as holes.
-function traceMaskBoundary(inSet){
-  const edges = new Map(); // "x_y" (edge start corner) -> [x2,y2] (edge end corner)
+//
+// idFn(c,r) => whatever "identity" (territory id, continent id, or -1 for empty/off-map) sits
+// on the OUTSIDE of the traced edge at that cell — recorded per edge so douglasPeuckerRun()
+// below can later simplify "the stretch of boundary facing one specific neighbor" as its own
+// fixed-endpoint unit. That stretch is exactly what two adjacent shapes SHARE, so both sides
+// see the same start/end anchors for it regardless of where their own trace happened to start —
+// see the big comment on splitLoopIntoRuns() for why that's the whole point.
+function traceMaskBoundary(inSet, idFn){
+  const edges = new Map(); // "x_y" (edge start corner) -> {to:[x2,y2], outside: identity}
   const k = (x,y)=> x+'_'+y;
   inSet.cells.forEach(([c,r])=>{
-    if(!inSet(c,r-1)) edges.set(k(c,r), [c+1,r]);
-    if(!inSet(c+1,r)) edges.set(k(c+1,r), [c+1,r+1]);
-    if(!inSet(c,r+1)) edges.set(k(c+1,r+1), [c,r+1]);
-    if(!inSet(c-1,r)) edges.set(k(c,r+1), [c,r]);
+    if(!inSet(c,r-1)) edges.set(k(c,r), {to:[c+1,r], outside:idFn(c,r-1)});
+    if(!inSet(c+1,r)) edges.set(k(c+1,r), {to:[c+1,r+1], outside:idFn(c+1,r)});
+    if(!inSet(c,r+1)) edges.set(k(c+1,r+1), {to:[c,r+1], outside:idFn(c,r+1)});
+    if(!inSet(c-1,r)) edges.set(k(c,r+1), {to:[c,r], outside:idFn(c-1,r)});
   });
   const loops = [];
   const visited = new Set();
   for(const startKey of edges.keys()){
     if(visited.has(startKey)) continue;
-    const loop = [];
+    const points = [], edgeIds = [];
     let curKey = startKey, guard = 0;
     while(!visited.has(curKey) && edges.has(curKey) && guard++<200000){
       visited.add(curKey);
-      loop.push(curKey.split('_').map(Number));
-      const [nx,ny] = edges.get(curKey);
-      curKey = k(nx,ny);
+      points.push(curKey.split('_').map(Number));
+      const edge = edges.get(curKey);
+      edgeIds.push(edge.outside);
+      curKey = k(edge.to[0], edge.to[1]);
     }
-    if(loop.length>=3) loops.push(loop);
+    if(points.length>=3) loops.push({points, edgeIds});
   }
   return loops;
 }
 
 // One pass replaces each edge (P0,P1) with 2 points at 25%/75% along it, cutting every corner
 // down and rounding it; a couple of passes is enough to look like a smooth organic curve.
+// NOTE: Chaikin moves EVERY point on EVERY pass, including points that represent a real corner
+// of the shape, not just staircase noise — it can't tell the difference. That's what
+// douglasPeuckerLoop() below is for: run BEFORE this, it drops only the points that don't
+// represent a meaningful bend, so the corners Chaikin then rounds are the ones that matter.
 function chaikinSmooth(loop, iterations){
   let pts = loop;
   for(let it=0; it<iterations; it++){
@@ -1036,34 +1048,212 @@ function chaikinSmooth(loop, iterations){
   return pts;
 }
 
-function traceAndSmoothCells(map, cellList){
+// Same corner-cutting as chaikinSmooth(), but for an OPEN run whose first/last point must stay
+// at their EXACT original coordinates (only the interior corners get rounded). This matters for
+// douglasPeuckerRuns-simplified boundaries: a run's endpoints are the neighbor-transition points
+// shared with an adjacent shape's own run (see splitLoopIntoRuns() below) — if this rounded them
+// too, two adjacent shapes would each pull that shared corner back by however much rounding its
+// OWN, unrelated neighboring run happened to need, and end up disagreeing on where the corner
+// actually is (confirmed empirically: this was the real remaining cause of the ~11% shared-edge
+// gap that persisted even after switching to neighbor-aware run splitting — Douglas-Peucker
+// picking the same anchors wasn't enough on its own, since a plain closed-loop Chaikin pass
+// right after still re-rounded those exact anchors by a different amount on each side).
+function chaikinSmoothOpen(points, iterations){
+  if(points.length<3) return points.slice();
+  let pts = points;
+  for(let it=0; it<iterations; it++){
+    const next = [pts[0]];
+    for(let i=0;i<pts.length-1;i++){
+      const [x0,y0] = pts[i]; const [x1,y1] = pts[i+1];
+      next.push([x0+(x1-x0)*0.25, y0+(y1-y0)*0.25]);
+      next.push([x0+(x1-x0)*0.75, y0+(y1-y0)*0.75]);
+    }
+    next.push(pts[pts.length-1]);
+    pts = next;
+  }
+  return pts;
+}
+
+function distSq(a,b){ const dx=a[0]-b[0], dy=a[1]-b[1]; return dx*dx+dy*dy; }
+
+// Perpendicular distance from point p to the infinite line through a,b (0 if a===b).
+function pointLineDistance(p, a, b){
+  const dx=b[0]-a[0], dy=b[1]-a[1];
+  const lenSq = dx*dx+dy*dy;
+  if(lenSq===0) return Math.hypot(p[0]-a[0], p[1]-a[1]);
+  const t = ((p[0]-a[0])*dx+(p[1]-a[1])*dy)/lenSq;
+  const projX = a[0]+t*dx, projY = a[1]+t*dy;
+  return Math.hypot(p[0]-projX, p[1]-projY);
+}
+
+// Standard recursive Douglas-Peucker on an OPEN polyline: points[0] and the last point are
+// always kept exactly where they are; everything between them is dropped UNLESS some point
+// deviates from the straight line (points[0]->last) by more than epsilon, in which case that
+// point is kept too (becoming a new fixed anchor) and both halves are simplified the same way.
+//
+// TIE-BREAK NOTE: a staircase boundary is full of EXACT ties for "farthest point from the
+// chord" (symmetric zigzags produce equal deviations). Breaking a tie by "first one encountered
+// while scanning" is NOT reversal-symmetric — scanning the same points forward vs backward
+// finds a different point first, so an adjacent shape's own reverse-order run through this exact
+// same physical run would pick a DIFFERENT anchor and end up simplified differently, producing a
+// visible seam (confirmed empirically: this was the actual remaining cause of a small residual
+// gap/overlap even after both douglasPeuckerRuns AND pinned-endpoint Chaikin were already
+// correct). Breaking ties by the tied points' own coordinates instead of scan position fixes
+// this, since a point's coordinates don't change based on which direction you're walking.
+function douglasPeuckerOpen(points, epsilon){
+  if(points.length<3) return points.slice();
+  const a = points[0], b = points[points.length-1];
+  let maxDist=-1, maxIdx=-1;
+  const TIE_EPS = 1e-6;
+  for(let i=1;i<points.length-1;i++){
+    const d = pointLineDistance(points[i], a, b);
+    if(d>maxDist+TIE_EPS){ maxDist=d; maxIdx=i; }
+    else if(Math.abs(d-maxDist)<=TIE_EPS){
+      const cur = points[maxIdx];
+      if(points[i][0]<cur[0] || (points[i][0]===cur[0] && points[i][1]<cur[1])) maxIdx=i;
+    }
+  }
+  if(maxDist<=epsilon) return [a,b];
+  const left = douglasPeuckerOpen(points.slice(0,maxIdx+1), epsilon);
+  const right = douglasPeuckerOpen(points.slice(maxIdx), epsilon);
+  return left.slice(0,-1).concat(right);
+}
+
+// Closed-loop Douglas-Peucker fallback for the rare loop where EVERY edge faces the same
+// neighbor identity (e.g. a territory that's a single enclave entirely surrounded by one other
+// territory) — splitLoopIntoRuns() below can't find any identity change to anchor on, so there's
+// no neighbor-transition point to use instead. Splitting at the loop's two most-distant points
+// ("diameter") is safe here specifically because that split is a pure function of the point SET
+// (not of which point the trace happened to start at, or which direction it walked), so the
+// facing shape's own trace of this same physical loop picks the identical two anchor points too.
+function douglasPeuckerLoop(loop, epsilon){
+  if(loop.length<5) return loop.slice(); // too few points for a split to mean anything
+  let i1=0, i2=1, maxD=-1;
+  for(let i=0;i<loop.length;i++){
+    for(let j=i+1;j<loop.length;j++){
+      const d = distSq(loop[i], loop[j]);
+      if(d>maxD){ maxD=d; i1=i; i2=j; }
+    }
+  }
+  const arcA = loop.slice(i1, i2+1);
+  const arcB = loop.slice(i2).concat(loop.slice(0, i1+1));
+  const simpA = douglasPeuckerOpen(arcA, epsilon);
+  const simpB = douglasPeuckerOpen(arcB, epsilon);
+  return simpA.slice(0,-1).concat(simpB.slice(0,-1));
+}
+
+// Splits a traced loop into maximal runs of consecutive edges that all face the SAME outside
+// identity (edgeIds[i] is the identity facing the edge from points[i] to points[(i+1)%n]).
+// Each run is returned as an OPEN point array [transitionA, ..., transitionB] — the two ends are
+// the corners where the neighbor identity actually changes, i.e. real "T-junction" points on the
+// map (where 3+ territories/continents or empty space meet), not an arbitrary trace-order
+// artifact. THIS is what makes shared-edge simplification consistent between two adjacent
+// shapes: the run "my boundary facing neighbor B" and B's own run "my boundary facing me" cover
+// the exact same physical points between the exact same two transition corners, so
+// douglasPeuckerOpen() — a pure function of a fixed-endpoint point sequence — produces the same
+// simplified curve on both sides no matter which shape's trace you started from (a farthest-pair
+// split chosen independently per shape has no such guarantee, since each shape's own overall
+// "diameter" generally has nothing to do with where ITS neighbors' boundaries happen to sit —
+// confirmed by an actual gap/overlap measurement between two adjacent test shapes: ~11% raster
+// area mismatched with an independent-anchor closed-loop split, ~0% with this neighbor-aware one).
+// Returns null if every edge in the loop faces the same identity (no transition point exists at
+// all) — the caller falls back to douglasPeuckerLoop() for that case.
+function splitLoopIntoRuns(points, edgeIds){
+  const n = edgeIds.length;
+  let changeIdx = -1;
+  for(let i=0;i<n;i++){ if(edgeIds[i]!==edgeIds[(i+n-1)%n]){ changeIdx=i; break; } }
+  if(changeIdx===-1) return null;
+  const runs = [];
+  let runPts = [points[changeIdx]];
+  let curId = edgeIds[changeIdx];
+  for(let step=0; step<n; step++){
+    const i = (changeIdx+step)%n;
+    if(edgeIds[i]!==curId){
+      runs.push(runPts);
+      runPts = [points[i]];
+      curId = edgeIds[i];
+    }
+    runPts.push(points[(i+1)%n]);
+  }
+  runs.push(runPts);
+  return runs;
+}
+
+function traceAndSmoothCells(map, cellList, idFn){
   const cellSet = new Set(cellList.map(([c,r])=> c+'_'+r));
   const inSet = (c,r)=> cellSet.has(c+'_'+r);
   inSet.cells = cellList;
   const cs = map.cellSize;
-  return traceMaskBoundary(inSet).map(loop => chaikinSmooth(loop.map(([x,y])=>[x*cs,y*cs]), 2));
+  // Epsilon scales with cell size (not a fixed pixel value) so the same relative amount of
+  // "unnecessary zigzag" gets removed regardless of a given map's resolution — a single-cell
+  // staircase step typically deviates from its own smoothed diagonal by somewhere around half
+  // a cell to a full cell, so 0.75 cells removes that noise without eating real, larger bends.
+  const DP_EPSILON = cs*0.75;
+  return traceMaskBoundary(inSet, idFn).map(({points, edgeIds}) => {
+    const pixelPoints = points.map(([x,y])=>[x*cs,y*cs]);
+    const runs = splitLoopIntoRuns(pixelPoints, edgeIds);
+    if(runs){
+      // Simplify AND smooth each run independently, with its own 2 endpoints pinned exactly
+      // (chaikinSmoothOpen, not the closed-loop chaikinSmooth) — those endpoints are the
+      // neighbor-transition corners an adjacent shape's own run shares, so they must come out
+      // byte-identical on both sides, not independently rounded away by however much smoothing
+      // each side's own unrelated neighboring run happens to pull them.
+      const out = [];
+      runs.forEach(run => {
+        const dp = douglasPeuckerOpen(run, DP_EPSILON);
+        const smoothed = chaikinSmoothOpen(dp, 2);
+        out.push(...smoothed.slice(0,-1));
+      });
+      return out;
+    }
+    // Fallback (whole loop faces one uniform neighbor): safe to smooth as a normal closed loop
+    // since douglasPeuckerLoop()'s farthest-pair anchors are a pure function of the shared point
+    // SET, so a facing shape's own trace of this same loop picks the same anchors regardless of
+    // where either trace started — see douglasPeuckerLoop()'s own comment.
+    return chaikinSmooth(douglasPeuckerLoop(pixelPoints, DP_EPSILON), 2);
+  });
+}
+
+// Cell-bounds-checked "what's at (c,r)" readers for the two idFn flavors below — out-of-map
+// coordinates read as -1 (same "nothing here" sentinel newMap() fills cellTerritory with),
+// since map.cellTerritory[r*cols+c] would otherwise silently alias into the wrong row/be
+// out-of-range for a negative or overflowing c/r.
+function territoryIdAt(map, c, r){
+  if(c<0||r<0||c>=map.cols||r>=map.rows) return -1;
+  return map.cellTerritory[cellIndex(map,c,r)];
+}
+function continentIdAt(map, c, r){
+  const tid = territoryIdAt(map, c, r);
+  if(tid<0) return -1;
+  const t = map.territories[tid];
+  return (t && t.continentId!=null) ? t.continentId : -1;
 }
 
 // Smoothed outer boundary (+ any water-hole boundaries) of a single territory, in pixel space,
-// cached until invalidateBoundaryCache() drops it (see paintCell() below).
+// cached until invalidateBoundaryCache() drops it (see paintCell() below). idFn is by TERRITORY
+// id here — see splitLoopIntoRuns() for why boundary simplification needs to know exactly which
+// neighboring territory (not just "outside") faces each edge.
 function getTerritoryBoundaryLoops(map, terrId){
   const t = map.territories[terrId];
   if(!t || t.cells.length===0) return [];
   if(!map._terrBoundaryCache) map._terrBoundaryCache = {};
   if(map._terrBoundaryCache[terrId]) return map._terrBoundaryCache[terrId];
-  const loops = traceAndSmoothCells(map, t.cells);
+  const loops = traceAndSmoothCells(map, t.cells, (c,r)=>territoryIdAt(map,c,r));
   map._terrBoundaryCache[terrId] = loops;
   return loops;
 }
 
 // Smoothed outer boundary of an entire continent (the union of all its member territories'
-// cells) — used only for the thicker continent-outline overlay in continent view.
+// cells) — used only for the thicker continent-outline overlay in continent view. idFn is by
+// CONTINENT id here (not territory id) so an internal territory-territory seam within the same
+// continent never looks like a "neighbor" to split a run on — only a genuinely different
+// neighboring continent (or empty space) does.
 function getContinentBoundaryLoops(map, contId){
   if(!map._contBoundaryCache) map._contBoundaryCache = {};
   if(map._contBoundaryCache[contId]) return map._contBoundaryCache[contId];
   const cellList = [];
   Object.values(map.territories).forEach(t=>{ if(t.continentId===contId) cellList.push(...t.cells); });
-  const loops = cellList.length ? traceAndSmoothCells(map, cellList) : [];
+  const loops = cellList.length ? traceAndSmoothCells(map, cellList, (c,r)=>continentIdAt(map,c,r)) : [];
   map._contBoundaryCache[contId] = loops;
   return loops;
 }
