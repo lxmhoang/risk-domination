@@ -18,6 +18,18 @@ function pathFromLoops(ctx, loops){
   });
 }
 
+// Lightens (percent>0) or darkens (percent<0) a "#rrggbb" color by roughly that percentage —
+// used to turn a territory's flat owner/continent color into a small radial gradient (see
+// drawGameCanvas) for a subtle "raised landmass" look, without needing actual texture art.
+function shadeColor(hex, percent){
+  const num = parseInt(hex.slice(1), 16);
+  const amt = Math.round(2.55*percent);
+  const r = clamp((num>>16)+amt, 0, 255);
+  const g = clamp(((num>>8)&0x00FF)+amt, 0, 255);
+  const b = clamp((num&0x0000FF)+amt, 0, 255);
+  return '#'+(0x1000000+r*0x10000+g*0x100+b).toString(16).slice(1);
+}
+
 // gameZoom=1 reproduces the old "shrink to fit the wrap, never enlarge" behavior exactly;
 // >1/<1 scale that baseline up/down. Kept separate from mapData.cellSize (which stays the
 // fixed base unit everything else — centroids, boundary-loop cache — is computed in) so
@@ -111,7 +123,16 @@ function drawGameCanvas(){
       color = ownerId!==undefined ? playerOf(ownerId).color : '#444';
     }
     pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
-    ctx.fillStyle = color;
+    // Radial gradient (lighter center, darker edge) instead of a flat fill — a cheap "raised
+    // landmass" look with no texture art needed. Radius is derived from cell count (roughly the
+    // territory's own extent in grid units) so it scales sensibly from a 1-cell sliver up to a
+    // large territory instead of using one fixed size for every shape.
+    const cx=t.centroid.x, cy=t.centroid.y;
+    const radius = Math.max(mapData.cellSize*1.5, Math.sqrt(t.cells.length)*mapData.cellSize*0.85);
+    const grad = ctx.createRadialGradient(cx,cy,0, cx,cy,radius);
+    grad.addColorStop(0, shadeColor(color, 16));
+    grad.addColorStop(1, shadeColor(color, -10));
+    ctx.fillStyle = grad;
     ctx.fill();
   });
 
@@ -161,8 +182,18 @@ function drawGameCanvas(){
     const armyCount = game.armies[t.id];
     if(armyCount===undefined) return;
     const x=t.centroid.x, y=t.centroid.y;
+    // Drop shadow behind the chip + a small off-center gradient inside it — turns the flat
+    // dark disc into a slightly "raised" badge. Shadow is scoped with save/restore so it
+    // doesn't also bleed onto the stroke/text drawn right after.
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4; ctx.shadowOffsetY=2;
     ctx.beginPath(); ctx.arc(x,y,13,0,Math.PI*2);
-    ctx.fillStyle='rgba(10,14,24,0.85)'; ctx.fill();
+    const badgeGrad = ctx.createRadialGradient(x-4,y-5,1, x,y,15);
+    badgeGrad.addColorStop(0, 'rgba(52,58,78,0.95)');
+    badgeGrad.addColorStop(1, 'rgba(8,10,18,0.92)');
+    ctx.fillStyle = badgeGrad;
+    ctx.fill();
+    ctx.restore();
     ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
     ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(armyCount, x, y+1);
@@ -225,12 +256,20 @@ function renderCombatLog(){
   });
 }
 
+// Staggers each die's existing .die "pop" entrance animation (see style.css) by its index so
+// dice land one after another instead of all popping in on the same frame — reads more like an
+// actual roll for very little extra code (just an inline animation-delay per element).
+function makeDie(v, win, delayIndex){
+  const d = el('div','die'+(win===true?' win':win===false?' lose':''), v);
+  d.style.animationDelay = (delayIndex*0.08)+'s';
+  return d;
+}
 function showDice(ad,dd,results){
   const box = $('diceBox'); box.innerHTML='';
   const g1 = el('div','dice-group');
-  ad.forEach((v,i)=>{ const win = i<results.length? results[i].win : null; g1.appendChild(el('div','die'+(win===true?' win':win===false?' lose':''), v)); });
+  ad.forEach((v,i)=>{ const win = i<results.length? results[i].win : null; g1.appendChild(makeDie(v, win, i)); });
   const g2 = el('div','dice-group');
-  dd.forEach((v,i)=>{ const win = i<results.length? !results[i].win : null; g2.appendChild(el('div','die'+(win===true?' win':win===false?' lose':''), v)); });
+  dd.forEach((v,i)=>{ const win = i<results.length? !results[i].win : null; g2.appendChild(makeDie(v, win, ad.length+i)); });
   box.appendChild(g1);
   box.appendChild(el('div','',' vs '));
   box.appendChild(g2);

@@ -59,7 +59,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 /* ---------- Screens ---------- */
 .screen{flex:1;display:none;min-height:0;}
-.screen.active{display:flex;flex-direction:column;}
+.screen.active{display:flex;flex-direction:column;animation:screenFadeIn .25s ease;}
+@keyframes screenFadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 
 /* ---------- Menu ---------- */
 #screen-menu{align-items:center;justify-content:center;padding:40px 20px;}
@@ -229,7 +230,11 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 /* Used to be var(--accent), a blue — same hue as the ocean background and the "Xanh dương"
    player color, so it stopped reading as a distinct highlight once the map turned ocean-blue.
    White doesn't collide with the ocean or any PLAYER_COLORS entry. */
-.player-card.active-turn{border-color:#fff;box-shadow:0 0 12px rgba(255,255,255,.45);}
+.player-card.active-turn{border-color:#fff;animation:activeTurnGlow 1.8s ease-in-out infinite;}
+@keyframes activeTurnGlow{
+  0%,100%{box-shadow:0 0 8px rgba(255,255,255,.35);}
+  50%{box-shadow:0 0 16px rgba(255,255,255,.65);}
+}
 .player-card .pline1{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-bottom:2px;}
 .player-card .pname-badge{
   color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
@@ -302,14 +307,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 @keyframes pop{0%{transform:scale(0) rotate(-30deg);}70%{transform:scale(1.15) rotate(8deg);}100%{transform:scale(1) rotate(0);}}
 
 /* modal */
-.modal-overlay{position:fixed;inset:0;background:rgba(4,7,14,.7);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px);}
-.modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;}
+.modal-overlay{position:fixed;inset:0;background:rgba(4,7,14,.7);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px);animation:modalOverlayIn .18s ease;}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;animation:modalPopIn .22s cubic-bezier(.34,1.56,.64,1);}
 .modal h3{margin-bottom:12px;}
+@keyframes modalOverlayIn{from{opacity:0;}to{opacity:1;}}
+@keyframes modalPopIn{from{opacity:0;transform:scale(.92) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
 .card-item{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);padding:10px 14px;border-radius:10px;margin:4px;font-size:24px;border:2px solid transparent;cursor:pointer;}
 .card-item.selected{border-color:var(--accent);}
 .card-item .label{font-size:11px;color:var(--muted);}
 
-#gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;padding:20px;text-align:center;}
+#gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;padding:20px;text-align:center;animation:modalOverlayIn .25s ease;}
 #gameOverOverlay h1{font-size:36px;}
 #gameOverOverlay p{color:var(--muted);}
 .summary-table-wrap{max-width:640px;width:92vw;max-height:44vh;overflow:auto;}
@@ -357,4 +364,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   .menu-card{padding:16px;}
   .menu-card h3{font-size:14.5px;}
   .menu-card p{font-size:12px;}
+}
+
+/* Turns off the decorative entrance/pulse animations added for visual polish (screen fade,
+   modal pop-in, dice pop, active-turn glow pulse) for anyone who's asked their OS to reduce
+   motion — none of them carry information the game depends on, so removing them is safe. */
+@media (prefers-reduced-motion: reduce){
+  .screen.active, .modal-overlay, .modal, #gameOverOverlay, .die, .player-card.active-turn{
+    animation:none !important;
+  }
 }
