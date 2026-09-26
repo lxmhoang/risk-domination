@@ -190,6 +190,12 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   border-radius:12px;padding:6px 8px;
 }
 #gameControlsTop .ov-section{flex-direction:row;}
+/* This one section has 6 items (log/pause/round counter/3 zoom buttons) — wide enough in one
+   row to make the whole right-side column noticeably wider than the other sections above it.
+   Wraps it into 2 rows instead (specificity needs #gameControlsTop #id to beat the row rule
+   above, which is #id .class). */
+#gameControlsTop #zoomControlsSection{flex-direction:column;}
+.ov-row{display:flex;flex-direction:row;gap:4px;align-items:center;}
 #gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:132px;overflow-y:auto;}
 #gamePhaseActionsWrap{position:static;max-height:none;}
 #gameTurnInfo{
