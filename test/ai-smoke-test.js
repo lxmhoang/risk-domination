@@ -98,6 +98,7 @@ function loadModules(sandbox, cardMode){
     function openCardsModal(){}
     function resetRenderAnimState(){} // real impl lives in 06-render-game.js, deliberately not loaded here
     function startAttackAnim(info, onDone){ if(onDone) onDone(); } // ditto — skip straight to onDone, no visuals to fake here
+    function showTurnIntro(){} // ditto — no DOM banner to fake here
     function showGameOver(winner){ __harnessLastWinner = winner ? winner.name : null; }
     const __realLogMsg = logMsg;
     logMsg = function(type, msg){

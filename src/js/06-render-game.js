@@ -99,6 +99,9 @@ function scheduleAnimFrame(){
 function resetRenderAnimState(){
   lastDrawnOwner = {}; lastDrawnArmies = {}; colorFades = {}; armyTweens = {}; captureParticles = [];
   attackAnim = null;
+  clearTimeout(turnIntroShowTimer); clearTimeout(turnIntroHideTimer);
+  const introOverlay = $('turnIntroOverlay');
+  if(introOverlay){ introOverlay.hidden = true; introOverlay.classList.remove('show'); }
 }
 function spawnCaptureParticles(x, y, color){
   const n = 14;
@@ -777,6 +780,33 @@ function positionLogPanel(){
   const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
   const screenRect = $('screen-game').getBoundingClientRect();
   panel.style.top = Math.max(10, wrapRect.bottom-screenRect.top+10)+'px';
+}
+
+// Brief "whose turn is it" banner shown at the start of every turn, human and AI alike — called
+// once from startReinforce() (04-game-state.js) so it fires exactly once per turn regardless of
+// who's playing it. Dims the map for ~1s behind the player's name (their own color drives the
+// glow via a CSS var) then fades back out; pointer-events:none in CSS means it never blocks
+// input, so it's purely decorative and safe to leave running even in spectator/fast-AI mode.
+const TURN_INTRO_SHOW_MS = 1000;
+const TURN_INTRO_FADE_MS = 400;
+let turnIntroShowTimer = null, turnIntroHideTimer = null;
+function showTurnIntro(player){
+  const overlay = $('turnIntroOverlay');
+  const nameEl = $('turnIntroName');
+  if(!overlay || !nameEl) return;
+  clearTimeout(turnIntroShowTimer); clearTimeout(turnIntroHideTimer);
+  nameEl.textContent = player.name;
+  overlay.style.setProperty('--turn-intro-color', player.color);
+  overlay.hidden = false;
+  // Force reflow so re-triggering mid-fade (rapid AI turns) restarts the CSS transition instead
+  // of silently no-opping because the 'show' class was already present.
+  overlay.classList.remove('show');
+  void overlay.offsetWidth;
+  overlay.classList.add('show');
+  turnIntroShowTimer = setTimeout(()=>{
+    overlay.classList.remove('show');
+    turnIntroHideTimer = setTimeout(()=>{ overlay.hidden = true; }, TURN_INTRO_FADE_MS);
+  }, TURN_INTRO_SHOW_MS);
 }
 
 function positionFloatingAttackButtons(){

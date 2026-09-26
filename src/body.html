@@ -228,6 +228,16 @@
        animated arrow between the two selected attack territories — see showFloatingAttackButtons(). -->
   <div id="floatingAttackButtons" hidden></div>
 
+  <!-- Brief "your turn" banner shown at the start of every turn (human and AI alike) — see
+       showTurnIntro() in 06-render-game.js, triggered from startReinforce(). Dims the map behind
+       it but is pointer-events:none so it never blocks input. -->
+  <div id="turnIntroOverlay" hidden>
+    <div id="turnIntroCard">
+      <div id="turnIntroLabel">Lượt của</div>
+      <div id="turnIntroName"></div>
+    </div>
+  </div>
+
   <!-- Top controls + phase actions share one vertical column anchored top-right (see
        #gameRightPanelWrap in style.css) — stacked in DOM/flex order so top controls render
        above phase actions, with a z-index above #gameLogPanel so phase actions (attack/

@@ -375,6 +375,19 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;padding:20px;text-align:center;animation:modalOverlayIn .25s ease;}
 #gameOverOverlay h1{font-size:36px;}
 #gameOverOverlay p{color:var(--muted);}
+
+/* Brief "whose turn is it" banner, shown for ~1s at the start of every turn (human and AI
+   alike — see showTurnIntro() in 06-render-game.js). Sits above the map but pointer-events:none
+   so it never intercepts clicks/taps even while visible; a spotlight-style radial glow behind
+   the player's name stands in for a literal stage-light effect without needing canvas work. */
+#turnIntroOverlay{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(4,7,14,0);transition:background .35s ease;}
+#turnIntroOverlay.show{background:rgba(4,7,14,.55);}
+#turnIntroCard{position:relative;text-align:center;opacity:0;transform:scale(.85);transition:opacity .35s ease,transform .35s cubic-bezier(.2,.9,.3,1.3);}
+#turnIntroOverlay.show #turnIntroCard{opacity:1;transform:scale(1);}
+#turnIntroCard::before{content:'';position:absolute;left:50%;top:50%;width:340px;height:340px;transform:translate(-50%,-50%);background:radial-gradient(circle, var(--turn-intro-color, #fff) 0%, transparent 65%);opacity:.35;filter:blur(4px);}
+#turnIntroLabel{position:relative;font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
+#turnIntroName{position:relative;font-size:40px;font-weight:800;color:var(--turn-intro-color, #fff);text-shadow:0 0 24px var(--turn-intro-color, #fff);}
+@media (max-width: 480px){ #turnIntroName{font-size:30px;} #turnIntroCard::before{width:260px;height:260px;} }
 .summary-table-wrap{max-width:640px;width:92vw;max-height:44vh;overflow:auto;}
 .summary-table{width:100%;border-collapse:collapse;font-size:13px;}
 .summary-table th,.summary-table td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);}
@@ -428,6 +441,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 @media (prefers-reduced-motion: reduce){
   .screen.active, .modal-overlay, .modal, #gameOverOverlay, .die, .player-card.active-turn{
     animation:none !important;
+  }
+  #turnIntroOverlay, #turnIntroOverlay.show, #turnIntroCard, #turnIntroOverlay.show #turnIntroCard{
+    transition:none !important;
   }
 }
 </style>
@@ -662,6 +678,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   <!-- Positioned in JS (positionFloatingAttackButtons(), 06-render-game.js) directly over the
        animated arrow between the two selected attack territories — see showFloatingAttackButtons(). -->
   <div id="floatingAttackButtons" hidden></div>
+
+  <!-- Brief "your turn" banner shown at the start of every turn (human and AI alike) — see
+       showTurnIntro() in 06-render-game.js, triggered from startReinforce(). Dims the map behind
+       it but is pointer-events:none so it never blocks input. -->
+  <div id="turnIntroOverlay" hidden>
+    <div id="turnIntroCard">
+      <div id="turnIntroLabel">Lượt của</div>
+      <div id="turnIntroName"></div>
+    </div>
+  </div>
 
   <!-- Top controls + phase actions share one vertical column anchored top-right (see
        #gameRightPanelWrap in style.css) — stacked in DOM/flex order so top controls render
@@ -2604,6 +2630,7 @@ function computeReinforcements(pid){ return reinforcementBreakdown(pid).total; }
 
 function startReinforce(){
   const p = currentPlayer();
+  showTurnIntro(p);
   game.phase='reinforce';
   const breakdown = reinforcementBreakdown(p.id);
   game.reinforceRemaining = breakdown.total;
@@ -3535,6 +3562,9 @@ function scheduleAnimFrame(){
 function resetRenderAnimState(){
   lastDrawnOwner = {}; lastDrawnArmies = {}; colorFades = {}; armyTweens = {}; captureParticles = [];
   attackAnim = null;
+  clearTimeout(turnIntroShowTimer); clearTimeout(turnIntroHideTimer);
+  const introOverlay = $('turnIntroOverlay');
+  if(introOverlay){ introOverlay.hidden = true; introOverlay.classList.remove('show'); }
 }
 function spawnCaptureParticles(x, y, color){
   const n = 14;
@@ -4213,6 +4243,33 @@ function positionLogPanel(){
   const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
   const screenRect = $('screen-game').getBoundingClientRect();
   panel.style.top = Math.max(10, wrapRect.bottom-screenRect.top+10)+'px';
+}
+
+// Brief "whose turn is it" banner shown at the start of every turn, human and AI alike — called
+// once from startReinforce() (04-game-state.js) so it fires exactly once per turn regardless of
+// who's playing it. Dims the map for ~1s behind the player's name (their own color drives the
+// glow via a CSS var) then fades back out; pointer-events:none in CSS means it never blocks
+// input, so it's purely decorative and safe to leave running even in spectator/fast-AI mode.
+const TURN_INTRO_SHOW_MS = 1000;
+const TURN_INTRO_FADE_MS = 400;
+let turnIntroShowTimer = null, turnIntroHideTimer = null;
+function showTurnIntro(player){
+  const overlay = $('turnIntroOverlay');
+  const nameEl = $('turnIntroName');
+  if(!overlay || !nameEl) return;
+  clearTimeout(turnIntroShowTimer); clearTimeout(turnIntroHideTimer);
+  nameEl.textContent = player.name;
+  overlay.style.setProperty('--turn-intro-color', player.color);
+  overlay.hidden = false;
+  // Force reflow so re-triggering mid-fade (rapid AI turns) restarts the CSS transition instead
+  // of silently no-opping because the 'show' class was already present.
+  overlay.classList.remove('show');
+  void overlay.offsetWidth;
+  overlay.classList.add('show');
+  turnIntroShowTimer = setTimeout(()=>{
+    overlay.classList.remove('show');
+    turnIntroHideTimer = setTimeout(()=>{ overlay.hidden = true; }, TURN_INTRO_FADE_MS);
+  }, TURN_INTRO_SHOW_MS);
 }
 
 function positionFloatingAttackButtons(){

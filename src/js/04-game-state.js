@@ -229,6 +229,7 @@ function computeReinforcements(pid){ return reinforcementBreakdown(pid).total; }
 
 function startReinforce(){
   const p = currentPlayer();
+  showTurnIntro(p);
   game.phase='reinforce';
   const breakdown = reinforcementBreakdown(p.id);
   game.reinforceRemaining = breakdown.total;
