@@ -86,7 +86,7 @@ let gameZoom = 1;
 // Zoom can't go below 1 (the safe-area-fit baseline computed in drawGameCanvas) — that's the
 // "don't let the overlays end up sitting on top of the map" limit asked for, not an arbitrary
 // number, so it's enforced by what zoom=1 itself means rather than a separate floor.
-const GAME_ZOOM_MIN = 1, GAME_ZOOM_MAX = 4;
+const GAME_ZOOM_MIN = 1, GAME_ZOOM_MAX = 8;
 function setGameZoom(z, anchorClientX, anchorClientY){
   const wrap = $('gameCanvasWrap');
   const wrapRect = wrap.getBoundingClientRect();
@@ -110,15 +110,16 @@ function drawGameCanvas(){
   const cs = mapData.cellSize;
   const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
   const wrap = $('gameCanvasWrap');
-  // "Safe area" = the wrap's box minus the fixed overlays around the edges (top icon controls,
-  // left player list, right phase-action buttons, bottom turn-info panel) plus a little
+  // "Safe area" = the wrap's box minus the fixed overlays around the edges (left player list,
+  // right control column, bottom turn-info panel — no dedicated top overlay anymore now that
+  // the former top icon bar lives inside #gameRightPanelWrap on the right) plus a little
   // breathing room. This is what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum
   // zoom the overlays only ever sit over empty background, never over the map itself — "zoom
   // out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa khoảng trống xung quanh".
   const margin = 16;
-  const topH = $('gameControlsTop').getBoundingClientRect().height;
+  const topH = 0;
   const leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
-  const rightW = $('gamePhaseActionsWrap').getBoundingClientRect().width;
+  const rightW = $('gameRightPanelWrap').getBoundingClientRect().width;
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
   const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
   const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
@@ -333,7 +334,11 @@ function drawGameCanvas(){
 
 function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
-  game.players.forEach(p=>{
+  // Shown in turn order (whoever goes first at the top), not game.players' fixed id order —
+  // game.turnOrder itself never changes after being shuffled once at game start, only turnIdx
+  // advances through it, so this ordering stays stable for the whole match.
+  const byTurnOrder = game.turnOrder.map(id=>game.players[id]);
+  byTurnOrder.forEach(p=>{
     const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
     const mine = ownedTerritories(p.id);
     const totalArmies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);

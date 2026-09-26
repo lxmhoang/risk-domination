@@ -187,16 +187,23 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    its content ever runs longer than the screen has room for (a short/narrow viewport with many
    sections, say) rather than overflowing off-screen. */
 .game-overlay{position:absolute;z-index:5;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 20px);}
+/* Top controls + phase actions now share ONE vertical column anchored top-right (see
+   #gameRightPanelWrap in body.html) instead of each independently absolutely-positioned —
+   z-index above #gameLogPanel (6) so phase-action buttons (attack/reinforce/etc) stay usable
+   even while the log panel is open and overlapping this same corner. */
+#gameRightPanelWrap{
+  position:absolute;top:10px;right:10px;z-index:7;
+  display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+  max-height:calc(100% - 20px);overflow-y:auto;
+}
 #gameControlsTop{
-  top:10px;left:50%;transform:translateX(-50%);
-  flex-direction:row;align-items:center;
-  max-height:none;max-width:calc(100% - 20px);overflow-x:auto;overflow-y:hidden;
+  position:static;max-height:none;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
   border-radius:12px;padding:6px 8px;
 }
 #gameControlsTop .ov-section{flex-direction:row;}
 #gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:132px;overflow-y:auto;}
-#gamePhaseActionsWrap{right:10px;top:50%;transform:translateY(-50%);overflow-y:auto;}
+#gamePhaseActionsWrap{position:static;max-height:none;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:10px;
   max-height:none;white-space:nowrap;
@@ -265,8 +272,11 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 /* Floats over the map below the top control bar, centered, rather than sharing grid/flex space
    with anything — rarely looked at, so it's a toggle (#btnToggleLog, in the top bar) on every
    screen size, collapsed by default (see body.html). */
+/* Right-anchored (was centered) so it lines up under #gameRightPanelWrap on the same side —
+   z-index 6, one below that wrap's 7, so it can freely overlap the top controls/phase-action
+   buttons above it (accepted — see body.html comment) without ever covering them. */
 #gameLogPanel{
-  position:absolute;top:64px;left:50%;transform:translateX(-50%);bottom:10px;
+  position:absolute;top:64px;right:10px;bottom:10px;
   width:min(360px, calc(100% - 20px));
   background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
   display:flex;flex-direction:column;padding:12px;overflow:hidden;z-index:6;
@@ -294,9 +304,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   }
   #rotatePrompt div:first-child{font-size:48px;}
   #screen-game.active #gameCanvasWrap,
-  #screen-game.active #gameControlsTop,
+  #screen-game.active #gameRightPanelWrap,
   #screen-game.active #gamePlayerListWrap,
-  #screen-game.active #gamePhaseActionsWrap,
   #screen-game.active #gameTurnInfo,
   #screen-game.active #gameLogPanel{display:none;}
 }
@@ -617,35 +626,41 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <canvas id="gameCanvas" width="960" height="600"></canvas>
   </div>
 
-  <div id="gameControlsTop" class="game-overlay">
-    <div class="ov-section">
-      <button class="ov-btn small" id="btnQuitGame" title="Về Menu">🏠</button>
-      <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
-      <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾</button>
+  <!-- Top controls + phase actions share one vertical column anchored top-right (see
+       #gameRightPanelWrap in style.css) — stacked in DOM/flex order so top controls render
+       above phase actions, with a z-index above #gameLogPanel so phase actions (attack/
+       reinforce/etc buttons) stay clickable even while the log panel is open and overlapping. -->
+  <div id="gameRightPanelWrap">
+    <div id="gameControlsTop" class="game-overlay">
+      <div class="ov-section">
+        <button class="ov-btn small" id="btnQuitGame" title="Về Menu">🏠</button>
+        <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
+        <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau">💾</button>
+      </div>
+      <div class="ov-section">
+        <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
+        <button class="ov-btn small" id="btnCardsModal" title="Thẻ bài">🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
+      </div>
+      <div class="ov-section">
+        <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
+        <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
+        <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+        <button class="ov-btn small" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
+        <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
+        <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
+      </div>
     </div>
-    <div class="ov-section">
-      <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
-      <button class="ov-btn small" id="btnCardsModal" title="Thẻ bài">🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
-    </div>
-    <div class="ov-section">
-      <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
-      <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
-      <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
-      <button class="ov-btn small" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
-      <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
-      <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
+
+    <div id="gamePhaseActionsWrap" class="game-overlay">
+      <div class="ov-section" id="phaseActionsSection">
+        <div id="actionHint">Chào mừng đến với ván chơi!</div>
+        <div id="phaseActions"></div>
+      </div>
     </div>
   </div>
 
   <div id="gamePlayerListWrap" class="game-overlay">
     <div id="playerList"></div>
-  </div>
-
-  <div id="gamePhaseActionsWrap" class="game-overlay">
-    <div class="ov-section" id="phaseActionsSection">
-      <div id="actionHint">Chào mừng đến với ván chơi!</div>
-      <div id="phaseActions"></div>
-    </div>
   </div>
 
   <div id="gameTurnInfo" class="game-overlay">
@@ -3442,7 +3457,7 @@ let gameZoom = 1;
 // Zoom can't go below 1 (the safe-area-fit baseline computed in drawGameCanvas) — that's the
 // "don't let the overlays end up sitting on top of the map" limit asked for, not an arbitrary
 // number, so it's enforced by what zoom=1 itself means rather than a separate floor.
-const GAME_ZOOM_MIN = 1, GAME_ZOOM_MAX = 4;
+const GAME_ZOOM_MIN = 1, GAME_ZOOM_MAX = 8;
 function setGameZoom(z, anchorClientX, anchorClientY){
   const wrap = $('gameCanvasWrap');
   const wrapRect = wrap.getBoundingClientRect();
@@ -3466,15 +3481,16 @@ function drawGameCanvas(){
   const cs = mapData.cellSize;
   const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
   const wrap = $('gameCanvasWrap');
-  // "Safe area" = the wrap's box minus the fixed overlays around the edges (top icon controls,
-  // left player list, right phase-action buttons, bottom turn-info panel) plus a little
+  // "Safe area" = the wrap's box minus the fixed overlays around the edges (left player list,
+  // right control column, bottom turn-info panel — no dedicated top overlay anymore now that
+  // the former top icon bar lives inside #gameRightPanelWrap on the right) plus a little
   // breathing room. This is what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum
   // zoom the overlays only ever sit over empty background, never over the map itself — "zoom
   // out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa khoảng trống xung quanh".
   const margin = 16;
-  const topH = $('gameControlsTop').getBoundingClientRect().height;
+  const topH = 0;
   const leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
-  const rightW = $('gamePhaseActionsWrap').getBoundingClientRect().width;
+  const rightW = $('gameRightPanelWrap').getBoundingClientRect().width;
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
   const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
   const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
@@ -3689,7 +3705,11 @@ function drawGameCanvas(){
 
 function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
-  game.players.forEach(p=>{
+  // Shown in turn order (whoever goes first at the top), not game.players' fixed id order —
+  // game.turnOrder itself never changes after being shuffled once at game start, only turnIdx
+  // advances through it, so this ordering stays stable for the whole match.
+  const byTurnOrder = game.turnOrder.map(id=>game.players[id]);
+  byTurnOrder.forEach(p=>{
     const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
     const mine = ownedTerritories(p.id);
     const totalArmies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
