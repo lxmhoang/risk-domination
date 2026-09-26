@@ -194,6 +194,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   display:flex;gap:8px;pointer-events:auto;
 }
 #floatingAttackButtons[hidden]{display:none;}
+/* See-through white instead of the usual solid .danger red — these two sit right on top of the
+   map/arrow, and a solid button here hid too much of what's underneath. */
+#floatingAttackButtons button{
+  background:rgba(255,255,255,.88);backdrop-filter:blur(3px);
+  color:var(--danger);border:1px solid rgba(255,255,255,.95);
+}
+#floatingAttackButtons button:hover{background:rgba(255,255,255,.98);}
 #gameControlsTop{
   position:static;max-height:none;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);

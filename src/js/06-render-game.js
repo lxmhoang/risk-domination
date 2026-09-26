@@ -126,8 +126,27 @@ function spawnCaptureParticles(x, y, color){
       This replaces the old always-a-popup result dialog with something that reads at a glance
       without interrupting play.
    ========================================================================= */
-const ATTACK_FLY_MS = 380, ATTACK_IMPACT_MS = 550, ATTACK_RETURN_MS = 380;
+const ATTACK_FLY_MS = 260, ATTACK_IMPACT_MS = 550, ATTACK_RETURN_MS = 320;
 let attackAnim = null; // see startAttackAnim() for the shape of the info object passed in
+
+// "Cụng ly" (clink glasses): the attacking badge pulls back a little first, THEN dashes in fast
+// — not a plain constant slide — same anticipation-then-strike beat as clinking two glasses
+// together. t is the fly stage's raw time fraction (0..1); dist is the actual on-screen distance
+// between the two badges, since the pullback itself is a fixed pixel amount (1/3 of a badge's
+// diameter) that needs converting to a fraction OF THAT distance to use as a position multiplier.
+// Can return slightly negative (behind the starting point) during the windup.
+function flyWindupFrac(t, dist){
+  const WINDUP_FRAC = 0.22;
+  const BADGE_DIAMETER = 26;
+  const pullbackFrac = Math.min(0.5, (BADGE_DIAMETER/3) / Math.max(1, dist));
+  if(t<WINDUP_FRAC){
+    const wt = t/WINDUP_FRAC;
+    return -pullbackFrac*Math.sin(wt*Math.PI/2); // eases into the pullback
+  }
+  const dt = (t-WINDUP_FRAC)/(1-WINDUP_FRAC);
+  const eased = dt*dt; // ease-in: slow leaving the pullback, fast arriving — the "dash"
+  return -pullbackFrac + (1+pullbackFrac)*eased;
+}
 
 // info: {fromId, toId, attLoss, defLoss, captured, fromCountBefore, toCountBefore,
 //        fromCountAfter, toCountAfter}. onDone is called once the whole sequence finishes
@@ -192,27 +211,36 @@ function drawAttackAnimBadges(ctx, now){
   let fx, fy, fCount;
   if(a.stage==='fly'){
     const t = Math.min(1, elapsed/ATTACK_FLY_MS);
-    fx = fromPos.x+(toPos.x-fromPos.x)*t; fy = fromPos.y+(toPos.y-fromPos.y)*t;
+    const dist = Math.hypot(toPos.x-fromPos.x, toPos.y-fromPos.y);
+    const frac = flyWindupFrac(t, dist);
+    fx = fromPos.x+(toPos.x-fromPos.x)*frac; fy = fromPos.y+(toPos.y-fromPos.y)*frac;
     fCount = a.fromCountBefore;
   } else if(a.stage==='impact'){
     fx = toPos.x; fy = toPos.y; fCount = a.fromCountAfter;
-  } else { // return
+  } else { // return — a plain ease-out read as a settling "bounce" home, no windup needed here
     const t = Math.min(1, elapsed/ATTACK_RETURN_MS);
-    fx = toPos.x+(fromPos.x-toPos.x)*t; fy = toPos.y+(fromPos.y-toPos.y)*t;
+    const eased = 1-(1-t)*(1-t);
+    fx = toPos.x+(fromPos.x-toPos.x)*eased; fy = toPos.y+(fromPos.y-toPos.y)*eased;
     fCount = a.fromCountAfter;
   }
   drawArmyBadge(ctx, fx, fy, fCount, {strokeColor:'#ffb04a'});
 
   // Impact damage numbers — "-N" floating up and fading over the impact stage, one per side
-  // showing what THAT side lost, right where the two badges collide.
+  // showing what THAT side lost, right where the two badges collide. Sized to at least the
+  // badge's own diameter so it reads as the main event, not a small label; outlined for
+  // legibility over whatever territory color happens to be underneath.
   if(a.stage==='impact'){
     const p = Math.min(1, elapsed/ATTACK_IMPACT_MS);
     ctx.save();
     ctx.globalAlpha = 1-p;
-    ctx.font='bold 13px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-    ctx.fillStyle='#ff6b6b';
-    ctx.fillText('-'+a.attLoss, toPos.x-18, toPos.y-18-p*18);
-    ctx.fillText('-'+a.defLoss, toPos.x+18, toPos.y-18-p*18);
+    ctx.font='800 28px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillStyle='#ff3b3b';
+    const dmgY = toPos.y-24-p*22;
+    ctx.strokeText('-'+a.attLoss, toPos.x-26, dmgY);
+    ctx.fillText('-'+a.attLoss, toPos.x-26, dmgY);
+    ctx.strokeText('-'+a.defLoss, toPos.x+26, dmgY);
+    ctx.fillText('-'+a.defLoss, toPos.x+26, dmgY);
     ctx.restore();
   }
 }
@@ -220,24 +248,64 @@ function drawAttackAnimBadges(ctx, now){
 // Repeatedly "draws itself out" from fromPos to toPos and resets — a constant, obvious indicator
 // of which way an attack would go, shown while both selectedFrom/selectedTo are chosen (and no
 // attackAnim is already playing — the flying badge above makes the direction clear enough then).
-function drawAttackArrow(ctx, from, to, now){
-  const CYCLE_MS = 900, GROW_FRAC = 0.75; // grows for the first 75% of each cycle, holds briefly, then restarts
-  const t = (now%CYCLE_MS)/CYCLE_MS;
-  const grow = Math.min(1, t/GROW_FRAC);
-  const ex = from.x+(to.x-from.x)*grow, ey = from.y+(to.y-from.y)*grow;
+// Rainbow palette shared by the gradient stroke (drawFlowLine) and the solid arrowhead fill
+// (rainbowColorAt, since a canvas gradient can't be "sampled" at one point — the arrowhead
+// needs an actual color, not a gradient object).
+const RAINBOW_COLORS = ['#ff5555','#ffa64d','#ffe14d','#5ce65c','#4da6ff','#a366ff'];
+function rainbowColorAt(t){
+  const seg = clamp(t,0,1)*(RAINBOW_COLORS.length-1);
+  const i = Math.min(RAINBOW_COLORS.length-2, Math.floor(seg));
+  return lerpColor(RAINBOW_COLORS[i], RAINBOW_COLORS[i+1], seg-i);
+}
+
+// Repeatedly "draws itself out" from just outside `from` to just outside `to` and resets — a
+// constant, obvious indicator of direction, shared by the attack arrow (rainbow, solid) and the
+// fortify-phase indicator (white, dashed, see drawGameCanvas). `gap` insets both ends away from
+// the two badges instead of drawing straight into them.
+function drawFlowLine(ctx, from, to, now, opts){
+  opts = opts || {};
+  const gap = opts.gap!=null ? opts.gap : 16;
+  const dx=to.x-from.x, dy=to.y-from.y;
+  const dist = Math.hypot(dx,dy);
+  if(dist < gap*2+4) return; // territories too close together for a gapped line to mean anything
+  const ux=dx/dist, uy=dy/dist;
+  const sx=from.x+ux*gap, sy=from.y+uy*gap;
+  const tx=to.x-ux*gap, ty=to.y-uy*gap;
+
+  const cycleMs = opts.cycleMs || 900;
+  const growFrac = 0.75; // grows for the first 75% of each cycle, holds briefly, then restarts
+  const t = (now%cycleMs)/cycleMs;
+  const grow = Math.min(1, t/growFrac);
+  const ex = sx+(tx-sx)*grow, ey = sy+(ty-sy)*grow;
+
   ctx.save();
-  ctx.strokeStyle='rgba(255,90,90,0.85)'; ctx.lineWidth=4; ctx.lineCap='round';
-  ctx.shadowColor='rgba(255,60,60,0.6)'; ctx.shadowBlur=6;
-  ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(ex,ey); ctx.stroke();
-  const ang = Math.atan2(to.y-from.y, to.x-from.x);
-  const headLen = 11;
-  ctx.beginPath();
-  ctx.moveTo(ex,ey);
-  ctx.lineTo(ex-headLen*Math.cos(ang-Math.PI/7), ey-headLen*Math.sin(ang-Math.PI/7));
-  ctx.lineTo(ex-headLen*Math.cos(ang+Math.PI/7), ey-headLen*Math.sin(ang+Math.PI/7));
-  ctx.closePath();
-  ctx.fillStyle='rgba(255,90,90,0.9)';
-  ctx.fill();
+  if(opts.dashed) ctx.setLineDash([8,7]);
+  ctx.lineWidth = opts.lineWidth || 4;
+  ctx.lineCap = 'round';
+  if(opts.rainbow){
+    const grad = ctx.createLinearGradient(sx,sy,tx,ty);
+    RAINBOW_COLORS.forEach((c,i)=> grad.addColorStop(i/(RAINBOW_COLORS.length-1), c));
+    ctx.strokeStyle = grad;
+    ctx.shadowColor='rgba(255,255,255,0.5)';
+  } else {
+    ctx.strokeStyle = opts.color || 'rgba(255,255,255,0.85)';
+    ctx.shadowColor = opts.color || 'rgba(255,255,255,0.5)';
+  }
+  ctx.shadowBlur = 5;
+  ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(ex,ey); ctx.stroke();
+
+  if(opts.arrowHead!==false){
+    ctx.setLineDash([]); // arrowhead itself always solid, even on an otherwise-dashed line
+    const ang = Math.atan2(ty-sy, tx-sx);
+    const headLen = opts.headLen || 11;
+    ctx.beginPath();
+    ctx.moveTo(ex,ey);
+    ctx.lineTo(ex-headLen*Math.cos(ang-Math.PI/7), ey-headLen*Math.sin(ang-Math.PI/7));
+    ctx.lineTo(ex-headLen*Math.cos(ang+Math.PI/7), ey-headLen*Math.sin(ang+Math.PI/7));
+    ctx.closePath();
+    ctx.fillStyle = opts.rainbow ? rainbowColorAt(grow) : (opts.color || 'rgba(255,255,255,0.9)');
+    ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -442,10 +510,20 @@ function drawGameCanvas(){
   // Attack-phase direction arrow: only while both ends are chosen and no attack is already
   // mid-animation (the flying badge below makes the direction obvious enough by itself then).
   const inAttackPhase = game.phase==='attack';
+  // Gated on canAttack (not just "both selected") — otherwise picking a non-adjacent or
+  // already-yours (e.g. just captured) territory as selectedTo would still draw an arrow to it.
   const showArrow = inAttackPhase && !attackAnim && game.selectedFrom!=null && game.selectedTo!=null &&
-    mapData.territories[game.selectedFrom] && mapData.territories[game.selectedTo];
+    mapData.territories[game.selectedFrom] && mapData.territories[game.selectedTo] &&
+    canAttack(game.selectedFrom, game.selectedTo, currentPlayerId());
   if(showArrow){
-    drawAttackArrow(ctx, mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid, now);
+    drawFlowLine(ctx, mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid, now,
+      {rainbow:true, cycleMs:1350, gap:16});
+  }
+  // Fortify-phase indicator: same idea, styled as a white dashed line instead of a solid
+  // rainbow arrow so the two phases don't look like the same action.
+  if(game.phase==='fortify' && game.selectedFrom!=null && game.selectedTo!=null && canFortifyNow(currentPlayer())){
+    drawFlowLine(ctx, mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid, now,
+      {color:'rgba(255,255,255,0.85)', dashed:true, cycleMs:1350, gap:16});
   }
   // army badges — selectedFrom (and selectedTo, if it's actually a legal attack target) pulse
   // bigger while chosen; skip fromId/toId here entirely while attackAnim owns them (drawn

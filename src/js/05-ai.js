@@ -386,7 +386,7 @@ function aiAttackStep(pid, intent){
   function step(){
     if(game.over) return;
     guard++;
-    if(guard>60){ aiFortifyStep(pid, intent); return; }
+    if(guard>60){ game.selectedFrom=null; game.selectedTo=null; aiFortifyStep(pid, intent); return; }
     const mine = ownedTerritories(pid);
     let bestOpt=null, bestEval=null;
     for(const from of mine){
@@ -404,25 +404,54 @@ function aiAttackStep(pid, intent){
     const effectiveThreshold = bestEval ? Math.max(1.05, profile.baseThreshold - bestEval.bonus*0.3) : Infinity;
     const meetsThreshold = !!bestOpt && bestEval.ratio>=effectiveThreshold;
     const forcedForCard = !meetsThreshold && !!bestOpt && stillNeedsCardThisTurn();
-    if(!bestOpt || (!meetsThreshold && !forcedForCard)){ aiFortifyStep(pid, intent); return; }
+    if(!bestOpt || (!meetsThreshold && !forcedForCard)){
+      game.selectedFrom=null; game.selectedTo=null;
+      aiFortifyStep(pid, intent); return;
+    }
 
     const { from, to } = bestOpt;
+    // Same selectedFrom/selectedTo the human attack UI uses — this is what makes the pulsing
+    // badges and the animated arrow (drawGameCanvas, see attackAnim in 06-render-game.js) show
+    // up for an AI's move too, not just a human's. Shown for one aiDelay() beat (the AI's
+    // existing "thinking" pause, previously just empty wait time) before actually fighting.
+    game.selectedFrom = from; game.selectedTo = to;
+    renderGame();
+    if(game.over) return;
+    aiSchedule(()=> executeAttack(from, to, forcedForCard), aiDelay(260));
+  }
+  function executeAttack(from, to, forcedForCard){
+    if(game.over) return;
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
     const defenderId = game.owner[to];
     const defenderName = game.players[defenderId].name;
     if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.', [pid, defenderId]);
+    const fromCountBefore = game.armies[from], toCountBefore = game.armies[to];
     const result = battleBatch(from, to, fromName, toName, defenderName, forcedForCard);
-    if(result.rounds>0){
-      const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
-      logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`, [pid, defenderId]);
-      if(result.lastRes) showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
-      if(result.captured){
-        logMsg('capture', `${p.name} chiếm được ${toName}!`, [pid, defenderId]);
-      }
+    const fromCountAfter = game.armies[from], toCountAfter = game.armies[to];
+    function nextDecision(){
+      game.selectedFrom=null; game.selectedTo=null;
+      if(game.over) return;
+      // Deliberately NOT aiDelay() here: in spectator mode that ignores its argument and always
+      // waits the full configured spectator delay — stacking a second one of those on top of the
+      // one already spent before the strike (see step()) plus the ~1.1s attackAnim itself would
+      // make every attack take several seconds. The animation just played already gave viewers
+      // something to watch; this is just a small breather before the next decision, not a second
+      // full "thinking pause".
+      aiSchedule(step, 80);
     }
+    if(result.rounds<=0){ renderGame(); nextDecision(); return; }
+    const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
+    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`, [pid, defenderId]);
+    if(result.lastRes) showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
+    if(result.captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [pid, defenderId]);
+    // startAttackAnim's onDone fires once the fly/impact/return sequence finishes (see
+    // 06-render-game.js) — the next attack decision waits for that instead of firing right
+    // after the battle resolves, same as the human attack flow.
+    startAttackAnim({
+      fromId:from, toId:to, attLoss:result.attLossTotal, defLoss:result.defLossTotal, captured:result.captured,
+      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+    }, nextDecision);
     renderGame();
-    if(game.over) return;
-    aiSchedule(step, aiDelay(260));
   }
   step();
 }
