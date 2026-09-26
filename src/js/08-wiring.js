@@ -182,6 +182,13 @@ $('btnToggleContinentView').addEventListener('click', ()=>{
   if(game) drawGameCanvas();
 });
 
+$('btnToggleLogFilter').addEventListener('click', ()=>{
+  logFilterMine = !logFilterMine;
+  $('btnToggleLogFilter').classList.toggle('active', logFilterMine);
+  $('btnToggleLogFilter').title = logFilterMine ? 'Đang lọc: chỉ sự kiện của tôi (bấm để hiện tất cả)' : 'Chỉ hiện sự kiện của tôi';
+  if(game) renderCombatLog();
+});
+
 // Editor wiring
 document.querySelectorAll('.tool-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{

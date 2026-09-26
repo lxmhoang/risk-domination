@@ -213,7 +213,13 @@ function renderPlayerList(){
 function renderCombatLog(){
   const wrap = $('combatLog');
   wrap.innerHTML='';
-  game.log.slice(-60).reverse().forEach(entry=>{
+  // Filter BEFORE slicing to the last 60 — otherwise, with logFilterMine on, 60 unrelated
+  // events could push every entry that's actually about you out of the visible window even
+  // though plenty exist further back in game.log.
+  const entries = logFilterMine
+    ? game.log.filter(entry=> !entry.playerIds || entry.playerIds.includes(0))
+    : game.log;
+  entries.slice(-60).reverse().forEach(entry=>{
     const d = el('div','log-entry '+entry.type, entry.msg);
     wrap.appendChild(d);
   });
@@ -258,7 +264,8 @@ function allOutAttack(){
   if(!canAttackNow(p)) return;
   const fromId = game.selectedFrom, toId = game.selectedTo;
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderName = game.players[game.owner[toId]].name;
+  const defenderId = game.owner[toId];
+  const defenderName = game.players[defenderId].name;
   let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
   while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
     lastRes = doBattle(fromId, toId, {silent:true});
@@ -267,9 +274,9 @@ function allOutAttack(){
   }
   if(rounds>0){
     const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
-    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`);
+    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`, [p.id, defenderId]);
     if(lastRes) showDice(lastRes.ad, lastRes.dd, lastRes.results);
-    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`);
+    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [p.id, defenderId]);
     recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
   }
   if(game.armies[fromId]<2) game.selectedFrom=null;
@@ -377,7 +384,7 @@ function openFortifyModal(fromId, toId){
   confirmBtn.addEventListener('click', ()=>{
     const n = Number(slider.value);
     game.armies[fromId] -= n; game.armies[toId] += n;
-    logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.');
+    logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.', p.id);
     close();
     game.selectedFrom=null; game.selectedTo=null;
     renderGame();

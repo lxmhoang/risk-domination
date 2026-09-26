@@ -279,7 +279,7 @@ function tradeCards(p, indices){
   } else {
     game.pool[p.id] = (game.pool[p.id]||0) + value;
   }
-  logMsg('info', p.name+' đổi thẻ bài lấy '+value+' quân.');
+  logMsg('info', p.name+' đổi thẻ bài lấy '+value+' quân.', p.id);
   renderGame();
 }
 
@@ -408,15 +408,16 @@ function aiAttackStep(pid, intent){
 
     const { from, to } = bestOpt;
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
-    const defenderName = game.players[game.owner[to]].name;
-    if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.');
+    const defenderId = game.owner[to];
+    const defenderName = game.players[defenderId].name;
+    if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.', [pid, defenderId]);
     const result = battleBatch(from, to, fromName, toName, defenderName, forcedForCard);
     if(result.rounds>0){
       const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
-      logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`);
+      logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`, [pid, defenderId]);
       if(result.lastRes) showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
       if(result.captured){
-        logMsg('capture', `${p.name} chiếm được ${toName}!`);
+        logMsg('capture', `${p.name} chiếm được ${toName}!`, [pid, defenderId]);
       }
     }
     renderGame();
@@ -462,7 +463,7 @@ function aiFortifyStep(pid, intent){
       const moving = game.armies[src]-1;
       if(moving>0){
         game.armies[src]-=moving; game.armies[bestDst]+=moving;
-        logMsg('info', p.name+' tăng cường '+moving+' quân đến '+mapData.territories[bestDst].name+'.');
+        logMsg('info', p.name+' tăng cường '+moving+' quân đến '+mapData.territories[bestDst].name+'.', pid);
       }
     }
   }

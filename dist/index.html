@@ -265,7 +265,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   display:flex;flex-direction:column;padding:12px;overflow:hidden;z-index:6;
 }
 #gameLogPanel.collapsed{display:none;}
-#gameLogTitle{font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;margin-bottom:6px;}
+.game-log-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+#gameLogTitle{font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.6px;margin:0;}
+#btnToggleLogFilter{width:26px;height:26px;font-size:12px;flex-shrink:0;}
 #combatLog{flex:1;overflow-y:auto;font-size:12px;display:flex;flex-direction:column;gap:5px;padding-top:6px;}
 .log-entry{padding:6px 8px;border-radius:8px;background:var(--panel2);line-height:1.4;}
 .log-entry.attack{border-left:3px solid var(--danger);}
@@ -636,7 +638,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   </div>
 
   <div id="gameLogPanel" class="collapsed">
-    <h4 id="gameLogTitle">📜 Nhật ký trận đấu</h4>
+    <div class="game-log-header">
+      <h4 id="gameLogTitle">📜 Nhật ký trận đấu</h4>
+      <button class="ov-btn small" id="btnToggleLogFilter" title="Chỉ hiện sự kiện của tôi">🎯</button>
+    </div>
     <div id="gameLogContent">
       <div id="diceBox"></div>
       <div id="combatLog"></div>
@@ -2089,6 +2094,11 @@ function importMapJSON(obj){
    ========================================================================= */
 let game = null; // set on start
 let showContinentsGame = false;
+// Combat-log filter (toggled by btnToggleLogFilter, see 08-wiring.js): when true,
+// renderCombatLog() only shows entries tagged with player 0's id — "your" slot, same
+// convention as isHuman:i===0 in readPlayerConfigs() (still true even in spectator mode,
+// where index 0 is AI-controlled but is still nominally "your" side).
+let logFilterMine = false;
 
 function standardStartingArmies(numPlayers){
   const table = {2:40,3:35,4:30,5:25,6:20};
@@ -2166,8 +2176,13 @@ function currentPlayer(){ return game.players[currentPlayerId()]; }
 function ownedTerritories(pid){ return Object.keys(game.owner).map(Number).filter(id=>game.owner[id]===pid); }
 function isAlive(pid){ return game.players[pid].alive; }
 
-function logMsg(type,msg){
-  game.log.push({type,msg});
+// playerIds: which player(s) this entry is "about" — a single id, an array of ids, or
+// omitted for a global/system message (game start, etc). Read by renderCombatLog() when
+// logFilterMine is on: an entry with no playerIds always shows, one with playerIds only
+// shows if player 0 ("you", see logFilterMine above) is among them.
+function logMsg(type,msg,playerIds){
+  const ids = playerIds==null ? null : (Array.isArray(playerIds) ? playerIds : [playerIds]);
+  game.log.push({type,msg,playerIds:ids});
   renderCombatLog();
 }
 
@@ -2310,7 +2325,7 @@ function startReinforce(){
   p.totalReinforced += game.reinforceRemaining;
   const parts = [`${breakdown.territoryCount} lãnh thổ → ${breakdown.base}`]
     .concat(breakdown.continentBonuses.map(c=>`${c.name} +${c.bonus}`));
-  logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`);
+  logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`, p.id);
   if(!p.isHuman){
     aiRunFullTurn(p.id);
   } else {
@@ -2376,7 +2391,7 @@ function doBattle(fromId,toId,opts){
   const defP = game.players[game.owner[toId]];
   if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
   attP.totalKills += defLoss; // cumulative since game start, shown in the topbar
-  if(!silent) logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
+  if(!silent) logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`, [attP.id, defP.id]);
   let captured=false, moving=null, maxMovable=null;
   if(game.armies[toId]<=0){
     captured=true;
@@ -2393,7 +2408,7 @@ function doBattle(fromId,toId,opts){
     game.armies[toId] = moving;
     game.armies[fromId] -= moving;
     attP.capturedThisTurn = true;
-    if(!silent) logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`);
+    if(!silent) logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`, [attP.id, oldOwner]);
     checkElimination(oldOwner, attP.id);
   }
   if(!silent) renderGame();
@@ -2522,7 +2537,7 @@ function checkElimination(pid, byPid){
   if(ownedTerritories(pid).length===0){
     p.alive=false;
     p.eliminatedRound = game.roundNumber;
-    logMsg('capture', `${p.name} đã bị loại khỏi ván chơi!`);
+    logMsg('capture', `${p.name} đã bị loại khỏi ván chơi!`, byPid==null ? pid : [pid, byPid]);
     // transfer cards
     const byP = game.players[byPid];
     if(byP && p.cards.length){ byP.cards = byP.cards.concat(p.cards); p.cards=[]; }
@@ -2571,7 +2586,7 @@ function endTurn(){
   if(awardCard){
     const type = CARD_TYPES[rand(3)];
     p.cards.push(type);
-    logMsg('info', p.name+' nhận được 1 thẻ bài '+CARD_ICON[type]+'.');
+    logMsg('info', p.name+' nhận được 1 thẻ bài '+CARD_ICON[type]+'.', p.id);
   }
   p.capturedThisTurn=false;
   p.killedThisTurn=false;
@@ -2916,7 +2931,7 @@ function tradeCards(p, indices){
   } else {
     game.pool[p.id] = (game.pool[p.id]||0) + value;
   }
-  logMsg('info', p.name+' đổi thẻ bài lấy '+value+' quân.');
+  logMsg('info', p.name+' đổi thẻ bài lấy '+value+' quân.', p.id);
   renderGame();
 }
 
@@ -3045,15 +3060,16 @@ function aiAttackStep(pid, intent){
 
     const { from, to } = bestOpt;
     const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
-    const defenderName = game.players[game.owner[to]].name;
-    if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.');
+    const defenderId = game.owner[to];
+    const defenderName = game.players[defenderId].name;
+    if(forcedForCard) logMsg('info', p.name+' liều đánh '+toName+' để kiếm bài.', [pid, defenderId]);
     const result = battleBatch(from, to, fromName, toName, defenderName, forcedForCard);
     if(result.rounds>0){
       const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
-      logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`);
+      logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`, [pid, defenderId]);
       if(result.lastRes) showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
       if(result.captured){
-        logMsg('capture', `${p.name} chiếm được ${toName}!`);
+        logMsg('capture', `${p.name} chiếm được ${toName}!`, [pid, defenderId]);
       }
     }
     renderGame();
@@ -3099,7 +3115,7 @@ function aiFortifyStep(pid, intent){
       const moving = game.armies[src]-1;
       if(moving>0){
         game.armies[src]-=moving; game.armies[bestDst]+=moving;
-        logMsg('info', p.name+' tăng cường '+moving+' quân đến '+mapData.territories[bestDst].name+'.');
+        logMsg('info', p.name+' tăng cường '+moving+' quân đến '+mapData.territories[bestDst].name+'.', pid);
       }
     }
   }
@@ -3323,7 +3339,13 @@ function renderPlayerList(){
 function renderCombatLog(){
   const wrap = $('combatLog');
   wrap.innerHTML='';
-  game.log.slice(-60).reverse().forEach(entry=>{
+  // Filter BEFORE slicing to the last 60 — otherwise, with logFilterMine on, 60 unrelated
+  // events could push every entry that's actually about you out of the visible window even
+  // though plenty exist further back in game.log.
+  const entries = logFilterMine
+    ? game.log.filter(entry=> !entry.playerIds || entry.playerIds.includes(0))
+    : game.log;
+  entries.slice(-60).reverse().forEach(entry=>{
     const d = el('div','log-entry '+entry.type, entry.msg);
     wrap.appendChild(d);
   });
@@ -3368,7 +3390,8 @@ function allOutAttack(){
   if(!canAttackNow(p)) return;
   const fromId = game.selectedFrom, toId = game.selectedTo;
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderName = game.players[game.owner[toId]].name;
+  const defenderId = game.owner[toId];
+  const defenderName = game.players[defenderId].name;
   let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
   while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
     lastRes = doBattle(fromId, toId, {silent:true});
@@ -3377,9 +3400,9 @@ function allOutAttack(){
   }
   if(rounds>0){
     const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
-    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`);
+    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`, [p.id, defenderId]);
     if(lastRes) showDice(lastRes.ad, lastRes.dd, lastRes.results);
-    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`);
+    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [p.id, defenderId]);
     recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
   }
   if(game.armies[fromId]<2) game.selectedFrom=null;
@@ -3487,7 +3510,7 @@ function openFortifyModal(fromId, toId){
   confirmBtn.addEventListener('click', ()=>{
     const n = Number(slider.value);
     game.armies[fromId] -= n; game.armies[toId] += n;
-    logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.');
+    logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.', p.id);
     close();
     game.selectedFrom=null; game.selectedTo=null;
     renderGame();
@@ -3904,6 +3927,13 @@ $('btnToggleContinentView').addEventListener('click', ()=>{
   showContinentsGame = !showContinentsGame;
   $('btnToggleContinentView').classList.toggle('active', showContinentsGame);
   if(game) drawGameCanvas();
+});
+
+$('btnToggleLogFilter').addEventListener('click', ()=>{
+  logFilterMine = !logFilterMine;
+  $('btnToggleLogFilter').classList.toggle('active', logFilterMine);
+  $('btnToggleLogFilter').title = logFilterMine ? 'Đang lọc: chỉ sự kiện của tôi (bấm để hiện tất cả)' : 'Chỉ hiện sự kiện của tôi';
+  if(game) renderCombatLog();
 });
 
 // Editor wiring

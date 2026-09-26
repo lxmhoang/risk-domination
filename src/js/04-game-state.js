@@ -3,6 +3,11 @@
    ========================================================================= */
 let game = null; // set on start
 let showContinentsGame = false;
+// Combat-log filter (toggled by btnToggleLogFilter, see 08-wiring.js): when true,
+// renderCombatLog() only shows entries tagged with player 0's id — "your" slot, same
+// convention as isHuman:i===0 in readPlayerConfigs() (still true even in spectator mode,
+// where index 0 is AI-controlled but is still nominally "your" side).
+let logFilterMine = false;
 
 function standardStartingArmies(numPlayers){
   const table = {2:40,3:35,4:30,5:25,6:20};
@@ -80,8 +85,13 @@ function currentPlayer(){ return game.players[currentPlayerId()]; }
 function ownedTerritories(pid){ return Object.keys(game.owner).map(Number).filter(id=>game.owner[id]===pid); }
 function isAlive(pid){ return game.players[pid].alive; }
 
-function logMsg(type,msg){
-  game.log.push({type,msg});
+// playerIds: which player(s) this entry is "about" — a single id, an array of ids, or
+// omitted for a global/system message (game start, etc). Read by renderCombatLog() when
+// logFilterMine is on: an entry with no playerIds always shows, one with playerIds only
+// shows if player 0 ("you", see logFilterMine above) is among them.
+function logMsg(type,msg,playerIds){
+  const ids = playerIds==null ? null : (Array.isArray(playerIds) ? playerIds : [playerIds]);
+  game.log.push({type,msg,playerIds:ids});
   renderCombatLog();
 }
 
@@ -224,7 +234,7 @@ function startReinforce(){
   p.totalReinforced += game.reinforceRemaining;
   const parts = [`${breakdown.territoryCount} lãnh thổ → ${breakdown.base}`]
     .concat(breakdown.continentBonuses.map(c=>`${c.name} +${c.bonus}`));
-  logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`);
+  logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`, p.id);
   if(!p.isHuman){
     aiRunFullTurn(p.id);
   } else {
@@ -290,7 +300,7 @@ function doBattle(fromId,toId,opts){
   const defP = game.players[game.owner[toId]];
   if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
   attP.totalKills += defLoss; // cumulative since game start, shown in the topbar
-  if(!silent) logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`);
+  if(!silent) logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`, [attP.id, defP.id]);
   let captured=false, moving=null, maxMovable=null;
   if(game.armies[toId]<=0){
     captured=true;
@@ -307,7 +317,7 @@ function doBattle(fromId,toId,opts){
     game.armies[toId] = moving;
     game.armies[fromId] -= moving;
     attP.capturedThisTurn = true;
-    if(!silent) logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`);
+    if(!silent) logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`, [attP.id, oldOwner]);
     checkElimination(oldOwner, attP.id);
   }
   if(!silent) renderGame();
@@ -436,7 +446,7 @@ function checkElimination(pid, byPid){
   if(ownedTerritories(pid).length===0){
     p.alive=false;
     p.eliminatedRound = game.roundNumber;
-    logMsg('capture', `${p.name} đã bị loại khỏi ván chơi!`);
+    logMsg('capture', `${p.name} đã bị loại khỏi ván chơi!`, byPid==null ? pid : [pid, byPid]);
     // transfer cards
     const byP = game.players[byPid];
     if(byP && p.cards.length){ byP.cards = byP.cards.concat(p.cards); p.cards=[]; }
@@ -485,7 +495,7 @@ function endTurn(){
   if(awardCard){
     const type = CARD_TYPES[rand(3)];
     p.cards.push(type);
-    logMsg('info', p.name+' nhận được 1 thẻ bài '+CARD_ICON[type]+'.');
+    logMsg('info', p.name+' nhận được 1 thẻ bài '+CARD_ICON[type]+'.', p.id);
   }
   p.capturedThisTurn=false;
   p.killedThisTurn=false;
