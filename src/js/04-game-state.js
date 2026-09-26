@@ -331,9 +331,12 @@ function doBattle(fromId,toId,opts){
 // attack also captured the territory, instead of only ever showing that decision (and only
 // when there was a non-trivial amount to redistribute) while every other outcome sat in the
 // combat log alone.
-function showAttackResultModal(fromId, toId, info){
-  // info: {captured, attLoss, defLoss, rounds, moving, maxMovable} — moving/maxMovable are
-  // only meaningful when captured is true.
+// Shown by the human attack entry points (doSingleAttack()/allOutAttack() in
+// 06-render-game.js) ONLY when a capture leaves extra armies worth deciding how to split — a
+// plain "-N" battle result is now conveyed visually instead (the flying-badge/impact animation
+// in drawGameCanvas(), see attackAnim), so there's nothing to show here when there's no real
+// choice to make (not captured, or captured with nothing left over to redistribute).
+function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   const fromName = mapData.territories[fromId].name;
   const toName = mapData.territories[toId].name;
   const overlay = el('div','modal-overlay');
@@ -343,30 +346,10 @@ function showAttackResultModal(fromId, toId, info){
     if(keyHandler) document.removeEventListener('keydown', keyHandler);
     document.body.removeChild(overlay);
   }
-  function addCloseButton(){
-    const closeBtn = el('button','primary',withShortcut('Đóng','X')); closeBtn.title='Phím tắt: X';
-    closeBtn.addEventListener('click', close);
-    modal.appendChild(closeBtn);
-    keyHandler = e=>{ if(e.key.toLowerCase()==='x'){ e.preventDefault(); close(); } };
-    document.addEventListener('keydown', keyHandler);
-  }
 
-  const roundsLabel = info.rounds>1 ? ` qua ${info.rounds} hiệp` : '';
-  const resultLine = `Bạn mất ${info.attLoss} quân, đối phương mất ${info.defLoss} quân${roundsLabel}.`;
-
-  if(!info.captured){
-    modal.appendChild(el('h3','', `⚔️ Không chiếm được "${toName}"`));
-    modal.appendChild(el('p','', resultLine));
-    addCloseButton();
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    return;
-  }
-
-  const alreadyMoved = info.moving, maxMovableArg = info.maxMovable;
-  const extraMax = maxMovableArg - alreadyMoved; // how many MORE can move beyond the guaranteed minimum
+  const alreadyMoved = moving;
+  const extraMax = maxMovable - alreadyMoved; // how many MORE can move beyond the guaranteed minimum
   modal.appendChild(el('h3','', `🎉 Chiếm được "${toName}"!`));
-  modal.appendChild(el('p','', resultLine));
   modal.appendChild(el('p','', `Bạn có thể chuyển thêm quân từ "${fromName}" sang "${toName}" (đã chuyển tối thiểu ${alreadyMoved} quân theo luật).`));
 
   const bigRow = el('div','');
@@ -381,51 +364,49 @@ function showAttackResultModal(fromId, toId, info){
   bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
   modal.appendChild(bigRow);
 
-  if(extraMax>0){
-    const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
-    const slider = document.createElement('input');
-    slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
-    slider.style.flex='1';
-    const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
-    slider.addEventListener('input', ()=>{
-      const extra = Number(slider.value);
-      sliderLabel.textContent = '+'+extra;
-      fromCount.textContent = String(game.armies[fromId]-extra);
-      toCount.textContent = String(game.armies[toId]+extra);
-    });
-    sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
-    modal.appendChild(sliderRow);
-    modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
+  // Caller (doSingleAttack()/allOutAttack()) only opens this modal when extraMax>0 — there's
+  // always a real slider choice to make here, never just a bare "Đóng" button.
+  const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
+  const slider = document.createElement('input');
+  slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
+  slider.style.flex='1';
+  const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
+  slider.addEventListener('input', ()=>{
+    const extra = Number(slider.value);
+    sliderLabel.textContent = '+'+extra;
+    fromCount.textContent = String(game.armies[fromId]-extra);
+    toCount.textContent = String(game.armies[toId]+extra);
+  });
+  sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
+  modal.appendChild(sliderRow);
+  modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
 
-    const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
-    const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','G')); quickMin.title='Phím tắt: G';
-    quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
-    const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
-    quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
-    const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
-    confirmBtn.addEventListener('click', ()=>{
-      const extra = Number(slider.value);
-      game.armies[fromId] -= extra;
-      game.armies[toId] += extra;
-      close();
-      renderGame();
-    });
-    btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
-    modal.appendChild(btnRow);
+  const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
+  const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','G')); quickMin.title='Phím tắt: G';
+  quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
+  const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
+  quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
+  const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
+  confirmBtn.addEventListener('click', ()=>{
+    const extra = Number(slider.value);
+    game.armies[fromId] -= extra;
+    game.armies[toId] += extra;
+    close();
+    renderGame();
+  });
+  btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
+  modal.appendChild(btnRow);
 
-    keyHandler = function(e){
-      const key = e.key.toLowerCase();
-      if(key==='g'){ e.preventDefault(); quickMin.click(); }
-      else if(key==='t'){ e.preventDefault(); quickMax.click(); }
-      else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
-    };
-    document.addEventListener('keydown', keyHandler);
-    // sync the big from/to numbers with the slider's initial value (defaults to max extra) —
-    // without this they show the pre-transfer counts until the user drags the slider once.
-    slider.dispatchEvent(new Event('input'));
-  } else {
-    addCloseButton();
-  }
+  keyHandler = function(e){
+    const key = e.key.toLowerCase();
+    if(key==='g'){ e.preventDefault(); quickMin.click(); }
+    else if(key==='t'){ e.preventDefault(); quickMax.click(); }
+    else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
+  };
+  document.addEventListener('keydown', keyHandler);
+  // sync the big from/to numbers with the slider's initial value (defaults to max extra) —
+  // without this they show the pre-transfer counts until the user drags the slider once.
+  slider.dispatchEvent(new Event('input'));
 
   overlay.appendChild(modal);
   document.body.appendChild(overlay);

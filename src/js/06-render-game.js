@@ -37,6 +37,37 @@ function lerpColor(hexA, hexB, t){
   return '#'+(0x1000000+r*0x10000+g*0x100+bl).toString(16).slice(1);
 }
 
+// The army-count chip drawn on every territory — factored out of the main badge loop so the
+// attack-phase pulse (bigger scale), the flying-attack badges, and the hollow placeholder they
+// leave behind (opts.hollow — no fill gradient, no number) can all reuse the exact same look
+// instead of hand-drawing 3 slightly-different versions of the same chip.
+function drawArmyBadge(ctx, x, y, count, opts){
+  opts = opts || {};
+  const scale = opts.scale || 1;
+  const r = 13*scale;
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4*scale; ctx.shadowOffsetY=2*scale;
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+  if(opts.hollow){
+    ctx.fillStyle='rgba(8,10,18,0.35)';
+  } else {
+    const badgeGrad = ctx.createRadialGradient(x-4*scale,y-5*scale,1, x,y,15*scale);
+    badgeGrad.addColorStop(0, 'rgba(52,58,78,0.95)');
+    badgeGrad.addColorStop(1, 'rgba(8,10,18,0.92)');
+    ctx.fillStyle = badgeGrad;
+  }
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = opts.strokeColor || '#fff';
+  ctx.lineWidth = 1.5*scale;
+  ctx.stroke();
+  if(count!=null){
+    ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(12*scale)+'px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(count, x, y+1);
+  }
+}
+
 /* =========================================================================
    RENDER ANIMATION STATE
    ---------------------------------------------------------------------
@@ -67,6 +98,7 @@ function scheduleAnimFrame(){
 // into it (e.g. every territory "fading in" from the previous match's final colors).
 function resetRenderAnimState(){
   lastDrawnOwner = {}; lastDrawnArmies = {}; colorFades = {}; armyTweens = {}; captureParticles = [];
+  attackAnim = null;
 }
 function spawnCaptureParticles(x, y, color){
   const n = 14;
@@ -75,6 +107,150 @@ function spawnCaptureParticles(x, y, color){
     const speed = 1.2+Math.random()*1.8;
     captureParticles.push({x, y, vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, color, start:performance.now()});
   }
+}
+
+/* =========================================================================
+   ATTACK-PHASE VISUALS
+   ---------------------------------------------------------------------
+   Three independent pieces, all driven by the same requestAnimationFrame loop as the render
+   animation state above:
+   1. Badge pulse — selectedFrom's (and, if it's a valid attack target, selectedTo's) army badge
+      grows/shrinks in a loop while selected, drawn inline in drawGameCanvas()'s badge loop.
+   2. drawAttackArrow() — an arrow that repeatedly grows from selectedFrom to selectedTo while
+      both are chosen, giving the attack direction a constant, obvious visual instead of relying
+      on the two highlighted borders alone.
+   3. attackAnim — once an attack is actually launched (doSingleAttack()/allOutAttack()), takes
+      over drawing fromId/toId's badges for a few hundred ms: the attacker's badge visibly flies
+      to the defender, both show their losses, and (unless the territory was captured, in which
+      case the normal owner-color-fade system just takes over) it flies back with the survivors.
+      This replaces the old always-a-popup result dialog with something that reads at a glance
+      without interrupting play.
+   ========================================================================= */
+const ATTACK_FLY_MS = 380, ATTACK_IMPACT_MS = 550, ATTACK_RETURN_MS = 380;
+let attackAnim = null; // see startAttackAnim() for the shape of the info object passed in
+
+// info: {fromId, toId, attLoss, defLoss, captured, fromCountBefore, toCountBefore,
+//        fromCountAfter, toCountAfter}. onDone is called once the whole sequence finishes
+// (used to open the troop-redistribution slider modal afterward, only when there's a real
+// choice to make there — see doSingleAttack()/allOutAttack()).
+function startAttackAnim(info, onDone){
+  attackAnim = Object.assign({stage:'fly', stageStart:performance.now(), onDone}, info);
+  scheduleAnimFrame();
+}
+function finishAttackAnim(){
+  const a = attackAnim, cb = a && a.onDone;
+  // Freeze the tracked "last drawn" army counts at their final values before handing these two
+  // territories back to the normal per-frame diff system (see the badge loop) — otherwise it'd
+  // see lastDrawnArmies still holding the PRE-battle count (frozen there on purpose while this
+  // animation owned these two ids) and kick off a redundant generic tween on top of the special
+  // animation that just finished.
+  if(a){ lastDrawnArmies[a.fromId] = a.fromCountAfter; lastDrawnArmies[a.toId] = a.toCountAfter; }
+  attackAnim = null;
+  if(cb) cb();
+}
+function updateAttackAnim(now){
+  if(!attackAnim) return;
+  const elapsed = now-attackAnim.stageStart;
+  if(attackAnim.stage==='fly' && elapsed>=ATTACK_FLY_MS){
+    attackAnim.stage='impact'; attackAnim.stageStart=now;
+  } else if(attackAnim.stage==='impact' && elapsed>=ATTACK_IMPACT_MS){
+    if(attackAnim.captured) finishAttackAnim();
+    else { attackAnim.stage='return'; attackAnim.stageStart=now; }
+  } else if(attackAnim.stage==='return' && elapsed>=ATTACK_RETURN_MS){
+    finishAttackAnim();
+  }
+}
+
+// Draws a badge (see drawArmyBadge) plus its territory name underneath, the same pairing the
+// normal per-territory badge loop draws — factored out so the special attackAnim badges below
+// can reuse it without duplicating the name-label line.
+function drawBadgeWithLabel(ctx, x, y, count, name, opts){
+  drawArmyBadge(ctx, x, y, count, opts);
+  ctx.font='9px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.75)'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillText(name, x, y+22);
+}
+
+function drawAttackAnimBadges(ctx, now){
+  const a = attackAnim;
+  const fromT = mapData.territories[a.fromId], toT = mapData.territories[a.toId];
+  if(!fromT || !toT){ finishAttackAnim(); return; }
+  const fromPos = fromT.centroid, toPos = toT.centroid;
+  const elapsed = now-a.stageStart;
+
+  // Defender's badge: stays put throughout. game.armies[toId] already holds the final,
+  // post-battle value by the time this ever runs (doBattle resolved synchronously well before
+  // the animation started) — it only reveals that value once the flying badge actually arrives.
+  const toCount = a.stage==='fly' ? a.toCountBefore : a.toCountAfter;
+  drawBadgeWithLabel(ctx, toPos.x, toPos.y, toCount, toT.name, {});
+
+  // Hollow placeholder left behind at the attacker's home territory — "để lại vị trí cũ 1 badge
+  // rỗng" — for as long as its real badge is away visiting the defender.
+  drawBadgeWithLabel(ctx, fromPos.x, fromPos.y, null, fromT.name, {hollow:true});
+
+  // The flying badge itself: attacker's stack, travelling to the defender then (unless captured)
+  // back home with whatever survived.
+  let fx, fy, fCount;
+  if(a.stage==='fly'){
+    const t = Math.min(1, elapsed/ATTACK_FLY_MS);
+    fx = fromPos.x+(toPos.x-fromPos.x)*t; fy = fromPos.y+(toPos.y-fromPos.y)*t;
+    fCount = a.fromCountBefore;
+  } else if(a.stage==='impact'){
+    fx = toPos.x; fy = toPos.y; fCount = a.fromCountAfter;
+  } else { // return
+    const t = Math.min(1, elapsed/ATTACK_RETURN_MS);
+    fx = toPos.x+(fromPos.x-toPos.x)*t; fy = toPos.y+(fromPos.y-toPos.y)*t;
+    fCount = a.fromCountAfter;
+  }
+  drawArmyBadge(ctx, fx, fy, fCount, {strokeColor:'#ffb04a'});
+
+  // Impact damage numbers — "-N" floating up and fading over the impact stage, one per side
+  // showing what THAT side lost, right where the two badges collide.
+  if(a.stage==='impact'){
+    const p = Math.min(1, elapsed/ATTACK_IMPACT_MS);
+    ctx.save();
+    ctx.globalAlpha = 1-p;
+    ctx.font='bold 13px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle='#ff6b6b';
+    ctx.fillText('-'+a.attLoss, toPos.x-18, toPos.y-18-p*18);
+    ctx.fillText('-'+a.defLoss, toPos.x+18, toPos.y-18-p*18);
+    ctx.restore();
+  }
+}
+
+// Repeatedly "draws itself out" from fromPos to toPos and resets — a constant, obvious indicator
+// of which way an attack would go, shown while both selectedFrom/selectedTo are chosen (and no
+// attackAnim is already playing — the flying badge above makes the direction clear enough then).
+function drawAttackArrow(ctx, from, to, now){
+  const CYCLE_MS = 900, GROW_FRAC = 0.75; // grows for the first 75% of each cycle, holds briefly, then restarts
+  const t = (now%CYCLE_MS)/CYCLE_MS;
+  const grow = Math.min(1, t/GROW_FRAC);
+  const ex = from.x+(to.x-from.x)*grow, ey = from.y+(to.y-from.y)*grow;
+  ctx.save();
+  ctx.strokeStyle='rgba(255,90,90,0.85)'; ctx.lineWidth=4; ctx.lineCap='round';
+  ctx.shadowColor='rgba(255,60,60,0.6)'; ctx.shadowBlur=6;
+  ctx.beginPath(); ctx.moveTo(from.x,from.y); ctx.lineTo(ex,ey); ctx.stroke();
+  const ang = Math.atan2(to.y-from.y, to.x-from.x);
+  const headLen = 11;
+  ctx.beginPath();
+  ctx.moveTo(ex,ey);
+  ctx.lineTo(ex-headLen*Math.cos(ang-Math.PI/7), ey-headLen*Math.sin(ang-Math.PI/7));
+  ctx.lineTo(ex-headLen*Math.cos(ang+Math.PI/7), ey-headLen*Math.sin(ang+Math.PI/7));
+  ctx.closePath();
+  ctx.fillStyle='rgba(255,90,90,0.9)';
+  ctx.fill();
+  ctx.restore();
+}
+
+// Converts a point in map-native pixel space (e.g. a territory's centroid) to actual on-screen
+// coordinates — used to position the floating attack-action buttons (DOM elements) over the
+// canvas-drawn arrow above. Mirrors getTerritoryFromCanvasEvent()'s screen->bitmap transform in
+// reverse; see that function for why rect.width/canvas.width alone (no separate devicePixelRatio
+// or displayScale term needed) is the right ratio here.
+function mapPointToScreen(x, y){
+  const canvas = $('gameCanvas');
+  const rect = canvas.getBoundingClientRect();
+  const nativeW = mapData.cols*mapData.cellSize, nativeH = mapData.rows*mapData.cellSize;
+  return { x: rect.left + x*(rect.width/nativeW), y: rect.top + y*(rect.height/nativeH) };
 }
 
 // gameZoom=1 reproduces the old "shrink to fit the wrap, never enlarge" behavior exactly;
@@ -162,6 +338,7 @@ function drawGameCanvas(){
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
   const now = performance.now();
+  updateAttackAnim(now); // may finish and null out attackAnim before anything below reads it
   // Canvas-drawn animations (fades/tweens/particles/pulse) aren't reachable by the CSS
   // prefers-reduced-motion override in style.css, so they check it directly here instead.
   const reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -262,9 +439,20 @@ function drawGameCanvas(){
       ctx.restore();
     }
   });
-  // army badges
+  // Attack-phase direction arrow: only while both ends are chosen and no attack is already
+  // mid-animation (the flying badge below makes the direction obvious enough by itself then).
+  const inAttackPhase = game.phase==='attack';
+  const showArrow = inAttackPhase && !attackAnim && game.selectedFrom!=null && game.selectedTo!=null &&
+    mapData.territories[game.selectedFrom] && mapData.territories[game.selectedTo];
+  if(showArrow){
+    drawAttackArrow(ctx, mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid, now);
+  }
+  // army badges — selectedFrom (and selectedTo, if it's actually a legal attack target) pulse
+  // bigger while chosen; skip fromId/toId here entirely while attackAnim owns them (drawn
+  // specially further down instead).
   Object.values(mapData.territories).forEach(t=>{
     if(t.cells.length===0) return;
+    if(attackAnim && (t.id===attackAnim.fromId || t.id===attackAnim.toId)) return;
     const realArmyCount = game.armies[t.id];
     if(realArmyCount===undefined) return;
     // Same diff-against-last-frame trick as the color fade above: a changed army count starts a
@@ -280,25 +468,15 @@ function drawGameCanvas(){
       armyCount = Math.round(tween.from+(tween.to-tween.from)*prog);
       if(prog>=1) delete armyTweens[t.id];
     }
-    const x=t.centroid.x, y=t.centroid.y;
-    // Drop shadow behind the chip + a small off-center gradient inside it — turns the flat
-    // dark disc into a slightly "raised" badge. Shadow is scoped with save/restore so it
-    // doesn't also bleed onto the stroke/text drawn right after.
-    ctx.save();
-    ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4; ctx.shadowOffsetY=2;
-    ctx.beginPath(); ctx.arc(x,y,13,0,Math.PI*2);
-    const badgeGrad = ctx.createRadialGradient(x-4,y-5,1, x,y,15);
-    badgeGrad.addColorStop(0, 'rgba(52,58,78,0.95)');
-    badgeGrad.addColorStop(1, 'rgba(8,10,18,0.92)');
-    ctx.fillStyle = badgeGrad;
-    ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
-    ctx.fillStyle='#fff'; ctx.font='bold 12px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(armyCount, x, y+1);
-    ctx.font='9px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.75)';
-    ctx.fillText(t.name, x, y+22);
+    let badgeScale = 1;
+    if(inAttackPhase && !reducedMotion){
+      const isFrom = t.id===game.selectedFrom;
+      const isValidTo = t.id===game.selectedTo && game.selectedFrom!=null && canAttack(game.selectedFrom, t.id, currentPlayerId());
+      if(isFrom || isValidTo) badgeScale = 1+0.3*pulse;
+    }
+    drawBadgeWithLabel(ctx, t.centroid.x, t.centroid.y, armyCount, t.name, {scale:badgeScale});
   });
+  if(attackAnim) drawAttackAnimBadges(ctx, now);
   if(showContinentsGame){
     ctx.font = 'bold 17px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
     const positions = computeContinentLabelPositions(mapData);
@@ -328,8 +506,9 @@ function drawGameCanvas(){
   // The selection glow alone never "finishes" while a territory stays selected, but with
   // reducedMotion it's just a static line (pulse=0 above), so it doesn't need to keep redrawing.
   const stillAnimating = Object.keys(colorFades).length>0 || Object.keys(armyTweens).length>0 ||
-    captureParticles.length>0 || (!reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null));
+    captureParticles.length>0 || !!attackAnim || (!reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null));
   if(stillAnimating) scheduleAnimFrame();
+  if(inAttackPhase) positionFloatingAttackButtons();
 }
 
 function renderPlayerList(){
@@ -422,14 +601,18 @@ function doSingleAttack(){
   const fromId = game.selectedFrom, toId = game.selectedTo;
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
   const defenderName = game.players[game.owner[toId]].name;
+  const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
   const res = doBattle(fromId, toId);
   recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
-  if(game.armies[game.selectedFrom]<2) game.selectedFrom=null;
-  renderGame();
-  showAttackResultModal(fromId, toId, {
-    captured: res.captured, attLoss: res.attLoss, defLoss: res.defLoss, rounds: 1,
-    moving: res.moving, maxMovable: res.maxMovable,
+  const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
+  if(fromCountAfter<2) game.selectedFrom=null;
+  startAttackAnim({
+    fromId, toId, attLoss:res.attLoss, defLoss:res.defLoss, captured:res.captured,
+    fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+  }, ()=>{
+    if(res.captured && res.maxMovable>res.moving) showCaptureMoveModal(fromId, toId, res.moving, res.maxMovable);
   });
+  renderGame();
 }
 // Keeps attacking the same target back-to-back (same silent-round-then-summarize approach as
 // the AI's battleBatch() in 05-ai.js) until the source runs dry or the target is captured.
@@ -440,6 +623,7 @@ function allOutAttack(){
   const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
   const defenderId = game.owner[toId];
   const defenderName = game.players[defenderId].name;
+  const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
   let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
   while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
     lastRes = doBattle(fromId, toId, {silent:true});
@@ -453,14 +637,17 @@ function allOutAttack(){
     if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [p.id, defenderId]);
     recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
   }
-  if(game.armies[fromId]<2) game.selectedFrom=null;
-  renderGame();
+  const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
+  if(fromCountAfter<2) game.selectedFrom=null;
   if(rounds>0){
-    showAttackResultModal(fromId, toId, {
-      captured, attLoss: attLossTotal, defLoss: defLossTotal, rounds,
-      moving: lastRes ? lastRes.moving : null, maxMovable: lastRes ? lastRes.maxMovable : null,
+    startAttackAnim({
+      fromId, toId, attLoss:attLossTotal, defLoss:defLossTotal, captured,
+      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter,
+    }, ()=>{
+      if(captured && lastRes.maxMovable>lastRes.moving) showCaptureMoveModal(fromId, toId, lastRes.moving, lastRes.maxMovable);
     });
   }
+  renderGame();
 }
 // Shared by the fortify-phase button and its keyboard shortcut (08-wiring.js).
 function canFortifyNow(p){
@@ -469,8 +656,48 @@ function canFortifyNow(p){
     pathExistsOwned(game.selectedFrom, game.selectedTo, p.id) && game.armies[game.selectedFrom]>1;
 }
 
+// Floating attack-action buttons: shown instead of the normal phase-actions panel entries once
+// a legal attack pair is chosen (canAttackNow), positioned right above the animated arrow
+// between them (see drawAttackArrow()/mapPointToScreen() in the RENDER ANIMATION STATE section)
+// so the buttons sit contextually next to the thing they act on. hideFloatingAttackButtons()
+// clears them back out for every other phase/state.
+function hideFloatingAttackButtons(){
+  const wrap = $('floatingAttackButtons');
+  wrap.hidden = true;
+  wrap.innerHTML = '';
+}
+function showFloatingAttackButtons(){
+  const wrap = $('floatingAttackButtons');
+  wrap.hidden = false;
+  wrap.innerHTML = '';
+  const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack';
+  allOutBtn.title='Phím tắt: C';
+  allOutBtn.addEventListener('click', allOutAttack);
+  wrap.appendChild(allOutBtn);
+  const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack';
+  atkBtn.title='Phím tắt: T';
+  atkBtn.addEventListener('click', doSingleAttack);
+  wrap.appendChild(atkBtn);
+  positionFloatingAttackButtons();
+}
+// Called every attack-phase frame from drawGameCanvas() (so panning/zooming keeps it aligned)
+// as well as once right after showFloatingAttackButtons() shows it fresh.
+function positionFloatingAttackButtons(){
+  const wrap = $('floatingAttackButtons');
+  if(wrap.hidden) return;
+  const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
+  if(!fromT || !toT){ hideFloatingAttackButtons(); return; }
+  const midX=(fromT.centroid.x+toT.centroid.x)/2, midY=(fromT.centroid.y+toT.centroid.y)/2;
+  const pt = mapPointToScreen(midX, midY);
+  // CSS transform (translate(-50%, calc(-100% - 14px))) handles centering horizontally and
+  // sitting the box above this exact point — see style.css.
+  wrap.style.left = pt.x+'px';
+  wrap.style.top = pt.y+'px';
+}
+
 function renderPhaseActions(){
   const wrap = $('phaseActions'); wrap.innerHTML='';
+  hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   if(game.over) return;
   const p = currentPlayer();
   if(!p.isHuman){ wrap.appendChild(el('div','',''));  return; }
@@ -484,14 +711,16 @@ function renderPhaseActions(){
   }
   if(game.phase==='attack'){
     const ready = canAttackNow(p);
-    const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack'; allOutBtn.disabled=!ready;
-    allOutBtn.title='Phím tắt: C';
-    allOutBtn.addEventListener('click', allOutAttack);
-    wrap.appendChild(allOutBtn);
-    const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack'; atkBtn.disabled=!ready;
-    atkBtn.title='Phím tắt: T';
-    atkBtn.addEventListener('click', doSingleAttack);
-    wrap.appendChild(atkBtn);
+    if(ready){
+      showFloatingAttackButtons();
+    } else {
+      const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack'; allOutBtn.disabled=true;
+      allOutBtn.title='Phím tắt: C';
+      wrap.appendChild(allOutBtn);
+      const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
+      atkBtn.title='Phím tắt: T';
+      wrap.appendChild(atkBtn);
+    }
     const endBtn = el('button','primary',withShortcut('Kết thúc tấn công','K')); endBtn.title='Phím tắt: K';
     endBtn.addEventListener('click', ()=> beginFortifyPhase());
     wrap.appendChild(endBtn);

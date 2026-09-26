@@ -284,11 +284,12 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 $('gameCanvas').addEventListener('click', gameCanvasClick);
 
 // Setup-place AND reinforce: holding down on a territory keeps placing armies into it — 1
-// immediately on press, then (after a short initial delay, like a keyboard's key-repeat) once
-// per tick for as long as the pointer stays down, until there's nothing left to place there.
-// Setup-place cycles through the AI's turns in between each of the human's own placements
-// (see canKeepHoldingSetupPlacement), while reinforce is entirely the human's own turn so
-// placeReinforcement()'s own true/false return is enough to know whether to keep going.
+// as soon as the press is confirmed (see pendingPlacement below), then (after a short initial
+// delay, like a keyboard's key-repeat) once per tick for as long as the pointer stays down,
+// until there's nothing left to place there. Setup-place cycles through the AI's turns in
+// between each of the human's own placements (see canKeepHoldingSetupPlacement), while
+// reinforce is entirely the human's own turn so placeReinforcement()'s own true/false return is
+// enough to know whether to keep going.
 let setupHoldTimer = null;
 function stopSetupHold(){ clearTimeout(setupHoldTimer); clearInterval(setupHoldTimer); setupHoldTimer=null; }
 function tryHoldPlacement(terrId){
@@ -296,12 +297,28 @@ function tryHoldPlacement(terrId){
   if(game.phase==='reinforce') return placeReinforcement(terrId);
   return false;
 }
-$('gameCanvas').addEventListener('pointerdown', (e)=>{
-  if(!game || (game.phase!=='setup-place' && game.phase!=='reinforce')) return;
-  const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), e);
+// Placing used to fire immediately on pointerdown, so brushing a territory with a finger/mouse
+// while actually trying to pan or pinch-zoom the map (which also starts with a pointerdown)
+// would drop an army there by accident. Now a press only ARMS a pending placement; it's only
+// actually committed once we're confident it's a deliberate tap — either the pointer moves less
+// than PLACEMENT_MOVE_THRESHOLD px for PLACEMENT_CONFIRM_MS while still held (a real hold, so
+// the placement fires and the repeat-while-holding cycle begins), or it's released before that
+// with no such movement (a normal quick tap — one placement, no repeat). Any real movement
+// before either of those cancels the whole thing with nothing placed.
+const PLACEMENT_CONFIRM_MS = 120, PLACEMENT_MOVE_THRESHOLD = 10;
+let pendingPlacement = null; // {terrId, startX, startY, pointerId, confirmTimer}
+function cancelPendingPlacement(){
+  if(pendingPlacement) clearTimeout(pendingPlacement.confirmTimer);
+  pendingPlacement = null;
+}
+function commitPendingPlacement(startRepeat){
+  if(!pendingPlacement) return;
+  const { terrId, pointerId } = pendingPlacement;
+  cancelPendingPlacement();
   if(!tryHoldPlacement(terrId)) return;
-  $('gameCanvas').setPointerCapture(e.pointerId);
   stopSetupHold();
+  if(!startRepeat) return; // quick tap already released — nothing left to capture/repeat for
+  try{ $('gameCanvas').setPointerCapture(pointerId); }catch(err){}
   setupHoldTimer = setTimeout(()=>{
     setupHoldTimer = setInterval(()=>{
       if(game.phase==='setup-place'){
@@ -312,12 +329,35 @@ $('gameCanvas').addEventListener('pointerdown', (e)=>{
       }
     }, 150);
   }, 400);
+}
+$('gameCanvas').addEventListener('pointerdown', (e)=>{
+  if(!game || (game.phase!=='setup-place' && game.phase!=='reinforce')) return;
+  const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), e);
+  if(terrId===-1) return;
+  cancelPendingPlacement();
+  pendingPlacement = { terrId, startX:e.clientX, startY:e.clientY, pointerId:e.pointerId };
+  pendingPlacement.confirmTimer = setTimeout(()=> commitPendingPlacement(true), PLACEMENT_CONFIRM_MS);
 });
-['pointerup','pointerleave','pointercancel'].forEach(evtName=>
-  $('gameCanvas').addEventListener(evtName, stopSetupHold)
+$('gameCanvas').addEventListener('pointermove', (e)=>{
+  if(!pendingPlacement || e.pointerId!==pendingPlacement.pointerId) return;
+  const dx=e.clientX-pendingPlacement.startX, dy=e.clientY-pendingPlacement.startY;
+  if(Math.hypot(dx,dy)>PLACEMENT_MOVE_THRESHOLD) cancelPendingPlacement();
+});
+$('gameCanvas').addEventListener('pointerup', (e)=>{
+  if(pendingPlacement && e.pointerId===pendingPlacement.pointerId) commitPendingPlacement(false);
+  stopSetupHold();
+});
+['pointerleave','pointercancel'].forEach(evtName=>
+  $('gameCanvas').addEventListener(evtName, ()=>{ cancelPendingPlacement(); stopSetupHold(); })
 );
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
 $('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
+
+// Dragging/pinching to pan moves #gameCanvasWrap's scroll position directly (see below) without
+// going through renderGame(), so the floating attack buttons (positioned in screen space off
+// the canvas's current on-screen rect — see positionFloatingAttackButtons()) need their own
+// listener to stay aligned with the arrow instead of drifting as the map scrolls underneath them.
+$('gameCanvasWrap').addEventListener('scroll', ()=>{ if(game) positionFloatingAttackButtons(); });
 
 // ---------------- Map zoom (buttons, +/-/0 keys, mouse wheel, 2-finger pinch) ----------------
 const ZOOM_STEP = 1.25;

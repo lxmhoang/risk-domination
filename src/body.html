@@ -224,6 +224,10 @@
     <canvas id="gameCanvas" width="960" height="600"></canvas>
   </div>
 
+  <!-- Positioned in JS (positionFloatingAttackButtons(), 06-render-game.js) directly over the
+       animated arrow between the two selected attack territories — see showFloatingAttackButtons(). -->
+  <div id="floatingAttackButtons" hidden></div>
+
   <!-- Top controls + phase actions share one vertical column anchored top-right (see
        #gameRightPanelWrap in style.css) — stacked in DOM/flex order so top controls render
        above phase actions, with a z-index above #gameLogPanel so phase actions (attack/

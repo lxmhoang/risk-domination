@@ -184,6 +184,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   display:flex;flex-direction:column;align-items:flex-end;gap:10px;
   max-height:calc(100% - 20px);overflow-y:auto;
 }
+/* Positioned in JS (positionFloatingAttackButtons()) with inline left/top tracking the midpoint
+   of the animated attack arrow — transform centers it horizontally and sits it above that point
+   instead of the top-left corner landing there. z-index above the arrow (drawn on the canvas,
+   effectively z-index 0) but doesn't need to compete with the right-side column or log panel
+   since it only ever appears over open map area between the two selected territories. */
+#floatingAttackButtons{
+  position:absolute;z-index:8;transform:translate(-50%, calc(-100% - 14px));
+  display:flex;gap:8px;pointer-events:auto;
+}
+#floatingAttackButtons[hidden]{display:none;}
 #gameControlsTop{
   position:static;max-height:none;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
@@ -301,7 +311,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #screen-game.active #gameRightPanelWrap,
   #screen-game.active #gamePlayerListWrap,
   #screen-game.active #gameTurnInfo,
-  #screen-game.active #gameLogPanel{display:none;}
+  #screen-game.active #gameLogPanel,
+  #screen-game.active #floatingAttackButtons{display:none;}
 }
 /* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
    +/−/reset buttons are desktop-only affordances (no pinch there) and just crowd the top bar
