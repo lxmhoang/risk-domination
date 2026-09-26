@@ -96,6 +96,7 @@ function loadModules(sandbox, cardMode){
     function setActionHint(){}
     function showDice(){}
     function openCardsModal(){}
+    function resetRenderAnimState(){} // real impl lives in 06-render-game.js, deliberately not loaded here
     function showGameOver(winner){ __harnessLastWinner = winner ? winner.name : null; }
     const __realLogMsg = logMsg;
     logMsg = function(type, msg){

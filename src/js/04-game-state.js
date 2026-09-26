@@ -45,6 +45,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
   gameZoom = 1;
+  resetRenderAnimState(); // no leftover fades/tweens from whatever was drawn before this game
   const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
   // the per-turn capturedThisTurn/killedThisTurn flags which reset every endTurn().
@@ -537,6 +538,7 @@ function importGameJSON(obj){
   spectatorMode = !!obj.spectatorMode;
   aiPaused = false; pendingAIResume = null;
   gameZoom = 1;
+  resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');
   renderGame();
   renderCombatLog();

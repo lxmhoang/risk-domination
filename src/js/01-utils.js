@@ -85,6 +85,26 @@ function getStripeTile(){
   return c;
 }
 function getStripePattern(ctx){ return ctx.createPattern(getStripeTile(), 'repeat'); }
+// Same offscreen-tile-pattern technique as getStripeTile() above, but a sparse field of tiny
+// semi-transparent dots instead of diagonal lines — layered over each territory's gradient
+// fill (see drawGameCanvas) at low alpha for a subtle paper/grain texture, cheap stand-in for
+// real hand-drawn texture art.
+let _noiseTileCanvas = null;
+function getNoiseTile(){
+  if(_noiseTileCanvas) return _noiseTileCanvas;
+  const size = 48;
+  const c = document.createElement('canvas'); c.width=size; c.height=size;
+  const cx = c.getContext('2d');
+  for(let i=0;i<90;i++){
+    const x = rand(size), y = rand(size), r = 0.4+Math.random()*0.9;
+    cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2);
+    cx.fillStyle = Math.random()<0.5 ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)';
+    cx.fill();
+  }
+  _noiseTileCanvas = c;
+  return c;
+}
+function getNoisePattern(ctx){ return ctx.createPattern(getNoiseTile(), 'repeat'); }
 function rollDie(){ return 1+rand(6); }
 // Draws text centered at (x,y) — assumes ctx.textAlign='center', ctx.textBaseline='middle' —
 // on a translucent dark rounded-rect background. Continent labels sit directly on top of

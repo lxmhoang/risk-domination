@@ -29,6 +29,53 @@ function shadeColor(hex, percent){
   const b = clamp((num&0x0000FF)+amt, 0, 255);
   return '#'+(0x1000000+r*0x10000+g*0x100+b).toString(16).slice(1);
 }
+function lerpColor(hexA, hexB, t){
+  const a = parseInt(hexA.slice(1),16), b = parseInt(hexB.slice(1),16);
+  const ar=(a>>16)&255, ag=(a>>8)&255, ab=a&255;
+  const br=(b>>16)&255, bg=(b>>8)&255, bb=b&255;
+  const r = Math.round(ar+(br-ar)*t), g = Math.round(ag+(bg-ag)*t), bl = Math.round(ab+(bb-ab)*t);
+  return '#'+(0x1000000+r*0x10000+g*0x100+bl).toString(16).slice(1);
+}
+
+/* =========================================================================
+   RENDER ANIMATION STATE
+   ---------------------------------------------------------------------
+   drawGameCanvas() redraws the WHOLE map from scratch every call, driven purely by current
+   `game` state (no persistent visuals) — normally fine since it's only called on-demand after
+   a state change. To animate a change (a territory's color fading to its new owner, an army
+   count counting up/down, a capture particle burst) without threading animation code through
+   every single mutation site (doBattle, aiFortifyStep, placeReinforcement, ...), this instead
+   diffs the CURRENT game.owner/game.armies against what was drawn last frame, right here at the
+   top of drawGameCanvas() — any difference starts the relevant animation automatically. While
+   at least one is still running, drawGameCanvas() reschedules itself via requestAnimationFrame;
+   otherwise rendering goes back to being purely event-driven (renderGame() calls), no idle loop.
+   ========================================================================= */
+let lastDrawnOwner = {};   // territory id -> owner id last actually drawn
+let lastDrawnArmies = {};  // territory id -> army count last actually drawn
+let colorFades = {};       // territory id -> {from, to, start} (hex colors, ms timestamp)
+let armyTweens = {};       // territory id -> {from, to, start}
+let captureParticles = []; // {x,y,vx,vy,color,start}
+const COLOR_FADE_MS = 450, ARMY_TWEEN_MS = 350, PARTICLE_MS = 600;
+let animFrameQueued = false;
+function scheduleAnimFrame(){
+  if(animFrameQueued) return;
+  animFrameQueued = true;
+  requestAnimationFrame(()=>{ animFrameQueued=false; if(game) drawGameCanvas(); });
+}
+// Called whenever a fresh `game` starts being drawn for the first time (new game, replay,
+// loaded save) so leftover animation state from whatever was on screen before doesn't bleed
+// into it (e.g. every territory "fading in" from the previous match's final colors).
+function resetRenderAnimState(){
+  lastDrawnOwner = {}; lastDrawnArmies = {}; colorFades = {}; armyTweens = {}; captureParticles = [];
+}
+function spawnCaptureParticles(x, y, color){
+  const n = 14;
+  for(let i=0;i<n;i++){
+    const angle = (Math.PI*2*i/n) + Math.random()*0.5;
+    const speed = 1.2+Math.random()*1.8;
+    captureParticles.push({x, y, vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, color, start:performance.now()});
+  }
+}
 
 // gameZoom=1 reproduces the old "shrink to fit the wrap, never enlarge" behavior exactly;
 // >1/<1 scale that baseline up/down. Kept separate from mapData.cellSize (which stays the
@@ -113,6 +160,10 @@ function drawGameCanvas(){
   ctx.fillRect(0,0,nativeW,nativeH);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
+  const now = performance.now();
+  // Canvas-drawn animations (fades/tweens/particles/pulse) aren't reachable by the CSS
+  // prefers-reduced-motion override in style.css, so they check it directly here instead.
+  const reducedMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   terrs.forEach(t=>{
     let color;
     if(showContinentsGame){
@@ -121,6 +172,22 @@ function drawGameCanvas(){
     } else {
       const ownerId = game.owner[t.id];
       color = ownerId!==undefined ? playerOf(ownerId).color : '#444';
+      // A change since the last frame actually drawn (a capture) starts a color fade + a small
+      // particle burst instead of snapping straight to the new owner's color — see RENDER
+      // ANIMATION STATE above for why this is detected here rather than at every mutation site.
+      if(!reducedMotion && lastDrawnOwner[t.id]!==undefined && lastDrawnOwner[t.id]!==ownerId){
+        const prevOwner = lastDrawnOwner[t.id];
+        const fromColor = prevOwner!=null && game.players[prevOwner] ? playerOf(prevOwner).color : '#444';
+        colorFades[t.id] = {from:fromColor, to:color, start:now};
+        spawnCaptureParticles(t.centroid.x, t.centroid.y, color);
+      }
+      lastDrawnOwner[t.id] = ownerId;
+      const fade = colorFades[t.id];
+      if(fade){
+        const prog = Math.min(1, (now-fade.start)/COLOR_FADE_MS);
+        color = lerpColor(fade.from, fade.to, prog);
+        if(prog>=1) delete colorFades[t.id];
+      }
     }
     pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
     // Radial gradient (lighter center, darker edge) instead of a flat fill — a cheap "raised
@@ -134,6 +201,18 @@ function drawGameCanvas(){
     grad.addColorStop(1, shadeColor(color, -10));
     ctx.fillStyle = grad;
     ctx.fill();
+    // Subtle grain texture on top, clipped to this same territory shape (path is still current
+    // right after fill() — only beginPath() would clear it). Bounded to this territory's own
+    // cell bounding box rather than the whole canvas so it stays cheap on maps with many
+    // territories.
+    let minC=Infinity,maxC=-Infinity,minR=Infinity,maxR=-Infinity;
+    t.cells.forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
+    ctx.save();
+    ctx.clip();
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = getNoisePattern(ctx);
+    ctx.fillRect(minC*cs, minR*cs, (maxC-minC+1)*cs, (maxR-minR+1)*cs);
+    ctx.restore();
   });
 
   // In continent view, emphasize the viewing (human) player's own territories with a diagonal
@@ -167,20 +246,39 @@ function drawGameCanvas(){
       ctx.stroke();
     });
   }
-  // selection highlight
+  // selection highlight — a slow pulsing glow instead of a static line, so the currently
+  // selected territory/territories stay noticeable at a glance instead of blending into the
+  // rest of the borders once you stop looking right at them.
+  const pulse = reducedMotion ? 0 : 0.5+0.5*Math.sin(now/280);
   [['selectedFrom','#fff'],['selectedTo','#f2b84b']].forEach(([key,col])=>{
     const id = game[key];
     if(id!=null && mapData.territories[id]){
       pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, id));
-      ctx.strokeStyle=col; ctx.lineWidth=3;
+      ctx.save();
+      ctx.shadowColor = col; ctx.shadowBlur = 5+7*pulse;
+      ctx.strokeStyle=col; ctx.lineWidth=3+1.2*pulse;
       ctx.stroke();
+      ctx.restore();
     }
   });
   // army badges
   Object.values(mapData.territories).forEach(t=>{
     if(t.cells.length===0) return;
-    const armyCount = game.armies[t.id];
-    if(armyCount===undefined) return;
+    const realArmyCount = game.armies[t.id];
+    if(realArmyCount===undefined) return;
+    // Same diff-against-last-frame trick as the color fade above: a changed army count starts a
+    // brief count-up/down tween instead of the number just jumping straight to its new value.
+    if(!reducedMotion && lastDrawnArmies[t.id]!==undefined && lastDrawnArmies[t.id]!==realArmyCount){
+      armyTweens[t.id] = {from:lastDrawnArmies[t.id], to:realArmyCount, start:now};
+    }
+    lastDrawnArmies[t.id] = realArmyCount;
+    let armyCount = realArmyCount;
+    const tween = armyTweens[t.id];
+    if(tween){
+      const prog = Math.min(1, (now-tween.start)/ARMY_TWEEN_MS);
+      armyCount = Math.round(tween.from+(tween.to-tween.from)*prog);
+      if(prog>=1) delete armyTweens[t.id];
+    }
     const x=t.centroid.x, y=t.centroid.y;
     // Drop shadow behind the chip + a small off-center gradient inside it — turns the flat
     // dark disc into a slightly "raised" badge. Shadow is scoped with save/restore so it
@@ -209,6 +307,28 @@ function drawGameCanvas(){
       fillTextWithBackground(ctx, label, pos.x, pos.y-20);
     });
   }
+
+  // Capture particle burst — small dots flying outward from a just-captured territory's
+  // centroid, fading out over PARTICLE_MS. Drawn last so they sit on top of everything else;
+  // expired ones are dropped here rather than in a separate pass.
+  captureParticles = captureParticles.filter(pt=> now-pt.start<PARTICLE_MS);
+  captureParticles.forEach(pt=>{
+    const t = (now-pt.start)/PARTICLE_MS;
+    const px = pt.x+pt.vx*t*18, py = pt.y+pt.vy*t*18;
+    ctx.beginPath(); ctx.arc(px,py, 3*(1-t)+0.5, 0, Math.PI*2);
+    ctx.fillStyle = pt.color;
+    ctx.globalAlpha = 1-t;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // Keep animating next frame if anything above is still mid-transition — otherwise rendering
+  // goes back to being purely event-driven (see RENDER ANIMATION STATE at the top of this file).
+  // The selection glow alone never "finishes" while a territory stays selected, but with
+  // reducedMotion it's just a static line (pulse=0 above), so it doesn't need to keep redrawing.
+  const stillAnimating = Object.keys(colorFades).length>0 || Object.keys(armyTweens).length>0 ||
+    captureParticles.length>0 || (!reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null));
+  if(stillAnimating) scheduleAnimFrame();
 }
 
 function renderPlayerList(){
@@ -231,11 +351,21 @@ function renderPlayerList(){
     nameBadge.style.background = p.color;
     line1.appendChild(nameBadge);
     line1.appendChild(el('span','stat-item', `⚔️ ${totalArmies}`));
+    // Territory-share bar: quick "how much of the map do they hold" read at a glance, without
+    // having to compare raw counts across cards yourself. Width is a plain CSS transition off
+    // a changed inline style, so it animates smoothly on its own — no JS tweening needed here.
+    const totalTerrs = Object.keys(mapData.territories).length;
+    const pct = totalTerrs>0 ? Math.round(mine.length/totalTerrs*100) : 0;
+    const bar = el('div','pcard-bar');
+    const fill = el('div','pcard-bar-fill');
+    fill.style.width = pct+'%';
+    fill.style.background = p.color;
+    bar.appendChild(fill);
     const line2 = el('div','pline2');
     [['🗺️',mine.length],['🌍',contsHeld],['🃏',p.cards.length]].forEach(([icon,val])=>{
       line2.appendChild(el('span','stat-item', `${icon} ${val}`));
     });
-    card.appendChild(line1); card.appendChild(line2);
+    card.appendChild(line1); card.appendChild(bar); card.appendChild(line2);
     wrap.appendChild(card);
   });
 }
