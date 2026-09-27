@@ -3809,7 +3809,13 @@ function aiFortifyStep(pid, intent){
   game.phase='fortify';
   renderGame();
   const p = game.players[pid];
-  // move armies from a safe interior territory to weakest border territory
+  // Same gang-up detection as aiAttackStep/pickAIReinforceTarget — a forced leader-only turn is
+  // also this turn's fortify front, not just this turn's attack target, so troops actually pile
+  // up where the AI is allowed to strike instead of wherever pickAITurnIntent's unrelated
+  // continent/kill_weak/defend logic happened to land independently of the alliance rule.
+  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
+  const mustOnlyAttackLeader = allianceLeaderId!=null && pid!==allianceLeaderId;
+  // move armies from every safe interior territory to the front
   const mine = ownedTerritories(pid);
   const interior = mine.filter(id=>{
     const t = mapData.territories[id];
@@ -3825,25 +3831,38 @@ function aiFortifyStep(pid, intent){
   // lands on next turn's front instead of a border unrelated to the plan.
   function isIntentFront(id){
     const t = mapData.territories[id];
+    if(mustOnlyAttackLeader) return [...t.neighbors].some(n=>game.owner[n]===allianceLeaderId);
     if(intent.type==='finish_continent') return t.continentId===intent.continentId;
     if(intent.type==='kill_weak') return [...t.neighbors].some(n=>game.owner[n]===intent.targetPlayerId);
     return id===intent.focusTerrId; // defend / expand
   }
   const orderedBorders = [...borders].sort((a,b)=> (isIntentFront(b)?1:0) - (isIntentFront(a)?1:0));
-  if(interior.length && orderedBorders.length){
-    const src = interior.sort((a,b)=>game.armies[b]-game.armies[a])[0];
-    let bestDst=null;
-    for(const dst of orderedBorders){
-      if(pathExistsOwned(src,dst,pid) && src!==dst){ bestDst=dst; break; }
-    }
-    if(bestDst){
-      const moving = game.armies[src]-1;
-      if(moving>0){
-        game.armies[src]-=moving; game.armies[bestDst]+=moving;
-        logMsg('info', p.name+' tăng cường '+moving+' quân đến '+mapData.territories[bestDst].name+'.', pid);
+  // A human player can make as many fortify moves as they like before ending their turn, so drain
+  // EVERY interior territory with spare troops in this one pass instead of just the single
+  // largest one — otherwise every other interior garrison stays stranded forever wherever it
+  // happened to end up (typically the bare-minimum 1 army left right after a capture), since
+  // nothing else in the game ever revisits it. Moves are tallied per destination so multiple
+  // interior sources funneling into the same front log as one summary line each, not a spammy
+  // line per source.
+  const movedTo = {};
+  if(orderedBorders.length){
+    interior.forEach(src=>{
+      let bestDst=null;
+      for(const dst of orderedBorders){
+        if(pathExistsOwned(src,dst,pid)){ bestDst=dst; break; }
       }
-    }
+      if(bestDst){
+        const moving = game.armies[src]-1;
+        if(moving>0){
+          game.armies[src]-=moving; game.armies[bestDst]+=moving;
+          movedTo[bestDst] = (movedTo[bestDst]||0)+moving;
+        }
+      }
+    });
   }
+  Object.keys(movedTo).forEach(dstId=>{
+    logMsg('info', p.name+' tăng cường '+movedTo[dstId]+' quân đến '+mapData.territories[dstId].name+'.', pid);
+  });
   renderGame();
   aiSchedule(()=> endTurn(), aiDelay(400));
 }
