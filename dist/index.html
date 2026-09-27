@@ -957,6 +957,11 @@ const TURN_INTRO_SHOW_MS = 1000;
 const TURN_INTRO_FADE_MS = 400;
 const TURN_INTRO_TOTAL_MS = TURN_INTRO_SHOW_MS + TURN_INTRO_FADE_MS;
 
+// Radius (canvas-space units, same as map.cellSize) of the fixed-size army badge drawn on each
+// territory (drawArmyBadge, 06-render-game.js). The random map generator sizes territories so
+// 3 of these fit in each one (territoryFitsBadges, 02-map-model.js).
+const ARMY_BADGE_RADIUS = 13;
+
 const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
@@ -1427,11 +1432,13 @@ function recomputeGraph(map){
       }
     }
   }
+  // "centroid" is the territory's anchor point — where its army badge sits and where attack/
+  // fortify arrows start and end. It's the deepest cell (see territoryPoleCell), not the plain
+  // average position, since the average of a concave territory can land on its edge or outside it.
   Object.values(map.territories).forEach(t=>{
     if(t.cells.length===0){ t.centroid={x:-1,y:-1}; return; }
-    let sx=0,sy=0;
-    t.cells.forEach(([c,r])=>{ sx += c+0.5; sy += r+0.5; });
-    t.centroid = { x: (sx/t.cells.length)*map.cellSize, y: (sy/t.cells.length)*map.cellSize };
+    const [pc,pr] = territoryPoleCell(t.cells);
+    t.centroid = { x: (pc+0.5)*map.cellSize, y: (pr+0.5)*map.cellSize };
   });
 }
 
@@ -1690,209 +1697,516 @@ function submergeTinyLandIslands(water, cols, rows, minCells){
   }
 }
 
-// True if removing cells[removeIdx] would leave the rest of that cell list all still reachable
-// from each other via 4-directional adjacency — the cell-grid-level equivalent of
-// wouldStayConnectedAfterRemoving() below, used by enforceMinTerritorySize() so stealing a
-// border cell never splits the donor territory into 2 disjoint blobs.
-function cellsStayConnectedWithoutOne(map, cells, removeIdx){
-  const remaining = cells.filter((_,i)=>i!==removeIdx);
-  if(remaining.length<=1) return true;
-  const key = ([c,r])=> r*map.cols+c;
-  const remainingSet = new Set(remaining.map(key));
-  const seen = new Set([key(remaining[0])]);
-  const stack = [remaining[0]];
-  while(stack.length){
-    const [c,r] = stack.pop();
-    for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const nc=c+dc, nr=r+dr, k=nr*map.cols+nc;
-      if(remainingSet.has(k) && !seen.has(k)){ seen.add(k); stack.push([nc,nr]); }
-    }
+/* ---------------- Territory partitioning: "every territory fits 3 army badges" ----------------
+   Random maps partition land into territories so that EVERY territory can hold 3 of the
+   fixed-size army badges (ARMY_BADGE_RADIUS, 01-utils.js) side by side without them overlapping
+   each other or poking out past the territory's edge — a hard guarantee, checked exactly per
+   territory (territoryFitsBadges below), not just a cell-count heuristic.
+
+   Pipeline (see generateRandomMap):
+     1. Farthest-point seeds + a few rounds of Lloyd relaxation over a noise-weighted geodesic
+        Voronoi on the land cells -> compact, similarly-sized, organically-edged regions. This
+        is what makes nearly every territory pass the check on its own, instead of the old
+        "random BFS race" which left lots of cramped leftovers that then had to be rescued.
+     2. repairUnfitTerritories: whatever still fails is merged into a neighbor that passes
+        (a superset of a passing territory always passes too, so this can't cascade), or sunk
+        into the sea if it's an island too small to ever pass.
+     3. splitToTargetCount: gives back the territories step 2 merged away by splitting the
+        largest ones in two — only when BOTH halves pass the same check. */
+
+// Exact squared Euclidean distance transform (Felzenszwalb & Huttenlocher), 1D pass.
+function edt1d(f, n, d, v, z){
+  let k = 0; v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+  for(let q=1; q<n; q++){
+    let s = ((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]);
+    while(s<=z[k]){ k--; s = ((f[q]+q*q)-(f[v[k]]+v[k]*v[k]))/(2*q-2*v[k]); }
+    k++; v[k] = q; z[k] = s; z[k+1] = Infinity;
   }
-  return seen.size === remaining.length;
+  k = 0;
+  for(let q=0; q<n; q++){
+    while(z[k+1]<q) k++;
+    d[q] = (q-v[k])*(q-v[k]) + f[v[k]];
+  }
 }
 
-// Grows any territory under minCells by stealing border cells, one at a time, from whichever
-// neighboring territory currently has the most to spare (never dropping that donor itself below
-// the floor), verifying each candidate cell isn't a cut-vertex for the donor first. Operates
-// directly on map.cellTerritory/t.cells — must run before recomputeGraph() rebuilds the
-// territory-level neighbor sets and centroids from the final cell layout.
-// One growth pass: steals cells into undersized territories until every one still under
-// minCells is "stuck" (no viable donor, or every candidate cell would disconnect its donor).
-// Returns true if it managed at least 1 steal — a stuck territory can become fixable in a LATER
-// pass once some other territory's growth has changed the local layout, so the caller retries
-// this until a full pass makes zero progress (see enforceMinTerritorySize below).
-function growUndersizedTerritoriesOnce(map, minCells){
-  const stuck = new Set();
-  let madeProgress = false;
-  let guard = 0;
-  while(guard++<20000){
-    let target = null;
-    Object.values(map.territories).forEach(t=>{
-      if(t.cells.length>0 && t.cells.length<minCells && !stuck.has(t.id)
-         && (!target || t.cells.length<target.cells.length)) target=t;
-    });
-    if(!target) break; // nothing left to grow (or everything left is stuck)
+// Squared distance (in cells, center to center) from every cell of `cells` to the nearest cell
+// NOT in `cells`, computed over the cells' bounding box padded by 1 (so every row/column has an
+// outside cell to measure against). d2 is indexed (r-minR)*w + (c-minC); outside cells are 0.
+function territoryEDT(cells){
+  let minC=Infinity, maxC=-Infinity, minR=Infinity, maxR=-Infinity;
+  for(const [c,r] of cells){ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; }
+  minC--; minR--; maxC++; maxR++;
+  const w = maxC-minC+1, h = maxR-minR+1;
+  const d2 = new Float64Array(w*h);
+  const BIG = 1e12;
+  for(const [c,r] of cells) d2[(r-minR)*w + (c-minC)] = BIG;
+  const n = Math.max(w,h);
+  const f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n+1);
+  for(let x=0; x<w; x++){
+    for(let y=0; y<h; y++) f[y] = d2[y*w+x];
+    edt1d(f, h, d, v, z);
+    for(let y=0; y<h; y++) d2[y*w+x] = d[y];
+  }
+  for(let y=0; y<h; y++){
+    for(let x=0; x<w; x++) f[x] = d2[y*w+x];
+    edt1d(f, w, d, v, z);
+    for(let x=0; x<w; x++) d2[y*w+x] = d[x];
+  }
+  return {minC, minR, w, h, d2};
+}
 
-    const cellSet = new Set(target.cells.map(([c,r])=> r*map.cols+c));
-    const borderByOwner = {};
-    target.cells.forEach(([c,r])=>{
-      for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const nc=c+dc, nr=r+dr;
-        if(!inBounds(map,nc,nr)) continue;
-        const idx = cellIndex(map,nc,nr);
-        if(cellSet.has(idx)) continue;
-        const ownerId = map.cellTerritory[idx];
-        if(ownerId===-1 || ownerId===target.id) continue;
-        (borderByOwner[ownerId]=borderByOwner[ownerId]||[]).push([nc,nr]);
+// Distance from a cell center to the nearest outside cell CENTER overstates how far the badge can
+// reach before touching the territory's actual edge (half a cell, more on diagonals), and the
+// Douglas-Peucker/Chaikin outline smoothing can shave a bit more off corners — so every badge
+// needs this much extra room on top of its own radius.
+const BADGE_FIT_MARGIN_CELLS = 1;
+
+// True if 3 army badges fit inside `cells` without overlapping each other or crossing its edge.
+// Valid badge centers are cells at least (badge radius + margin) from the edge; we need 3 of them
+// pairwise >= 1 badge diameter apart. Fast path: if the deepest point has room for an equilateral
+// triangle of badge centers around it (clearance is 1-Lipschitz, so each vertex keeps enough),
+// it passes outright. Otherwise a few greedy farthest-point triples are tried — this can only
+// ever under-report a fit (a false "no" just means one extra merge), never over-report one.
+// Deterministic for a given cell list.
+function territoryFitsBadges(map, cells){
+  if(cells.length<3) return false;
+  const rC = ARMY_BADGE_RADIUS/map.cellSize;
+  const need = rC + BADGE_FIT_MARGIN_CELLS;
+  const e = territoryEDT(cells);
+  const need2 = need*need;
+  const pts = [];
+  let best2 = 0;
+  for(let i=0; i<e.d2.length; i++){
+    const v2 = e.d2[i];
+    if(v2>=need2) pts.push(i);
+    if(v2>best2) best2 = v2;
+  }
+  if(pts.length<3) return false;
+  const tri = need + 2*rC/Math.sqrt(3);
+  if(best2 >= tri*tri) return true;
+  const sep2 = (2*rC)*(2*rC);
+  const xs = pts.map(i=> i%e.w), ys = pts.map(i=> (i/e.w)|0);
+  const dist2 = (a,b)=> (xs[a]-xs[b])**2 + (ys[a]-ys[b])**2;
+  const farthestFrom = (a)=>{ let bi=0, bd=-1; for(let i=0;i<pts.length;i++){ const dd=dist2(a,i); if(dd>bd){ bd=dd; bi=i; } } return bi; };
+  for(let attempt=0; attempt<8; attempt++){
+    // deterministic starts, so re-checking the same territory always gives the same answer
+    const start = Math.floor(attempt*pts.length/8);
+    const a = farthestFrom(start), c = farthestFrom(a);
+    if(dist2(a,c)<sep2) return false; // even the two farthest-apart valid centers are too close
+    let b=-1, bd=-1;
+    for(let i=0;i<pts.length;i++){ const dd = Math.min(dist2(a,i), dist2(c,i)); if(dd>bd){ bd=dd; b=i; } }
+    if(bd>=sep2) return true;
+  }
+  return false;
+}
+
+// The "pole of inaccessibility" of a territory: its deepest cell (farthest from any edge), ties
+// broken toward the plain average position. Used as the territory's badge anchor (see
+// recomputeGraph) — the average position of a concave or crescent-shaped territory can sit right
+// on its edge or even outside it, which is exactly where a badge doesn't fit.
+function territoryPoleCell(cells){
+  const e = territoryEDT(cells);
+  let mx=0, my=0;
+  for(const [c,r] of cells){ mx+=c; my+=r; }
+  mx/=cells.length; my/=cells.length;
+  let bestIdx=-1, bestD=-1, bestTie=Infinity;
+  for(let i=0;i<e.d2.length;i++){
+    const v2 = e.d2[i];
+    if(v2<=0) continue;
+    const c = (i%e.w)+e.minC, r = ((i/e.w)|0)+e.minR;
+    const tie = (c-mx)**2 + (r-my)**2;
+    if(v2>bestD || (v2===bestD && tie<bestTie)){ bestD=v2; bestTie=tie; bestIdx=i; }
+  }
+  return [(bestIdx%e.w)+e.minC, ((bestIdx/e.w)|0)+e.minR];
+}
+
+// Smooth random field in [1-amp, 1+amp] (bilinear-interpolated coarse random grid) used as a
+// per-cell step cost, so Voronoi region boundaries wander organically instead of running in the
+// dead-straight lines a plain distance metric gives.
+function makeNoiseWeight(cols, rows, step, amp){
+  const gw = Math.ceil(cols/step)+2, gh = Math.ceil(rows/step)+2;
+  const g = new Float64Array(gw*gh);
+  for(let i=0;i<g.length;i++) g[i] = Math.random()*2-1;
+  const w = new Float64Array(cols*rows);
+  const smooth = t=> t*t*(3-2*t);
+  for(let r=0;r<rows;r++){
+    const gy = r/step, y0 = Math.floor(gy), fy = smooth(gy-y0);
+    for(let c=0;c<cols;c++){
+      const gx = c/step, x0 = Math.floor(gx), fx = smooth(gx-x0);
+      const a = g[y0*gw+x0], b = g[y0*gw+x0+1], cc = g[(y0+1)*gw+x0], d = g[(y0+1)*gw+x0+1];
+      const val = (a*(1-fx)+b*fx)*(1-fy) + (cc*(1-fx)+d*fx)*fy;
+      w[r*cols+c] = 1 + amp*val;
+    }
+  }
+  return w;
+}
+
+const NB_DX = [1,-1,0,0,1,1,-1,-1], NB_DY = [0,0,1,-1,1,-1,1,-1];
+const NB_LEN = [1,1,1,1,Math.SQRT2,Math.SQRT2,Math.SQRT2,Math.SQRT2];
+
+// Multi-source Dijkstra over the cells where mask[idx] is set: each cell gets the index of the
+// seed nearest to it along paths that stay inside the mask (so regions never reach across water).
+// Diagonal steps only where both cells they cut past are in the mask too. `offsets` (optional,
+// per seed) gives a seed a head start — an additively-weighted Voronoi, which is how the
+// generator lets a too-small region claim more land from its neighbors. Returns Int32Array
+// labels (-1 = unreachable from every seed).
+// Called dozens of times per generated map, so the heap is inlined over typed arrays rather than
+// going through a generic heap object — this loop is most of the generator's run time.
+function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets){
+  const n = cols*rows;
+  const dist = new Float64Array(n).fill(Infinity);
+  const label = new Int32Array(n).fill(-1);
+  let cap = 4096, size = 0;
+  let hk = new Float64Array(cap), hv = new Int32Array(cap);
+  const push = (key, val)=>{
+    if(size===cap){
+      cap *= 2;
+      const nk = new Float64Array(cap); nk.set(hk); hk = nk;
+      const nv = new Int32Array(cap); nv.set(hv); hv = nv;
+    }
+    let i = size++;
+    while(i>0){ const p=(i-1)>>1; if(hk[p]<=key) break; hk[i]=hk[p]; hv[i]=hv[p]; i=p; }
+    hk[i]=key; hv[i]=val;
+  };
+  for(let i=0;i<seedIdxs.length;i++){
+    const s = seedIdxs[i], d0 = offsets ? -offsets[i] : 0;
+    if(d0<dist[s]){ dist[s]=d0; label[s]=i; push(d0,s); }
+  }
+  while(size>0){
+    const idx = hv[0], d = hk[0];
+    const lk = hk[--size], lv = hv[size];
+    if(size>0){
+      let i=0;
+      for(;;){
+        const l=2*i+1; if(l>=size) break;
+        const r=l+1, m=(r<size && hk[r]<hk[l])?r:l;
+        if(hk[m]>=lk) break;
+        hk[i]=hk[m]; hv[i]=hv[m]; i=m;
       }
-    });
-    const donorIds = Object.keys(borderByOwner).map(Number);
-    if(donorIds.length===0){ stuck.add(target.id); continue; } // boxed in by water/map edge only
-
-    donorIds.sort((a,b)=> map.territories[b].cells.length - map.territories[a].cells.length);
-    const donorId = donorIds.find(id=> map.territories[id].cells.length-1 >= minCells);
-    if(donorId===undefined){ stuck.add(target.id); continue; } // no neighbor can spare a cell
-
-    const donor = map.territories[donorId];
-    let pick = null;
-    for(const [c,r] of shuffle(borderByOwner[donorId])){
-      const idxInDonor = donor.cells.findIndex(([dc,dr])=> dc===c && dr===r);
-      if(cellsStayConnectedWithoutOne(map, donor.cells, idxInDonor)){ pick=[c,r]; break; }
+      hk[i]=lk; hv[i]=lv;
     }
-    if(!pick){ stuck.add(target.id); continue; } // every candidate is a cut-vertex for the donor
-
-    donor.cells = donor.cells.filter(([dc,dr])=> !(dc===pick[0]&&dr===pick[1]));
-    target.cells.push(pick);
-    map.cellTerritory[cellIndex(map,pick[0],pick[1])] = target.id;
-    madeProgress = true;
+    if(d>dist[idx]) continue;
+    const c = idx%cols, r = (idx/cols)|0, w0 = weight[idx], lab = label[idx];
+    for(let k=0;k<8;k++){
+      const nc=c+NB_DX[k], nr=r+NB_DY[k];
+      if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
+      const nidx = nr*cols+nc;
+      if(!mask[nidx]) continue;
+      if(k>=4 && (!mask[r*cols+nc] || !mask[nr*cols+c])) continue;
+      const nd = d + NB_LEN[k]*0.5*(w0+weight[nidx]);
+      if(nd<dist[nidx]){ dist[nidx]=nd; label[nidx]=lab; push(nd,nidx); }
+    }
   }
-  return madeProgress;
+  return label;
 }
 
-function enforceMinTerritorySize(map, minCells){
-  let pass = 0;
-  while(pass++<8 && growUndersizedTerritoriesOnce(map, minCells)){}
-}
-
-// Picks k territory seeds spread across the map instead of fully at random — purely random
-// seeds occasionally land 2 close together, or leave one in a tight corner with few open
-// neighbors, so its BFS growth stalls early and it ends up needing heavy rescue from
-// enforceMinTerritorySize() (or can't be fully rescued at all if it's boxed in on every side).
-// Cheap grid-bucket stratification: divide the map into ~k buckets sized to its aspect ratio
-// and take 1 random land cell from each non-empty one, topping up randomly if the coastline is
-// too sparse/irregular to fill every bucket.
-function pickStratifiedSeeds(landCells, cols, rows, k){
-  if(k>=landCells.length) return shuffle(landCells.slice());
-  const aspect = cols/rows;
-  const bucketsY = Math.max(1, Math.round(Math.sqrt(k/aspect)));
-  const bucketsX = Math.max(1, Math.ceil(k/bucketsY));
-  const bucketW = cols/bucketsX, bucketH = rows/bucketsY;
-  const buckets = new Map();
-  landCells.forEach(([c,r])=>{
-    const bx = Math.min(bucketsX-1, Math.floor(c/bucketW));
-    const by = Math.min(bucketsY-1, Math.floor(r/bucketH));
-    const key = bx+','+by;
-    if(!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key).push([c,r]);
-  });
+// Greedy farthest-point sampling of k cells out of `cellIdxs` (flat indices) — spreads seeds
+// evenly over the land instead of leaving 2 of them side by side.
+function farthestPointSeeds(cols, cellIdxs, k){
+  if(cellIdxs.length===0) return [];
+  const minD = new Float64Array(cellIdxs.length).fill(Infinity);
   const seeds = [];
-  shuffle([...buckets.values()]).forEach(cells=>{
-    if(seeds.length<k) seeds.push(randChoice(cells));
-  });
-  if(seeds.length<k){
-    const seedSet = new Set(seeds.map(([c,r])=>r*cols+c));
-    shuffle(landCells.filter(([c,r])=>!seedSet.has(r*cols+c))).forEach(cell=>{
-      if(seeds.length<k) seeds.push(cell);
-    });
+  let next = Math.floor(Math.random()*cellIdxs.length);
+  while(seeds.length<k && seeds.length<cellIdxs.length){
+    const s = cellIdxs[next]; seeds.push(s);
+    const sc = s%cols, sr = (s/cols)|0;
+    let bi = -1, bd = -1;
+    for(let i=0;i<cellIdxs.length;i++){
+      const idx = cellIdxs[i], dd = (idx%cols-sc)**2 + (((idx/cols)|0)-sr)**2;
+      if(dd<minD[i]) minD[i] = dd;
+      if(minD[i]>bd){ bd = minD[i]; bi = i; }
+    }
+    if(bd<=0) break;
+    next = bi;
   }
   return seeds;
 }
 
+// One Lloyd step: move every seed to the cell of its own region nearest that region's average
+// position (staying on a real cell of the region, so it never lands in water).
+function lloydMoveSeeds(cols, cellIdxs, label, seeds){
+  const k = seeds.length;
+  const sx = new Float64Array(k), sy = new Float64Array(k), cnt = new Float64Array(k);
+  for(const idx of cellIdxs){ const l = label[idx]; if(l<0) continue; sx[l]+=idx%cols; sy[l]+=(idx/cols)|0; cnt[l]++; }
+  const bestD = new Float64Array(k).fill(Infinity);
+  const moved = seeds.slice();
+  for(const idx of cellIdxs){
+    const l = label[idx]; if(l<0 || cnt[l]===0) continue;
+    const dd = (idx%cols - sx[l]/cnt[l])**2 + (((idx/cols)|0) - sy[l]/cnt[l])**2;
+    if(dd<bestD[l]){ bestD[l]=dd; moved[l]=idx; }
+  }
+  return moved;
+}
+
+// Lloyd relaxation: repeatedly partition, then recenter every seed in its region. A few rounds
+// turn an uneven first partition into compact, roughly equal-area regions. Returns the labels.
+function relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, rounds){
+  let label = weightedVoronoi(cols, rows, mask, seeds, weight);
+  for(let it=0; it<rounds; it++){
+    seeds = lloydMoveSeeds(cols, cellIdxs, label, seeds);
+    label = weightedVoronoi(cols, rows, mask, seeds, weight);
+  }
+  return label;
+}
+
+// Partition the land into `k` regions that (as far as the land allows) each fit 3 badges:
+// Lloyd-relaxed noisy Voronoi for compact shapes, then a balancing loop — every region that
+// still fails gets a bigger head start (offset) and the partition is redone, so cramped regions
+// (typically squeezed against the coast) grow into their roomier neighbors instead of being
+// merged away. Whatever still fails after this is handled by repairUnfitTerritories().
+function balancedFitPartition(map, mask, landIdxs, k, weight){
+  const {cols, rows} = map;
+  let seeds = farthestPointSeeds(cols, landIdxs, k);
+  const offsets = new Float64Array(seeds.length);
+  // Most regions don't change between balancing rounds (only the ones next to a growing region
+  // do) — a cheap signature of each region's cells skips re-checking the unchanged ones.
+  const lastSig = new Array(seeds.length).fill(null), lastFit = new Array(seeds.length).fill(false);
+  let label = null;
+  for(let it=0; it<25; it++){
+    label = weightedVoronoi(cols, rows, mask, seeds, weight, offsets);
+    if(it<5){ seeds = lloydMoveSeeds(cols, landIdxs, label, seeds); continue; }
+    enforceConnectedRegions(cols, rows, landIdxs, label);
+    const cellsOf = seeds.map(()=>[]), sig = seeds.map(()=>0);
+    for(const idx of landIdxs){
+      const l=label[idx]; if(l<0) continue;
+      cellsOf[l].push([idx%cols,(idx/cols)|0]);
+      sig[l] = (sig[l]*31 + idx) % 2147483647;
+    }
+    let anyFail = false;
+    cellsOf.forEach((cells,i)=>{
+      if(!cells.length) return;
+      const s = cells.length+':'+sig[i];
+      if(s!==lastSig[i]){ lastSig[i]=s; lastFit[i]=territoryFitsBadges(map, cells); }
+      if(!lastFit[i]){ offsets[i] += 2; anyFail = true; }
+    });
+    if(!anyFail) return label;
+  }
+  enforceConnectedRegions(cols, rows, landIdxs, label);
+  return label;
+}
+
+// A region can come out of the partition in more than one 4-connected piece (two regions
+// pinching through a diagonal gap, say) — the game's adjacency is 4-directional, so each region
+// keeps only its biggest piece and every smaller stray piece is handed to whichever other region
+// borders it most.
+function enforceConnectedRegions(cols, rows, cellIdxs, label){
+  for(let pass=0; pass<10; pass++){
+    const comp = new Int32Array(cols*rows).fill(-1);
+    const comps = [];
+    for(const start of cellIdxs){
+      if(label[start]<0 || comp[start]!==-1) continue;
+      const id = comps.length, l = label[start], cells=[start];
+      comp[start] = id;
+      for(let qi=0; qi<cells.length; qi++){
+        const idx=cells[qi], c=idx%cols, r=(idx/cols)|0;
+        for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const nc=c+dc, nr=r+dr;
+          if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
+          const nidx=nr*cols+nc;
+          if(comp[nidx]===-1 && label[nidx]===l){ comp[nidx]=id; cells.push(nidx); }
+        }
+      }
+      comps.push({l, cells});
+    }
+    const biggest = {};
+    comps.forEach((cp,i)=>{ if(biggest[cp.l]===undefined || cp.cells.length>comps[biggest[cp.l]].cells.length) biggest[cp.l]=i; });
+    let changed = false;
+    comps.forEach((cp,i)=>{
+      if(biggest[cp.l]===i) return;
+      const counts = {};
+      for(const idx of cp.cells){
+        const c=idx%cols, r=(idx/cols)|0;
+        for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const nc=c+dc, nr=r+dr;
+          if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
+          const nl = label[nr*cols+nc];
+          if(nl>=0 && nl!==cp.l) counts[nl]=(counts[nl]||0)+1;
+        }
+      }
+      const keys = Object.keys(counts);
+      if(!keys.length) return;
+      const to = Number(keys.reduce((a,b)=> counts[b]>counts[a]?b:a));
+      for(const idx of cp.cells) label[idx]=to;
+      changed = true;
+    });
+    if(!changed) return;
+  }
+}
+
+// How many land cells border `t` per neighboring territory id (4-directional).
+function territoryBorderCounts(map, t){
+  const counts = {};
+  for(const [c,r] of t.cells){
+    for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nc=c+dc, nr=r+dr;
+      if(!inBounds(map,nc,nr)) continue;
+      const o = map.cellTerritory[cellIndex(map,nc,nr)];
+      if(o!==-1 && o!==t.id) counts[o]=(counts[o]||0)+1;
+    }
+  }
+  return counts;
+}
+
+// Merge every territory that fails territoryFitsBadges into a neighbor — preferring one that
+// passes (a superset of a passing territory always passes too, so the result is guaranteed fit
+// and nothing cascades), then the longest shared border. An island with no land neighbor at all
+// that fails is too small to ever hold its badges, so it's sunk into the sea instead.
+function repairUnfitTerritories(map, water){
+  const fit = {};
+  Object.values(map.territories).forEach(t=>{ fit[t.id] = territoryFitsBadges(map, t.cells); });
+  for(let guard=0; guard<2000; guard++){
+    const failing = Object.values(map.territories).filter(t=>!fit[t.id]);
+    if(!failing.length) return;
+    const t = failing.reduce((a,b)=> b.cells.length<a.cells.length ? b : a);
+    const border = territoryBorderCounts(map, t);
+    const ids = Object.keys(border).map(Number);
+    if(!ids.length){
+      t.cells.forEach(([c,r])=>{ const idx=cellIndex(map,c,r); map.cellTerritory[idx]=-1; water[idx]=1; });
+      delete map.territories[t.id];
+      continue;
+    }
+    ids.sort((a,b)=> (Number(fit[b])-Number(fit[a])) || (border[b]-border[a]));
+    const into = map.territories[ids[0]];
+    t.cells.forEach(([c,r])=>{ into.cells.push([c,r]); map.cellTerritory[cellIndex(map,c,r)] = into.id; });
+    delete map.territories[t.id];
+    if(!fit[into.id]) fit[into.id] = territoryFitsBadges(map, into.cells);
+  }
+}
+
+// Tries to split `t` into 2 compact halves (2-seed relaxed partition inside it, a few different
+// random starts). Returns the two cell lists only if BOTH halves still fit 3 badges, else null.
+function trySplitTerritory(map, t, weight){
+  const {cols, rows} = map;
+  const cellIdxs = t.cells.map(([c,r])=> r*cols+c);
+  const mask = new Uint8Array(cols*rows);
+  cellIdxs.forEach(i=> mask[i]=1);
+  for(let attempt=0; attempt<2; attempt++){
+    const seeds = farthestPointSeeds(cols, cellIdxs, 2);
+    if(seeds.length<2) return null;
+    const label = relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, 4);
+    enforceConnectedRegions(cols, rows, cellIdxs, label);
+    const halves = [[],[]];
+    for(const idx of cellIdxs){ const l=label[idx]; if(l>=0) halves[l].push([idx%cols,(idx/cols)|0]); }
+    if(halves[0].length+halves[1].length!==cellIdxs.length || !halves[0].length || !halves[1].length) continue;
+    if(territoryFitsBadges(map, halves[0]) && territoryFitsBadges(map, halves[1])) return halves;
+  }
+  return null;
+}
+
+// Restores the territory count after repairUnfitTerritories() merged some away, by splitting the
+// largest territories in two for as long as a split keeps both halves fit.
+function splitToTargetCount(map, targetCount, weight){
+  const unsplittable = new Set();
+  // Halves of anything smaller than this can't both fit, so don't bother trying (each failed
+  // try costs a couple of full partitions of that territory).
+  const minSplittable = 2*idealFitTerritoryCells(map);
+  const missing = targetCount - Object.keys(map.territories).length;
+  for(let tries=0; tries<2*missing+4; tries++){
+    if(Object.keys(map.territories).length>=targetCount) return;
+    const cands = Object.values(map.territories).filter(t=>!unsplittable.has(t.id) && t.cells.length>=minSplittable);
+    if(!cands.length) return;
+    const t = cands.reduce((a,b)=> b.cells.length>a.cells.length ? b : a);
+    const halves = trySplitTerritory(map, t, weight);
+    if(!halves){ unsplittable.add(t.id); continue; }
+    const nt = createTerritory(map);
+    t.cells = halves[0];
+    nt.cells = halves[1];
+    nt.cells.forEach(([c,r])=>{ map.cellTerritory[cellIndex(map,c,r)] = nt.id; });
+  }
+}
+
+// Area of the smallest regular hexagon that passes territoryFitsBadges' fast path — the ideal
+// minimum size of a fit territory.
+function idealFitTerritoryCells(map){
+  const rC = ARMY_BADGE_RADIUS/map.cellSize;
+  const inR = rC + BADGE_FIT_MARGIN_CELLS + 2*rC/Math.sqrt(3);
+  return 2*Math.sqrt(3)*inR*inR;
+}
+
+// Land cells to budget per territory when capping how many territories a map is asked for. Real
+// regions are less regular than the ideal hexagon (coastlines, lakes), so some slack is needed.
+// Measured over generated maps, a bigger slack (1.5-1.9x) gives slightly more even sizes but
+// noticeably fewer territories on water-heavy maps; 1.35x keeps the most territories, with
+// repairUnfitTerritories/splitToTargetCount absorbing the rest.
+function minCellsPerFitTerritory(map){
+  return Math.ceil(idealFitTerritoryCells(map)*1.35);
+}
+
+// Every territory of the result fits 3 army badges, but a very water-heavy roll can leave only
+// a handful of islands big enough for that (or none) — so a layout with too few territories to
+// play on is re-rolled, easing off the water after the second try, keeping the best one seen.
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
+  const ratio = waterRatio===undefined ? 0.28 : waterRatio;
+  const playable = Math.min(numTerr, 12);
+  let best = null;
+  for(const scale of [1, 1, 0.7, 0.4, 0]){
+    const map = generateTerritoryLayout(cols, rows, numTerr, name, ratio*scale, waterSpread);
+    const count = Object.keys(map.territories).length;
+    if(!best || count>Object.keys(best.territories).length) best = map;
+    if(count>=playable) break;
+  }
+  for(let i=0;i<numCont;i++) createContinent(best);
+  reassignContinents(best);
+  return best;
+}
+
+function generateTerritoryLayout(cols, rows, numTerr, name, waterRatio, waterSpread){
   const map = newMap(cols, rows, name);
-  const water = generateWaterMask(cols, rows, waterRatio===undefined?0.28:waterRatio, waterSpread);
-  // A land component smaller than this fraction of one territory's average cell target isn't
-  // worth keeping as its own territory — see submergeTinyLandIslands() above.
+  const water = generateWaterMask(cols, rows, waterRatio, waterSpread);
+  // Stray slivers of land pinched off by the coastline are never worth a territory — see
+  // submergeTinyLandIslands() above. (Anything bigger that still can't hold its badges is
+  // handled per-territory by repairUnfitTerritories below.)
   const avgCellsPerTerritory = (cols*rows)/Math.max(1,numTerr);
   submergeTinyLandIslands(water, cols, rows, Math.max(6, Math.round(avgCellsPerTerritory*0.15)));
   map.water = water; // keep for reference/export if needed later
 
-  const landCells = [];
-  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ if(!water[r*cols+c]) landCells.push([c,r]); }
-
-  if(landCells.length===0){
+  let landIdxs = [];
+  for(let i=0;i<cols*rows;i++) if(!water[i]) landIdxs.push(i);
+  if(landIdxs.length===0){
     // degenerate case (100% water requested) - fall back to a small land patch so the map is playable
-    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){ if(r<Math.max(2,Math.floor(rows/4))){ water[r*cols+c]=0; landCells.push([c,r]); } }
+    for(let r=0;r<Math.max(2,Math.floor(rows/4));r++) for(let c=0;c<cols;c++){ water[r*cols+c]=0; landIdxs.push(r*cols+c); }
   }
 
-  const effectiveNumTerr = Math.max(1, Math.min(numTerr, landCells.length));
-  const seeds = pickStratifiedSeeds(landCells, cols, rows, effectiveNumTerr);
-  const terrs = seeds.map((s)=> createTerritory(map));
-  const frontier = []; // {c,r,terrId}
-  seeds.forEach((s,i)=>{
-    map.cellTerritory[cellIndex(map,s[0],s[1])] = terrs[i].id;
-    terrs[i].cells.push([s[0],s[1]]);
-    frontier.push([s[0],s[1],terrs[i].id]);
-  });
-  // multi-source randomized BFS growth, restricted to land cells
-  let queue = frontier;
-  while(queue.length){
-    queue = shuffle(queue);
-    const next = [];
-    for(const [c,r,tid] of queue){
-      const dirs = shuffle([[1,0],[-1,0],[0,1],[0,-1]]);
-      for(const [dc,dr] of dirs){
-        const nc=c+dc, nr=r+dr;
-        if(!inBounds(map,nc,nr)) continue;
-        const idx = cellIndex(map,nc,nr);
-        if(water[idx]) continue;
-        if(map.cellTerritory[idx] === -1){
-          map.cellTerritory[idx] = tid;
-          map.territories[tid].cells.push([nc,nr]);
-          next.push([nc,nr,tid]);
-        }
-      }
-    }
-    queue = next;
+  // Never ask the land for more territories than it can hold with every one fitting its badges.
+  const targetTerr = Math.max(1, Math.min(numTerr, Math.floor(landIdxs.length/minCellsPerFitTerritory(map))));
+  const mask = new Uint8Array(cols*rows);
+  landIdxs.forEach(i=> mask[i]=1);
+  const weight = makeNoiseWeight(cols, rows, 10, 0.45);
+  const label = balancedFitPartition(map, mask, landIdxs, targetTerr, weight);
+
+  const byLabel = {};
+  for(const idx of landIdxs){
+    const l = label[idx];
+    if(l<0) continue;
+    (byLabel[l] = byLabel[l] || []).push(idx);
   }
-  // water can split land into separate islands with no seed of their own — claim any leftover
-  // land cells (as new territories) so the whole coastline ends up owned by someone.
-  let leftoverGuard=0;
-  while(leftoverGuard++<2000){
-    const unfilled = landCells.filter(([c,r])=> map.cellTerritory[cellIndex(map,c,r)]===-1);
-    if(unfilled.length===0) break;
-    const [sc,sr] = randChoice(unfilled);
+  Object.values(byLabel).forEach(idxs=>{
     const t = createTerritory(map);
-    let q = [[sc,sr]];
-    map.cellTerritory[cellIndex(map,sc,sr)] = t.id; t.cells.push([sc,sr]);
-    while(q.length){
-      q = shuffle(q);
-      const next=[];
-      for(const [c,r] of q){
-        for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const nc=c+dc, nr=r+dr;
-          if(!inBounds(map,nc,nr)) continue;
-          const idx = cellIndex(map,nc,nr);
-          if(water[idx]) continue;
-          if(map.cellTerritory[idx]===-1){
-            map.cellTerritory[idx]=t.id; t.cells.push([nc,nr]); next.push([nc,nr]);
-          }
-        }
+    idxs.forEach(idx=>{ map.cellTerritory[idx]=t.id; t.cells.push([idx%cols,(idx/cols)|0]); });
+  });
+  // Islands no seed reached: each whole island becomes its own territory (repairUnfitTerritories
+  // sinks it if it's too small to hold its badges).
+  for(const start of landIdxs){
+    if(map.cellTerritory[start]!==-1) continue;
+    const t = createTerritory(map);
+    const q = [start]; map.cellTerritory[start]=t.id;
+    for(let qi=0; qi<q.length; qi++){
+      const idx=q[qi], c=idx%cols, r=(idx/cols)|0;
+      t.cells.push([c,r]);
+      for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nc=c+dc, nr=r+dr;
+        if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
+        const nidx=nr*cols+nc;
+        if(mask[nidx] && map.cellTerritory[nidx]===-1){ map.cellTerritory[nidx]=t.id; q.push(nidx); }
       }
-      q = next;
     }
   }
-  // A territory whose seed got boxed in early during the multi-source BFS above can end up as
-  // just a handful of cells (even 1) next to neighbors hundreds of cells large — seeds are
-  // placed fully at random with no spatial spreading, unlike continent seeding. Grow any such
-  // sliver up to a reasonable floor before finalizing the graph/centroids below.
-  enforceMinTerritorySize(map, Math.max(4, Math.round(avgCellsPerTerritory*0.2)));
+
+  repairUnfitTerritories(map, water);
+  splitToTargetCount(map, targetTerr, weight);
 
   recomputeGraph(map);
   ensureNoIsolatedTerritories(map);
-
-  for(let i=0;i<numCont;i++) createContinent(map);
-  reassignContinents(map);
   return map;
 }
 
@@ -2033,10 +2347,12 @@ function reassignContinents(map){
     contsPerComponent = components.map((c,i)=> i<numCont ? 1 : 0);
   }
 
-  const pool = shuffle(contIds.slice()); // drained exactly `numCont` times total below
+  const pool = shuffle(contIds.slice()); // drained at most `numCont` times total below
   const contOwnedByComponent = components.map(()=>false);
   components.forEach((comp, ci)=>{
-    const wantConts = contsPerComponent[ci];
+    // A landmass can have fewer territories than its area-proportional quota of continents
+    // (few, large territories) — never ask it to seed more continents than it has territories.
+    const wantConts = Math.min(contsPerComponent[ci], comp.ids.length);
     if(wantConts<=0) return;
     contOwnedByComponent[ci] = true;
     const myContIds = pool.splice(0, wantConts);
@@ -2079,6 +2395,9 @@ function reassignContinents(map){
     comp.ids.forEach(tid=> map.territories[tid].continentId = targetCont);
     sizeOf[targetCont] += comp.ids.length;
   });
+  // Continents the clamp above left with no territory at all would be invisible and broken
+  // (enforceMinContinentSize only grows continents that already have >=1 territory).
+  contIds.forEach(id=>{ if(sizeOf[id]<=0) delete map.continents[id]; });
 
   enforceMinContinentSize(map, 4);
   assignContinentColors(map);
@@ -3541,7 +3860,7 @@ function lerpColor(hexA, hexB, t){
 function drawArmyBadge(ctx, x, y, count, opts){
   opts = opts || {};
   const scale = opts.scale || 1;
-  const r = 13*scale;
+  const r = ARMY_BADGE_RADIUS*scale;
   ctx.save();
   ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4*scale; ctx.shadowOffsetY=2*scale;
   ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);

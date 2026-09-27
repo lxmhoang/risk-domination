@@ -44,7 +44,7 @@ function lerpColor(hexA, hexB, t){
 function drawArmyBadge(ctx, x, y, count, opts){
   opts = opts || {};
   const scale = opts.scale || 1;
-  const r = 13*scale;
+  const r = ARMY_BADGE_RADIUS*scale;
   ctx.save();
   ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4*scale; ctx.shadowOffsetY=2*scale;
   ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);

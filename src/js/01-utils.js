@@ -175,6 +175,11 @@ const TURN_INTRO_SHOW_MS = 1000;
 const TURN_INTRO_FADE_MS = 400;
 const TURN_INTRO_TOTAL_MS = TURN_INTRO_SHOW_MS + TURN_INTRO_FADE_MS;
 
+// Radius (canvas-space units, same as map.cellSize) of the fixed-size army badge drawn on each
+// territory (drawArmyBadge, 06-render-game.js). The random map generator sizes territories so
+// 3 of these fit in each one (territoryFitsBadges, 02-map-model.js).
+const ARMY_BADGE_RADIUS = 13;
+
 const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
