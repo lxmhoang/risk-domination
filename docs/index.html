@@ -3500,12 +3500,19 @@ function pickAITurnIntent(pid){
 }
 
 function pickAIReinforceTarget(pid, mine, intent){
+  // Same gang-up logic as aiAttackStep's reserveFor(): once a runaway leader has locked every
+  // other AI into "attack only the leader" this turn, a border facing a fellow non-leader isn't
+  // a real threat (they won't attack it either) — so new reinforcements shouldn't be pulled
+  // toward defending it. Only borders facing the leader still count as under threat.
+  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
+  const mustOnlyDefendAgainstLeader = allianceLeaderId!=null && pid!==allianceLeaderId;
   let best=null, bestScore=-Infinity;
   mine.forEach(id=>{
     const t = mapData.territories[id];
     const enemyNb = [...t.neighbors].filter(n=>game.owner[n]!==pid);
     if(enemyNb.length===0) return; // only border territories are worth reinforcing
-    const maxEnemyArmy = Math.max(...enemyNb.map(n=>game.armies[n]));
+    const threatNb = mustOnlyDefendAgainstLeader ? enemyNb.filter(n=>game.owner[n]===allianceLeaderId) : enemyNb;
+    const maxEnemyArmy = threatNb.length ? Math.max(...threatNb.map(n=>game.armies[n])) : 0;
     let score = maxEnemyArmy - game.armies[id];
     if(t.continentId!=null){
       const contTerrs = Object.values(mapData.territories).filter(x=>x.continentId===t.continentId);
@@ -3608,15 +3615,28 @@ function aiAttackStep(pid, intent){
   // (self included) and requires a real margin over the runner-up (see its own comment).
   const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
   const iAmAllianceLeader = pid!=null && pid===allianceLeaderId;
+  // Hard gang-up: once there's a runaway leader, every other AI attacks ONLY the leader's
+  // territories this turn — no picking on a fellow underdog instead, no falling back to
+  // opportunistic expansion elsewhere. If nothing of theirs borders the leader, they simply
+  // don't attack at all this turn (see the candidate-loop filter in step() below, and the
+  // "no legal attack" path at bestOpt===null, which already skips straight to fortify).
+  const mustOnlyAttackLeader = allianceLeaderId!=null && !iAmAllianceLeader;
 
   // How many armies a territory should keep in reserve, sized to the strongest
   // enemy neighbor it borders OTHER than the one currently being considered.
+  // Once gang-up mode is active (mustOnlyAttackLeader), every other non-leader AI is under the
+  // same rule — none of them will attack anywhere but the leader this turn either — so a fellow
+  // non-leader neighbor isn't a real threat right now. Only the leader's own bordering
+  // territories still justify holding troops back; everything else is freed up to go into the
+  // leader front instead of sitting idle "just in case" against an ally.
   function reserveFor(fromId, excludeTo){
     const t = mapData.territories[fromId];
     let maxOther = 0;
     t.neighbors.forEach(n=>{
       if(n===excludeTo) return;
-      if(game.owner[n]!==pid) maxOther = Math.max(maxOther, game.armies[n]);
+      if(game.owner[n]===pid) return;
+      if(mustOnlyAttackLeader && game.owner[n]!==allianceLeaderId) return;
+      maxOther = Math.max(maxOther, game.armies[n]);
     });
     return Math.ceil(maxOther*profile.reserveFactor);
   }
@@ -3633,10 +3653,11 @@ function aiAttackStep(pid, intent){
       const defTerrCount = ownedTerritories(defenderId).length;
       if(defTerrCount<=2) bonus += (1.5 + defP.cards.length*0.4)*profile.killBonusMult; // finish them off for the cards
       if(defenderId===leaderId && myPower<leaderPower*1.1) bonus -= 0.6; // wary of picking a fight I can't afford
-      if(allianceLeaderId!=null && !iAmAllianceLeader){
-        if(defenderId===allianceLeaderId) bonus += 1.2; // gang up on the runaway leader
-        else bonus -= 0.8;                              // reluctant to fight a fellow underdog instead
-      }
+      // mustOnlyAttackLeader's candidate-loop filter (see step()) already guarantees
+      // defenderId===allianceLeaderId here whenever that's active — this just makes the AI
+      // more willing to accept worse odds against the leader specifically (lowers
+      // effectiveThreshold via bestEval.bonus) rather than walking away from a marginal fight.
+      if(mustOnlyAttackLeader && defenderId===allianceLeaderId) bonus += 1.2;
     }
     // Keep this attack aligned with this turn's chosen campaign (see
     // pickAITurnIntent) instead of chasing whatever pair scores highest in
@@ -3706,6 +3727,7 @@ function aiAttackStep(pid, intent){
       const t = mapData.territories[from];
       for(const to of t.neighbors){
         if(game.owner[to]===pid) continue;
+        if(mustOnlyAttackLeader && game.owner[to]!==allianceLeaderId) continue;
         const ev = attackScore(from, to);
         if(!ev) continue;
         if(!bestEval || ev.score>bestEval.score){ bestEval=ev; bestOpt={from,to}; }
