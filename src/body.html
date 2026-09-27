@@ -228,6 +228,11 @@
        animated arrow between the two selected attack territories — see showFloatingAttackButtons(). -->
   <div id="floatingAttackButtons" hidden></div>
 
+  <!-- Same idea as #floatingAttackButtons but for the fortify-phase "Chuyển quân" button — sits
+       above the white dashed line between the two selected territories (see
+       positionFloatingFortifyButton(), 06-render-game.js). -->
+  <div id="floatingFortifyButton" hidden></div>
+
   <!-- Brief "your turn" banner shown at the start of every turn (human and AI alike) — see
        showTurnIntro() in 06-render-game.js, triggered from startReinforce(). Dims the map behind
        it but is pointer-events:none so it never blocks input. -->
@@ -238,10 +243,9 @@
     </div>
   </div>
 
-  <!-- Top controls + phase actions share one vertical column anchored top-right (see
-       #gameRightPanelWrap in style.css) — stacked in DOM/flex order so top controls render
-       above phase actions, with a z-index above #gameLogPanel so phase actions (attack/
-       reinforce/etc buttons) stay clickable even while the log panel is open and overlapping. -->
+  <!-- Icon column anchored middle-right (see #gameRightPanelWrap in style.css), one icon per
+       row within each section — z-index above #gameLogPanel so these stay clickable even while
+       the log panel is open and overlapping. -->
   <div id="gameRightPanelWrap">
     <div id="gameControlsTop" class="game-overlay">
       <div class="ov-section">
@@ -251,26 +255,12 @@
       </div>
       <div class="ov-section">
         <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
-        <button class="ov-btn small" id="btnCardsModal" title="Thẻ bài">🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
       </div>
       <div class="ov-section" id="zoomControlsSection">
-        <div class="ov-row">
-          <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
-          <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
-          <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
-        </div>
-        <div class="ov-row">
-          <button class="ov-btn small" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
-          <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
-          <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="gamePhaseActionsWrap" class="game-overlay">
-      <div class="ov-section" id="phaseActionsSection">
-        <div id="actionHint">Chào mừng đến với ván chơi!</div>
-        <div id="phaseActions"></div>
+        <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
+        <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
+        <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+        <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">🔍</button>
       </div>
     </div>
   </div>
@@ -279,11 +269,20 @@
     <div id="playerList"></div>
   </div>
 
+  <!-- Bottom-center pill: turn/phase status + the phase-specific end button and hint (formerly
+       the separate #gamePhaseActionsWrap side panel — folded in here so nothing sits floating on
+       the right anymore), plus the trade-cards button as its leftmost item (reinforce phase
+       only — hidden otherwise). -->
   <div id="gameTurnInfo" class="game-overlay">
-    <span class="turn-dot" id="turnDot"></span>
-    <span id="turnName">—</span>
-    <span class="phase-badge" id="phaseBadge">—</span>
-    <span id="reinforceCounter"></span>
+    <div id="turnInfoRow">
+      <button class="ov-btn small" id="btnCardsModal" title="Đổi thẻ bài" hidden>🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
+      <span class="turn-dot" id="turnDot"></span>
+      <span id="turnName">—</span>
+      <span class="phase-badge" id="phaseBadge">—</span>
+      <span id="reinforceCounter"></span>
+      <button class="primary" id="btnPhaseEnd" hidden></button>
+    </div>
+    <div id="actionHint">Chào mừng đến với ván chơi!</div>
   </div>
 
   <div id="gameLogPanel" class="collapsed">

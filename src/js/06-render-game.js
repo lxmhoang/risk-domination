@@ -499,6 +499,21 @@ function drawGameCanvas(){
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     });
+  } else {
+    // Normal view doesn't show continent fills, but a continent fully held by one player is
+    // still worth calling out at a glance — outline it in that player's color (their own
+    // territory-bonus stronghold), same stroke weight as the continent-view outline above.
+    Object.values(mapData.continents).forEach(cont=>{
+      const contTerrs = terrs.filter(t=>t.continentId===cont.id);
+      if(contTerrs.length===0) return;
+      const ownerId = game.owner[contTerrs[0].id];
+      if(ownerId===undefined || !contTerrs.every(t=>game.owner[t.id]===ownerId)) return;
+      const loops = getContinentBoundaryLoops(mapData, cont.id);
+      if(loops.length===0) return;
+      pathFromLoops(ctx, loops);
+      ctx.lineWidth = 3; ctx.strokeStyle = playerOf(ownerId).color;
+      ctx.stroke();
+    });
   }
   // selection highlight — a slow pulsing glow instead of a static line, so the currently
   // selected territory/territories stay noticeable at a glance instead of blending into the
@@ -595,6 +610,7 @@ function drawGameCanvas(){
     captureParticles.length>0 || !!attackAnim || (!reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null));
   if(stillAnimating) scheduleAnimFrame();
   if(inAttackPhase) positionFloatingAttackButtons();
+  if(game.phase==='fortify') positionFloatingFortifyButton();
 }
 
 function renderPlayerList(){
@@ -603,6 +619,10 @@ function renderPlayerList(){
   // game.turnOrder itself never changes after being shuffled once at game start, only turnIdx
   // advances through it, so this ordering stays stable for the whole match.
   const byTurnOrder = game.turnOrder.map(id=>game.players[id]);
+  // Same "worth ganging up on" leader as the AI alliance logic itself (05-ai.js) — only
+  // computed/shown when that setting is on, so the crown always matches what the AI is actually
+  // doing rather than introducing a separate "who's ahead" notion.
+  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
   byTurnOrder.forEach(p=>{
     const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
     const mine = ownedTerritories(p.id);
@@ -621,6 +641,11 @@ function renderPlayerList(){
     nameBadge.style.background = p.color;
     line1.appendChild(nameBadge);
     line1.appendChild(el('span','stat-item', `⚔️ ${totalArmies}`));
+    if(p.id===allianceLeaderId){
+      const crown = el('span','crown-icon', '👑');
+      crown.title = 'Đang dẫn đầu — các AI khác đang liên minh chống lại';
+      line1.appendChild(crown);
+    }
     // Territory-share bar: quick "how much of the map do they hold" read at a glance, without
     // having to compare raw counts across cards yourself. Width is a plain CSS transition off
     // a changed inline style, so it animates smoothly on its own — no JS tweening needed here.
@@ -769,26 +794,25 @@ function showFloatingAttackButtons(){
   wrap.appendChild(atkBtn);
   positionFloatingAttackButtons();
 }
-// Called every attack-phase frame from drawGameCanvas() (so panning/zooming keeps it aligned)
-// as well as once right after showFloatingAttackButtons() shows it fresh.
-// #gameLogPanel sits right below #gameRightPanelWrap instead of a fixed px offset (see that
-// CSS rule's comment) — that panel's own height varies (phase-action buttons come and go, the
-// zoom-controls row wraps differently per screen width), so this is recomputed on every render
-// rather than relying on any one fixed value staying correct.
+// #gameLogPanel sits immediately to the left of #gameRightPanelWrap (vertically centered via
+// CSS) instead of a fixed px offset from the screen edge — that panel's own width varies (icon
+// column width, scrollbar appearing), so this is recomputed on every render rather than relying
+// on any one fixed value staying correct.
 function positionLogPanel(){
   const panel = $('gameLogPanel');
   const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
   const screenRect = $('screen-game').getBoundingClientRect();
-  panel.style.top = Math.max(10, wrapRect.bottom-screenRect.top+10)+'px';
+  panel.style.right = Math.max(10, screenRect.right-wrapRect.left+10)+'px';
 }
 
 // Brief "whose turn is it" banner shown at the start of every turn, human and AI alike — called
 // once from startReinforce() (04-game-state.js) so it fires exactly once per turn regardless of
 // who's playing it. Dims the map for ~1s behind the player's name (their own color drives the
-// glow via a CSS var) then fades back out; pointer-events:none in CSS means it never blocks
-// input, so it's purely decorative and safe to leave running even in spectator/fast-AI mode.
-const TURN_INTRO_SHOW_MS = 1000;
-const TURN_INTRO_FADE_MS = 400;
+// glow via a CSS var) then fades back out. CSS makes it swallow input for its whole visible+fade
+// lifetime (see #turnIntroOverlay:not([hidden]) in style.css), and startReinforce() holds off
+// scheduling the AI's first move for the same duration (TURN_INTRO_TOTAL_MS, defined in
+// 01-utils.js) — so the new turn can't actually be played (by human click or AI logic) until the
+// previous turn's banner has fully cleared.
 let turnIntroShowTimer = null, turnIntroHideTimer = null;
 function showTurnIntro(player){
   const overlay = $('turnIntroOverlay');
@@ -822,47 +846,65 @@ function positionFloatingAttackButtons(){
   wrap.style.top = pt.y+'px';
 }
 
+// Same idea as the floating attack buttons above, but for the fortify phase's single "Chuyển
+// quân" button — sits above the white dashed line drawn between the two selected territories
+// (see drawGameCanvas()) instead of living in the side panel.
+function hideFloatingFortifyButton(){
+  const wrap = $('floatingFortifyButton');
+  wrap.hidden = true;
+  wrap.innerHTML = '';
+}
+function showFloatingFortifyButton(){
+  const wrap = $('floatingFortifyButton');
+  wrap.hidden = false;
+  wrap.innerHTML = '';
+  const fortBtn = el('button','good',withShortcut('🚚 Chuyển quân','C')); fortBtn.id='btnDoFortify';
+  fortBtn.title='Phím tắt: C';
+  fortBtn.addEventListener('click', ()=> openFortifyModal(game.selectedFrom, game.selectedTo));
+  wrap.appendChild(fortBtn);
+  positionFloatingFortifyButton();
+}
+function positionFloatingFortifyButton(){
+  const wrap = $('floatingFortifyButton');
+  if(wrap.hidden) return;
+  const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
+  if(!fromT || !toT){ hideFloatingFortifyButton(); return; }
+  const midX=(fromT.centroid.x+toT.centroid.x)/2, midY=(fromT.centroid.y+toT.centroid.y)/2;
+  const pt = mapPointToScreen(midX, midY);
+  wrap.style.left = pt.x+'px';
+  wrap.style.top = pt.y+'px';
+}
+
+// Phase-specific chrome: the end-of-phase button (#btnPhaseEnd, in the bottom bar), the
+// trade-cards button (#btnCardsModal, beside the bottom bar — reinforce phase only) and the
+// floating attack/fortify buttons. Doesn't touch #actionHint — that's set independently by
+// whichever code just entered the phase (see setActionHint() call sites).
 function renderPhaseActions(){
-  const wrap = $('phaseActions'); wrap.innerHTML='';
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
+  hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
+  const endBtn = $('btnPhaseEnd');
+  endBtn.hidden = true; endBtn.onclick = null;
+  $('btnCardsModal').hidden = true;
   if(game.over) return;
   const p = currentPlayer();
-  if(!p.isHuman){ wrap.appendChild(el('div','',''));  return; }
-  if(game.phase==='setup-place'){
-    wrap.appendChild(el('div','', 'Đặt quân ban đầu — nhấp vào bản đồ (giữ nhấn để đặt liên tục).'));
-    return;
-  }
+  if(!p.isHuman) return;
+  if(game.phase==='setup-place') return;
   if(game.phase==='reinforce'){
-    const b = el('button','ghost','🃏 Đổi thẻ bài'); b.addEventListener('click',()=>openCardsModal(false)); wrap.appendChild(b);
+    $('btnCardsModal').hidden = false;
     return;
   }
   if(game.phase==='attack'){
-    const ready = canAttackNow(p);
-    if(ready){
-      showFloatingAttackButtons();
-    } else {
-      const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack'; allOutBtn.disabled=true;
-      allOutBtn.title='Phím tắt: C';
-      wrap.appendChild(allOutBtn);
-      const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
-      atkBtn.title='Phím tắt: T';
-      wrap.appendChild(atkBtn);
-    }
-    const endBtn = el('button','primary',withShortcut('Kết thúc tấn công','K')); endBtn.title='Phím tắt: K';
-    endBtn.addEventListener('click', ()=> beginFortifyPhase());
-    wrap.appendChild(endBtn);
+    if(canAttackNow(p)) showFloatingAttackButtons();
+    endBtn.hidden = false;
+    endBtn.textContent = withShortcut('Kết thúc tấn công','K'); endBtn.title='Phím tắt: K';
+    endBtn.onclick = ()=> beginFortifyPhase();
     return;
   }
   if(game.phase==='fortify'){
-    const fortBtn = el('button','good',withShortcut('🚚 Chuyển quân','C')); fortBtn.id='btnDoFortify'; fortBtn.disabled=!canFortifyNow(p);
-    fortBtn.title='Phím tắt: C';
-    fortBtn.addEventListener('click', ()=>{
-      if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo);
-    });
-    wrap.appendChild(fortBtn);
-    const endBtn = el('button','primary',withShortcut('Kết thúc lượt','K')); endBtn.title='Phím tắt: K';
-    endBtn.addEventListener('click', ()=> endTurn());
-    wrap.appendChild(endBtn);
+    if(canFortifyNow(p)) showFloatingFortifyButton();
+    endBtn.hidden = false;
+    endBtn.textContent = withShortcut('Kết thúc lượt','K'); endBtn.title='Phím tắt: K';
+    endBtn.onclick = ()=> endTurn();
   }
 }
 
@@ -872,8 +914,11 @@ function openFortifyModal(fromId, toId){
   if(max<1) return;
   const fromName = mapData.territories[fromId].name;
   const toName = mapData.territories[toId].name;
-  const overlay = el('div','modal-overlay');
-  const modal = el('div','modal');
+  // no-blur/translucent: the point of this dialog is deciding how many troops to move, which
+  // benefits from still being able to see the live map (army counts, surrounding territories)
+  // through it — see the .no-blur/.translucent rules in style.css.
+  const overlay = el('div','modal-overlay no-blur');
+  const modal = el('div','modal translucent');
   modal.appendChild(el('h3','', `🚚 Chuyển quân`));
   modal.appendChild(el('p','', `Chuyển bao nhiêu quân từ "${fromName}" sang "${toName}"? (Luôn phải giữ lại ít nhất 1 quân ở ${fromName}.)`));
 

@@ -167,6 +167,14 @@ const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#e8998d","#c9a0dc
 const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#f72585","#ff9f5b","#7bd389"];
 // Bright ocean blue used for water fill on both canvases and for the space around the map,
 // so zooming out reads as one continuous ocean surrounding the continents.
+// Turn-intro banner timing (see showTurnIntro() in 06-render-game.js) — kept here rather than
+// in that file so 04-game-state.js's startReinforce() can reference TURN_INTRO_TOTAL_MS without
+// depending on the DOM-only render module (also the module the AI smoke-test harness loads
+// alongside 04, since it deliberately skips 06-08).
+const TURN_INTRO_SHOW_MS = 1000;
+const TURN_INTRO_FADE_MS = 400;
+const TURN_INTRO_TOTAL_MS = TURN_INTRO_SHOW_MS + TURN_INTRO_FADE_MS;
+
 const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},

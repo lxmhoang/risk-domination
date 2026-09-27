@@ -576,7 +576,13 @@ function generateWaterMask(cols, rows, waterRatio, spread){
   const s = clamp(spread===undefined?0.4:spread, 0, 1);
   const baseBlobs = clamp(Math.round(Math.sqrt(total)/9), 1, 6);
   const maxBlobs = Math.max(baseBlobs, Math.round(total/120));
-  const numBlobs = clamp(Math.round(baseBlobs + s*(maxBlobs-baseBlobs)), 1, maxBlobs);
+  let numBlobs = clamp(Math.round(baseBlobs + s*(maxBlobs-baseBlobs)), 1, maxBlobs);
+  // Cap blob count so a low waterRatio can't stretch too little water across too many seeds —
+  // each blob is kept at least a meaningful fraction of an average territory's footprint,
+  // otherwise every blob barely grows past its own seed cell and the map ends up speckled with
+  // tiny decorative ponds instead of a few lakes/straits large enough to matter.
+  const minBlobSize = Math.max(8, Math.round(computeCellsPerTerritory(cols)*0.25));
+  numBlobs = Math.min(numBlobs, Math.max(1, Math.floor(targetWater/minBlobSize)));
   const fillProb = 0.88 - s*0.33;
   const allCells = [];
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) allCells.push([c,r]);

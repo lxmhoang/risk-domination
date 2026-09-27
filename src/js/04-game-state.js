@@ -126,7 +126,7 @@ function setupPlaceNext(){
     }, 120);
   } else {
     renderGame();
-    setActionHint('Đặt quân ban đầu: nhấp vào lãnh thổ của bạn để đặt 1 quân. Còn lại: '+game.pool[p.id]);
+    setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.pool[p.id]);
   }
 }
 function advanceSetupTurn(){
@@ -238,12 +238,16 @@ function startReinforce(){
     .concat(breakdown.continentBonuses.map(c=>`${c.name} +${c.bonus}`));
   logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`, p.id);
   if(!p.isHuman){
-    aiRunFullTurn(p.id);
+    // Held off by the turn-intro banner's own lifetime (see TURN_INTRO_TOTAL_MS) so the AI
+    // doesn't start acting while the "lượt của X" banner is still showing/fading for the
+    // previous turn's viewer. Goes through aiSchedule (not a raw setTimeout) so pausing the AI
+    // mid-banner still works.
+    aiSchedule(()=> aiRunFullTurn(p.id), TURN_INTRO_TOTAL_MS);
   } else {
     // forced trade if 5+ cards
     if(p.cards.length>=5){ openCardsModal(true); }
     renderGame();
-    setActionHint('Giai đoạn tăng viện: nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
+    setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
   }
 }
 
@@ -257,7 +261,7 @@ function placeReinforcement(terrId){
   if(game.reinforceRemaining<=0){
     beginAttackPhase();
   } else {
-    setActionHint('Giai đoạn tăng viện: còn lại '+game.reinforceRemaining+' quân.');
+    setActionHint('Còn lại: '+game.reinforceRemaining+' quân để đặt.');
   }
   return true;
 }
@@ -267,7 +271,7 @@ function beginAttackPhase(){
   game.phase='attack';
   game.selectedFrom=null; game.selectedTo=null;
   renderGame();
-  setActionHint('Giai đoạn tấn công: chọn lãnh thổ của bạn (có ≥2 quân) rồi chọn lãnh thổ địch liền kề để tấn công. Nhấn "Kết thúc tấn công" khi xong.');
+  setActionHint('Chọn lãnh thổ của bạn (≥2 quân) rồi lãnh thổ địch liền kề để tấn công.');
 }
 
 function canAttack(fromId,toId,pid){
@@ -344,7 +348,7 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   // live (see the slider's 'input' handler below) — blurring it out from under the modal would
   // defeat the point.
   const overlay = el('div','modal-overlay no-blur');
-  const modal = el('div','modal');
+  const modal = el('div','modal translucent');
   let keyHandler = null;
   function close(){
     if(keyHandler) document.removeEventListener('keydown', keyHandler);
@@ -464,7 +468,7 @@ function beginFortifyPhase(){
   game.selectedFrom=null; game.selectedTo=null;
   renderGame();
   if(!currentPlayer().isHuman) return; // handled by AI routine
-  setActionHint('Giai đoạn tăng cường: chọn lãnh thổ nguồn rồi lãnh thổ đích (cùng phe, có đường nối) để chuyển quân, hoặc kết thúc lượt.');
+  setActionHint('Chọn lãnh thổ nguồn rồi đích để chuyển quân, hoặc kết thúc lượt.');
 }
 
 function pathExistsOwned(fromId,toId,pid){

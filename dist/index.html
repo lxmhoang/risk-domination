@@ -192,8 +192,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    z-index above #gameLogPanel (6) so phase-action buttons (attack/reinforce/etc) stay usable
    even while the log panel is open and overlapping this same corner. */
 #gameRightPanelWrap{
-  position:absolute;top:10px;right:10px;z-index:7;
-  display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+  position:absolute;top:50%;right:10px;transform:translateY(-50%);z-index:7;
+  display:flex;flex-direction:column;align-items:flex-end;gap:8px;
   max-height:calc(100% - 20px);overflow-y:auto;
 }
 /* Positioned in JS (positionFloatingAttackButtons()) with inline left/top tracking the midpoint
@@ -213,29 +213,34 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   color:var(--danger);border:1px solid rgba(255,255,255,.95);
 }
 #floatingAttackButtons button:hover{background:rgba(255,255,255,.98);}
+/* Same positioning trick as #floatingAttackButtons, tracking the fortify phase's white dashed
+   line instead of the attack arrow — see positionFloatingFortifyButton() in 06-render-game.js. */
+#floatingFortifyButton{
+  position:absolute;z-index:8;transform:translate(-50%, calc(-100% - 14px));
+  pointer-events:auto;
+}
+#floatingFortifyButton[hidden]{display:none;}
 #gameControlsTop{
   position:static;max-height:none;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
-  border-radius:12px;padding:6px 8px;
+  border-radius:12px;padding:5px 6px;gap:5px;
 }
-#gameControlsTop .ov-section{flex-direction:row;}
-/* This one section has 6 items (log/pause/round counter/3 zoom buttons) — wide enough in one
-   row to make the whole right-side column noticeably wider than the other sections above it.
-   Wraps it into 2 rows instead (specificity needs #gameControlsTop #id to beat the row rule
-   above, which is #id .class). */
-#gameControlsTop #zoomControlsSection{flex-direction:column;}
-.ov-row{display:flex;flex-direction:row;gap:4px;align-items:center;}
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:132px;overflow-y:auto;}
-#gamePhaseActionsWrap{position:static;max-height:none;}
+/* Width is the card's own 132px plus the active-card shift below (14px) so that shifted card
+   still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
+   horizontal scrollbar ever appears, without needing to clip anything since nothing actually
+   exceeds this width. */
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:146px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
-  left:50%;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:10px;
+  left:50%;bottom:10px;transform:translateX(-50%);align-items:center;
   max-height:none;white-space:nowrap;
 }
+#turnInfoRow{display:flex;flex-direction:row;align-items:center;gap:10px;}
+#btnPhaseEnd{font-size:13px;padding:8px 14px;}
 
 .ov-section{
-  display:flex;flex-direction:column;gap:4px;align-items:center;
+  display:flex;flex-direction:column;gap:3px;align-items:center;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
-  border-radius:10px;padding:6px;
+  border-radius:9px;padding:5px;
 }
 .ov-btn{
   width:42px;height:42px;border-radius:9px;background:var(--panel2);border:1px solid var(--border);
@@ -245,16 +250,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .ov-btn:hover{background:var(--panel);}
 .ov-btn.active{background:var(--accent);border-color:var(--accent);}
 .ov-btn:disabled{opacity:.4;cursor:default;}
-.ov-btn.small{width:34px;height:34px;font-size:14px;}
+.ov-btn.small{width:30px;height:30px;font-size:13px;border-radius:8px;}
 .ov-label{font-size:10.5px;color:var(--warn);font-weight:700;text-align:center;white-space:nowrap;}
 .ov-badge{
   position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;font-size:9px;
   min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;
 }
-#phaseActionsSection{width:112px;}
 #actionHint{font-size:10.5px;color:var(--muted);text-align:center;min-height:0;line-height:1.3;}
-#phaseActions{display:flex;flex-direction:column;gap:4px;}
-#phaseActions button{width:100%;font-size:11px;padding:6px 4px;line-height:1.25;}
 
 #gameTurnInfo{background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
 .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;flex-shrink:0;}
@@ -266,16 +268,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 #playerList{display:flex;flex-direction:column;gap:4px;}
 .player-card{
+  width:132px;flex-shrink:0;
   background:rgba(10,14,24,.75);backdrop-filter:blur(4px);border:2px solid var(--border);
   border-radius:8px;padding:5px 7px;
 }
-/* Used to be var(--accent), a blue — same hue as the ocean background and the "Xanh dương"
-   player color, so it stopped reading as a distinct highlight once the map turned ocean-blue.
-   White doesn't collide with the ocean or any PLAYER_COLORS entry. */
-.player-card.active-turn{border-color:#fff;animation:activeTurnGlow 1.8s ease-in-out infinite;}
+/* Shifted right (not scaled — scaling up overflowed the fixed-width column and forced a
+   horizontal scrollbar) so it reads as "this is whose turn it is" at a glance. Fixed card width
+   above + #gamePlayerListWrap's extra 14px of room is what makes this shift fit without either
+   clipping or a scrollbar — see that rule's comment. */
+.player-card.active-turn{
+  border-color:#2f7dff;animation:activeTurnGlow 1.8s ease-in-out infinite;
+  transform:translateX(14px);position:relative;z-index:2;
+}
 @keyframes activeTurnGlow{
-  0%,100%{box-shadow:0 0 8px rgba(255,255,255,.35);}
-  50%{box-shadow:0 0 16px rgba(255,255,255,.65);}
+  0%,100%{box-shadow:0 0 8px rgba(47,125,255,.45);}
+  50%{box-shadow:0 0 16px rgba(47,125,255,.8);}
 }
 .pcard-bar{height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;margin:3px 0;}
 .pcard-bar-fill{height:100%;border-radius:2px;transition:width .4s ease;}
@@ -286,25 +293,24 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   text-shadow:0 1px 2px rgba(0,0,0,.5);
 }
 .player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
+.crown-icon{margin-left:auto;font-size:13px;flex-shrink:0;}
 .player-card .pline2{display:flex;gap:8px;font-size:10px;color:#fff;}
 /* The player list is always a narrow column now (not just on mobile) — icon+number reads fine
    on its own, the word after it doesn't fit and isn't needed. */
 .stat-label{display:none;}
 .player-card.eliminated{opacity:.35;}
 
-/* Floats over the map below the top control bar, centered, rather than sharing grid/flex space
-   with anything — rarely looked at, so it's a toggle (#btnToggleLog, in the top bar) on every
-   screen size, collapsed by default (see body.html). */
-/* Right-anchored (was centered) so it lines up under #gameRightPanelWrap on the same side —
-   z-index 6, one below that wrap's 7, so it can freely overlap the top controls/phase-action
-   buttons above it (accepted — see body.html comment) without ever covering them. */
+/* Floats over the map, vertically centered on the screen (like #gameRightPanelWrap now is)
+   rather than sharing grid/flex space with anything — rarely looked at, so it's a toggle
+   (#btnToggleLog, in the top bar) on every screen size, collapsed by default (see body.html).
+   Sits immediately to the LEFT of #gameRightPanelWrap (right offset set in JS, see
+   positionLogPanel() in 06-render-game.js, which tracks that panel's actual rendered width —
+   it varies with content) rather than anchored to the screen edge; freely overlapping the map
+   underneath it is accepted. z-index 6, one below that wrap's 7, so the right panel always
+   stays on top of/clickable over it. */
 #gameLogPanel{
-  /* top is set in JS (positionLogPanel(), 06-render-game.js) to track #gameRightPanelWrap's
-     actual rendered height — that panel's height varies (phase-action buttons come and go, the
-     zoom row wraps differently per screen width), so a fixed px here previously left the log
-     panel starting too high up and overlapping it once the top bar moved into that same
-     right-side column. Static value here is just a sane first-paint fallback before JS runs. */
-  position:absolute;top:64px;right:10px;bottom:10px;
+  position:absolute;top:50%;transform:translateY(-50%);right:180px; /* right: static first-paint fallback, see positionLogPanel() */
+  height:min(480px, calc(100% - 20px));
   width:min(360px, calc(100% - 20px));
   background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
   display:flex;flex-direction:column;padding:12px;overflow:hidden;z-index:6;
@@ -336,14 +342,15 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #screen-game.active #gamePlayerListWrap,
   #screen-game.active #gameTurnInfo,
   #screen-game.active #gameLogPanel,
-  #screen-game.active #floatingAttackButtons{display:none;}
+  #screen-game.active #floatingAttackButtons,
+  #screen-game.active #floatingFortifyButton{display:none;}
 }
 /* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
-   +/−/reset buttons are desktop-only affordances (no pinch there) and just crowd the top bar
+   reset button is a desktop-only affordance (no pinch there) and just crowds the top bar
    on a phone, orientation aside, so this one isn't limited to (orientation:portrait) like the
    rotate-prompt block above. */
 @media (hover:none) and (pointer:coarse){
-  #btnZoomOut, #btnZoomReset, #btnZoomIn{display:none;}
+  #btnZoomReset{display:none;}
 }
 
 /* dice — hidden in the combat log (reads as noise there); showDice() still runs and populates
@@ -361,10 +368,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 /* modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(4,7,14,.7);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px);animation:modalOverlayIn .18s ease;}
-/* showCaptureMoveModal()'s slider is meant to be checked against the live map underneath —
-   blurring it out from under the modal would defeat that. */
-.modal-overlay.no-blur{backdrop-filter:none;}
+/* showCaptureMoveModal()'s slider and openFortifyModal() are both meant to be checked against
+   the live map underneath (current army counts, surrounding territories) while deciding how many
+   troops to move — blurring/darkening it out from under the modal would defeat that, so these
+   dial the overlay down to a light dim instead of the usual near-opaque black. */
+.modal-overlay.no-blur{backdrop-filter:none;background:rgba(4,7,14,.3);}
 .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;animation:modalPopIn .22s cubic-bezier(.34,1.56,.64,1);}
+/* Paired with .modal-overlay.no-blur above — the panel itself turns see-through too (kept
+   legible with its own light blur) instead of only the overlay behind it, so the map stays
+   visible through the dialog while it's open. */
+.modal.translucent{background:rgba(22,29,46,.82);backdrop-filter:blur(6px);}
 .modal h3{margin-bottom:12px;}
 @keyframes modalOverlayIn{from{opacity:0;}to{opacity:1;}}
 @keyframes modalPopIn{from{opacity:0;transform:scale(.92) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
@@ -376,11 +389,15 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #gameOverOverlay h1{font-size:36px;}
 #gameOverOverlay p{color:var(--muted);}
 
-/* Brief "whose turn is it" banner, shown for ~1s at the start of every turn (human and AI
-   alike — see showTurnIntro() in 06-render-game.js). Sits above the map but pointer-events:none
-   so it never intercepts clicks/taps even while visible; a spotlight-style radial glow behind
-   the player's name stands in for a literal stage-light effect without needing canvas work. */
+/* Brief "whose turn is it" banner, shown for ~1s (+ fade) at the start of every turn (human and
+   AI alike — see showTurnIntro() in 06-render-game.js). Sits above the map; pointer-events:auto
+   while not [hidden] so it deliberately blocks input for its whole ~1.4s lifetime (clicks/taps
+   during it are just swallowed by the overlay, not queued) — the next turn shouldn't start being
+   played until the previous turn's banner has fully cleared. A spotlight-style radial glow
+   behind the player's name stands in for a literal stage-light effect without needing canvas
+   work. */
 #turnIntroOverlay{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(4,7,14,0);transition:background .35s ease;}
+#turnIntroOverlay:not([hidden]){pointer-events:auto;}
 #turnIntroOverlay.show{background:rgba(4,7,14,.55);}
 #turnIntroCard{position:relative;text-align:center;opacity:0;transform:scale(.85);transition:opacity .35s ease,transform .35s cubic-bezier(.2,.9,.3,1.3);}
 #turnIntroOverlay.show #turnIntroCard{opacity:1;transform:scale(1);}
@@ -679,6 +696,11 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
        animated arrow between the two selected attack territories — see showFloatingAttackButtons(). -->
   <div id="floatingAttackButtons" hidden></div>
 
+  <!-- Same idea as #floatingAttackButtons but for the fortify-phase "Chuyển quân" button — sits
+       above the white dashed line between the two selected territories (see
+       positionFloatingFortifyButton(), 06-render-game.js). -->
+  <div id="floatingFortifyButton" hidden></div>
+
   <!-- Brief "your turn" banner shown at the start of every turn (human and AI alike) — see
        showTurnIntro() in 06-render-game.js, triggered from startReinforce(). Dims the map behind
        it but is pointer-events:none so it never blocks input. -->
@@ -689,10 +711,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     </div>
   </div>
 
-  <!-- Top controls + phase actions share one vertical column anchored top-right (see
-       #gameRightPanelWrap in style.css) — stacked in DOM/flex order so top controls render
-       above phase actions, with a z-index above #gameLogPanel so phase actions (attack/
-       reinforce/etc buttons) stay clickable even while the log panel is open and overlapping. -->
+  <!-- Icon column anchored middle-right (see #gameRightPanelWrap in style.css), one icon per
+       row within each section — z-index above #gameLogPanel so these stay clickable even while
+       the log panel is open and overlapping. -->
   <div id="gameRightPanelWrap">
     <div id="gameControlsTop" class="game-overlay">
       <div class="ov-section">
@@ -702,26 +723,12 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       </div>
       <div class="ov-section">
         <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
-        <button class="ov-btn small" id="btnCardsModal" title="Thẻ bài">🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
       </div>
       <div class="ov-section" id="zoomControlsSection">
-        <div class="ov-row">
-          <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
-          <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
-          <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
-        </div>
-        <div class="ov-row">
-          <button class="ov-btn small" id="btnZoomOut" title="Thu nhỏ bản đồ (phím -, hoặc kéo 2 ngón lại gần trên di động)">🔍−</button>
-          <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">⟲</button>
-          <button class="ov-btn small" id="btnZoomIn" title="Phóng to bản đồ (phím +, hoặc kéo 2 ngón ra xa trên di động)">🔍+</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="gamePhaseActionsWrap" class="game-overlay">
-      <div class="ov-section" id="phaseActionsSection">
-        <div id="actionHint">Chào mừng đến với ván chơi!</div>
-        <div id="phaseActions"></div>
+        <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu">📜</button>
+        <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI">⏸️</button>
+        <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+        <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">🔍</button>
       </div>
     </div>
   </div>
@@ -730,11 +737,20 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <div id="playerList"></div>
   </div>
 
+  <!-- Bottom-center pill: turn/phase status + the phase-specific end button and hint (formerly
+       the separate #gamePhaseActionsWrap side panel — folded in here so nothing sits floating on
+       the right anymore), plus the trade-cards button as its leftmost item (reinforce phase
+       only — hidden otherwise). -->
   <div id="gameTurnInfo" class="game-overlay">
-    <span class="turn-dot" id="turnDot"></span>
-    <span id="turnName">—</span>
-    <span class="phase-badge" id="phaseBadge">—</span>
-    <span id="reinforceCounter"></span>
+    <div id="turnInfoRow">
+      <button class="ov-btn small" id="btnCardsModal" title="Đổi thẻ bài" hidden>🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
+      <span class="turn-dot" id="turnDot"></span>
+      <span id="turnName">—</span>
+      <span class="phase-badge" id="phaseBadge">—</span>
+      <span id="reinforceCounter"></span>
+      <button class="primary" id="btnPhaseEnd" hidden></button>
+    </div>
+    <div id="actionHint">Chào mừng đến với ván chơi!</div>
   </div>
 
   <div id="gameLogPanel" class="collapsed">
@@ -933,6 +949,14 @@ const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#e8998d","#c9a0dc
 const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#f72585","#ff9f5b","#7bd389"];
 // Bright ocean blue used for water fill on both canvases and for the space around the map,
 // so zooming out reads as one continuous ocean surrounding the continents.
+// Turn-intro banner timing (see showTurnIntro() in 06-render-game.js) — kept here rather than
+// in that file so 04-game-state.js's startReinforce() can reference TURN_INTRO_TOTAL_MS without
+// depending on the DOM-only render module (also the module the AI smoke-test harness loads
+// alongside 04, since it deliberately skips 06-08).
+const TURN_INTRO_SHOW_MS = 1000;
+const TURN_INTRO_FADE_MS = 400;
+const TURN_INTRO_TOTAL_MS = TURN_INTRO_SHOW_MS + TURN_INTRO_FADE_MS;
+
 const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
@@ -1549,7 +1573,13 @@ function generateWaterMask(cols, rows, waterRatio, spread){
   const s = clamp(spread===undefined?0.4:spread, 0, 1);
   const baseBlobs = clamp(Math.round(Math.sqrt(total)/9), 1, 6);
   const maxBlobs = Math.max(baseBlobs, Math.round(total/120));
-  const numBlobs = clamp(Math.round(baseBlobs + s*(maxBlobs-baseBlobs)), 1, maxBlobs);
+  let numBlobs = clamp(Math.round(baseBlobs + s*(maxBlobs-baseBlobs)), 1, maxBlobs);
+  // Cap blob count so a low waterRatio can't stretch too little water across too many seeds —
+  // each blob is kept at least a meaningful fraction of an average territory's footprint,
+  // otherwise every blob barely grows past its own seed cell and the map ends up speckled with
+  // tiny decorative ponds instead of a few lakes/straits large enough to matter.
+  const minBlobSize = Math.max(8, Math.round(computeCellsPerTerritory(cols)*0.25));
+  numBlobs = Math.min(numBlobs, Math.max(1, Math.floor(targetWater/minBlobSize)));
   const fillProb = 0.88 - s*0.33;
   const allCells = [];
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) allCells.push([c,r]);
@@ -2527,7 +2557,7 @@ function setupPlaceNext(){
     }, 120);
   } else {
     renderGame();
-    setActionHint('Đặt quân ban đầu: nhấp vào lãnh thổ của bạn để đặt 1 quân. Còn lại: '+game.pool[p.id]);
+    setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.pool[p.id]);
   }
 }
 function advanceSetupTurn(){
@@ -2639,12 +2669,16 @@ function startReinforce(){
     .concat(breakdown.continentBonuses.map(c=>`${c.name} +${c.bonus}`));
   logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`, p.id);
   if(!p.isHuman){
-    aiRunFullTurn(p.id);
+    // Held off by the turn-intro banner's own lifetime (see TURN_INTRO_TOTAL_MS) so the AI
+    // doesn't start acting while the "lượt của X" banner is still showing/fading for the
+    // previous turn's viewer. Goes through aiSchedule (not a raw setTimeout) so pausing the AI
+    // mid-banner still works.
+    aiSchedule(()=> aiRunFullTurn(p.id), TURN_INTRO_TOTAL_MS);
   } else {
     // forced trade if 5+ cards
     if(p.cards.length>=5){ openCardsModal(true); }
     renderGame();
-    setActionHint('Giai đoạn tăng viện: nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
+    setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
   }
 }
 
@@ -2658,7 +2692,7 @@ function placeReinforcement(terrId){
   if(game.reinforceRemaining<=0){
     beginAttackPhase();
   } else {
-    setActionHint('Giai đoạn tăng viện: còn lại '+game.reinforceRemaining+' quân.');
+    setActionHint('Còn lại: '+game.reinforceRemaining+' quân để đặt.');
   }
   return true;
 }
@@ -2668,7 +2702,7 @@ function beginAttackPhase(){
   game.phase='attack';
   game.selectedFrom=null; game.selectedTo=null;
   renderGame();
-  setActionHint('Giai đoạn tấn công: chọn lãnh thổ của bạn (có ≥2 quân) rồi chọn lãnh thổ địch liền kề để tấn công. Nhấn "Kết thúc tấn công" khi xong.');
+  setActionHint('Chọn lãnh thổ của bạn (≥2 quân) rồi lãnh thổ địch liền kề để tấn công.');
 }
 
 function canAttack(fromId,toId,pid){
@@ -2745,7 +2779,7 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   // live (see the slider's 'input' handler below) — blurring it out from under the modal would
   // defeat the point.
   const overlay = el('div','modal-overlay no-blur');
-  const modal = el('div','modal');
+  const modal = el('div','modal translucent');
   let keyHandler = null;
   function close(){
     if(keyHandler) document.removeEventListener('keydown', keyHandler);
@@ -2865,7 +2899,7 @@ function beginFortifyPhase(){
   game.selectedFrom=null; game.selectedTo=null;
   renderGame();
   if(!currentPlayer().isHuman) return; // handled by AI routine
-  setActionHint('Giai đoạn tăng cường: chọn lãnh thổ nguồn rồi lãnh thổ đích (cùng phe, có đường nối) để chuyển quân, hoặc kết thúc lượt.');
+  setActionHint('Chọn lãnh thổ nguồn rồi đích để chuyển quân, hoặc kết thúc lượt.');
 }
 
 function pathExistsOwned(fromId,toId,pid){
@@ -3962,6 +3996,21 @@ function drawGameCanvas(){
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     });
+  } else {
+    // Normal view doesn't show continent fills, but a continent fully held by one player is
+    // still worth calling out at a glance — outline it in that player's color (their own
+    // territory-bonus stronghold), same stroke weight as the continent-view outline above.
+    Object.values(mapData.continents).forEach(cont=>{
+      const contTerrs = terrs.filter(t=>t.continentId===cont.id);
+      if(contTerrs.length===0) return;
+      const ownerId = game.owner[contTerrs[0].id];
+      if(ownerId===undefined || !contTerrs.every(t=>game.owner[t.id]===ownerId)) return;
+      const loops = getContinentBoundaryLoops(mapData, cont.id);
+      if(loops.length===0) return;
+      pathFromLoops(ctx, loops);
+      ctx.lineWidth = 3; ctx.strokeStyle = playerOf(ownerId).color;
+      ctx.stroke();
+    });
   }
   // selection highlight — a slow pulsing glow instead of a static line, so the currently
   // selected territory/territories stay noticeable at a glance instead of blending into the
@@ -4058,6 +4107,7 @@ function drawGameCanvas(){
     captureParticles.length>0 || !!attackAnim || (!reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null));
   if(stillAnimating) scheduleAnimFrame();
   if(inAttackPhase) positionFloatingAttackButtons();
+  if(game.phase==='fortify') positionFloatingFortifyButton();
 }
 
 function renderPlayerList(){
@@ -4066,6 +4116,10 @@ function renderPlayerList(){
   // game.turnOrder itself never changes after being shuffled once at game start, only turnIdx
   // advances through it, so this ordering stays stable for the whole match.
   const byTurnOrder = game.turnOrder.map(id=>game.players[id]);
+  // Same "worth ganging up on" leader as the AI alliance logic itself (05-ai.js) — only
+  // computed/shown when that setting is on, so the crown always matches what the AI is actually
+  // doing rather than introducing a separate "who's ahead" notion.
+  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
   byTurnOrder.forEach(p=>{
     const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
     const mine = ownedTerritories(p.id);
@@ -4084,6 +4138,11 @@ function renderPlayerList(){
     nameBadge.style.background = p.color;
     line1.appendChild(nameBadge);
     line1.appendChild(el('span','stat-item', `⚔️ ${totalArmies}`));
+    if(p.id===allianceLeaderId){
+      const crown = el('span','crown-icon', '👑');
+      crown.title = 'Đang dẫn đầu — các AI khác đang liên minh chống lại';
+      line1.appendChild(crown);
+    }
     // Territory-share bar: quick "how much of the map do they hold" read at a glance, without
     // having to compare raw counts across cards yourself. Width is a plain CSS transition off
     // a changed inline style, so it animates smoothly on its own — no JS tweening needed here.
@@ -4232,26 +4291,25 @@ function showFloatingAttackButtons(){
   wrap.appendChild(atkBtn);
   positionFloatingAttackButtons();
 }
-// Called every attack-phase frame from drawGameCanvas() (so panning/zooming keeps it aligned)
-// as well as once right after showFloatingAttackButtons() shows it fresh.
-// #gameLogPanel sits right below #gameRightPanelWrap instead of a fixed px offset (see that
-// CSS rule's comment) — that panel's own height varies (phase-action buttons come and go, the
-// zoom-controls row wraps differently per screen width), so this is recomputed on every render
-// rather than relying on any one fixed value staying correct.
+// #gameLogPanel sits immediately to the left of #gameRightPanelWrap (vertically centered via
+// CSS) instead of a fixed px offset from the screen edge — that panel's own width varies (icon
+// column width, scrollbar appearing), so this is recomputed on every render rather than relying
+// on any one fixed value staying correct.
 function positionLogPanel(){
   const panel = $('gameLogPanel');
   const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
   const screenRect = $('screen-game').getBoundingClientRect();
-  panel.style.top = Math.max(10, wrapRect.bottom-screenRect.top+10)+'px';
+  panel.style.right = Math.max(10, screenRect.right-wrapRect.left+10)+'px';
 }
 
 // Brief "whose turn is it" banner shown at the start of every turn, human and AI alike — called
 // once from startReinforce() (04-game-state.js) so it fires exactly once per turn regardless of
 // who's playing it. Dims the map for ~1s behind the player's name (their own color drives the
-// glow via a CSS var) then fades back out; pointer-events:none in CSS means it never blocks
-// input, so it's purely decorative and safe to leave running even in spectator/fast-AI mode.
-const TURN_INTRO_SHOW_MS = 1000;
-const TURN_INTRO_FADE_MS = 400;
+// glow via a CSS var) then fades back out. CSS makes it swallow input for its whole visible+fade
+// lifetime (see #turnIntroOverlay:not([hidden]) in style.css), and startReinforce() holds off
+// scheduling the AI's first move for the same duration (TURN_INTRO_TOTAL_MS, defined in
+// 01-utils.js) — so the new turn can't actually be played (by human click or AI logic) until the
+// previous turn's banner has fully cleared.
 let turnIntroShowTimer = null, turnIntroHideTimer = null;
 function showTurnIntro(player){
   const overlay = $('turnIntroOverlay');
@@ -4285,47 +4343,65 @@ function positionFloatingAttackButtons(){
   wrap.style.top = pt.y+'px';
 }
 
+// Same idea as the floating attack buttons above, but for the fortify phase's single "Chuyển
+// quân" button — sits above the white dashed line drawn between the two selected territories
+// (see drawGameCanvas()) instead of living in the side panel.
+function hideFloatingFortifyButton(){
+  const wrap = $('floatingFortifyButton');
+  wrap.hidden = true;
+  wrap.innerHTML = '';
+}
+function showFloatingFortifyButton(){
+  const wrap = $('floatingFortifyButton');
+  wrap.hidden = false;
+  wrap.innerHTML = '';
+  const fortBtn = el('button','good',withShortcut('🚚 Chuyển quân','C')); fortBtn.id='btnDoFortify';
+  fortBtn.title='Phím tắt: C';
+  fortBtn.addEventListener('click', ()=> openFortifyModal(game.selectedFrom, game.selectedTo));
+  wrap.appendChild(fortBtn);
+  positionFloatingFortifyButton();
+}
+function positionFloatingFortifyButton(){
+  const wrap = $('floatingFortifyButton');
+  if(wrap.hidden) return;
+  const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
+  if(!fromT || !toT){ hideFloatingFortifyButton(); return; }
+  const midX=(fromT.centroid.x+toT.centroid.x)/2, midY=(fromT.centroid.y+toT.centroid.y)/2;
+  const pt = mapPointToScreen(midX, midY);
+  wrap.style.left = pt.x+'px';
+  wrap.style.top = pt.y+'px';
+}
+
+// Phase-specific chrome: the end-of-phase button (#btnPhaseEnd, in the bottom bar), the
+// trade-cards button (#btnCardsModal, beside the bottom bar — reinforce phase only) and the
+// floating attack/fortify buttons. Doesn't touch #actionHint — that's set independently by
+// whichever code just entered the phase (see setActionHint() call sites).
 function renderPhaseActions(){
-  const wrap = $('phaseActions'); wrap.innerHTML='';
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
+  hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
+  const endBtn = $('btnPhaseEnd');
+  endBtn.hidden = true; endBtn.onclick = null;
+  $('btnCardsModal').hidden = true;
   if(game.over) return;
   const p = currentPlayer();
-  if(!p.isHuman){ wrap.appendChild(el('div','',''));  return; }
-  if(game.phase==='setup-place'){
-    wrap.appendChild(el('div','', 'Đặt quân ban đầu — nhấp vào bản đồ (giữ nhấn để đặt liên tục).'));
-    return;
-  }
+  if(!p.isHuman) return;
+  if(game.phase==='setup-place') return;
   if(game.phase==='reinforce'){
-    const b = el('button','ghost','🃏 Đổi thẻ bài'); b.addEventListener('click',()=>openCardsModal(false)); wrap.appendChild(b);
+    $('btnCardsModal').hidden = false;
     return;
   }
   if(game.phase==='attack'){
-    const ready = canAttackNow(p);
-    if(ready){
-      showFloatingAttackButtons();
-    } else {
-      const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack'; allOutBtn.disabled=true;
-      allOutBtn.title='Phím tắt: C';
-      wrap.appendChild(allOutBtn);
-      const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack'; atkBtn.disabled=true;
-      atkBtn.title='Phím tắt: T';
-      wrap.appendChild(atkBtn);
-    }
-    const endBtn = el('button','primary',withShortcut('Kết thúc tấn công','K')); endBtn.title='Phím tắt: K';
-    endBtn.addEventListener('click', ()=> beginFortifyPhase());
-    wrap.appendChild(endBtn);
+    if(canAttackNow(p)) showFloatingAttackButtons();
+    endBtn.hidden = false;
+    endBtn.textContent = withShortcut('Kết thúc tấn công','K'); endBtn.title='Phím tắt: K';
+    endBtn.onclick = ()=> beginFortifyPhase();
     return;
   }
   if(game.phase==='fortify'){
-    const fortBtn = el('button','good',withShortcut('🚚 Chuyển quân','C')); fortBtn.id='btnDoFortify'; fortBtn.disabled=!canFortifyNow(p);
-    fortBtn.title='Phím tắt: C';
-    fortBtn.addEventListener('click', ()=>{
-      if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo);
-    });
-    wrap.appendChild(fortBtn);
-    const endBtn = el('button','primary',withShortcut('Kết thúc lượt','K')); endBtn.title='Phím tắt: K';
-    endBtn.addEventListener('click', ()=> endTurn());
-    wrap.appendChild(endBtn);
+    if(canFortifyNow(p)) showFloatingFortifyButton();
+    endBtn.hidden = false;
+    endBtn.textContent = withShortcut('Kết thúc lượt','K'); endBtn.title='Phím tắt: K';
+    endBtn.onclick = ()=> endTurn();
   }
 }
 
@@ -4335,8 +4411,11 @@ function openFortifyModal(fromId, toId){
   if(max<1) return;
   const fromName = mapData.territories[fromId].name;
   const toName = mapData.territories[toId].name;
-  const overlay = el('div','modal-overlay');
-  const modal = el('div','modal');
+  // no-blur/translucent: the point of this dialog is deciding how many troops to move, which
+  // benefits from still being able to see the live map (army counts, surrounding territories)
+  // through it — see the .no-blur/.translucent rules in style.css.
+  const overlay = el('div','modal-overlay no-blur');
+  const modal = el('div','modal translucent');
   modal.appendChild(el('h3','', `🚚 Chuyển quân`));
   modal.appendChild(el('p','', `Chuyển bao nhiêu quân từ "${fromName}" sang "${toName}"? (Luôn phải giữ lại ít nhất 1 quân ở ${fromName}.)`));
 
@@ -4977,8 +5056,6 @@ $('gameCanvasWrap').addEventListener('scroll', ()=>{ if(game) positionFloatingAt
 
 // ---------------- Map zoom (buttons, +/-/0 keys, mouse wheel, 2-finger pinch) ----------------
 const ZOOM_STEP = 1.25;
-$('btnZoomIn').addEventListener('click', ()=> setGameZoom(gameZoom*ZOOM_STEP));
-$('btnZoomOut').addEventListener('click', ()=> setGameZoom(gameZoom/ZOOM_STEP));
 $('btnZoomReset').addEventListener('click', ()=> setGameZoom(1));
 window.addEventListener('keydown', (e)=>{
   if(!game) return;

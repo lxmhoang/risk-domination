@@ -180,8 +180,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    z-index above #gameLogPanel (6) so phase-action buttons (attack/reinforce/etc) stay usable
    even while the log panel is open and overlapping this same corner. */
 #gameRightPanelWrap{
-  position:absolute;top:10px;right:10px;z-index:7;
-  display:flex;flex-direction:column;align-items:flex-end;gap:10px;
+  position:absolute;top:50%;right:10px;transform:translateY(-50%);z-index:7;
+  display:flex;flex-direction:column;align-items:flex-end;gap:8px;
   max-height:calc(100% - 20px);overflow-y:auto;
 }
 /* Positioned in JS (positionFloatingAttackButtons()) with inline left/top tracking the midpoint
@@ -201,29 +201,34 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   color:var(--danger);border:1px solid rgba(255,255,255,.95);
 }
 #floatingAttackButtons button:hover{background:rgba(255,255,255,.98);}
+/* Same positioning trick as #floatingAttackButtons, tracking the fortify phase's white dashed
+   line instead of the attack arrow — see positionFloatingFortifyButton() in 06-render-game.js. */
+#floatingFortifyButton{
+  position:absolute;z-index:8;transform:translate(-50%, calc(-100% - 14px));
+  pointer-events:auto;
+}
+#floatingFortifyButton[hidden]{display:none;}
 #gameControlsTop{
   position:static;max-height:none;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
-  border-radius:12px;padding:6px 8px;
+  border-radius:12px;padding:5px 6px;gap:5px;
 }
-#gameControlsTop .ov-section{flex-direction:row;}
-/* This one section has 6 items (log/pause/round counter/3 zoom buttons) — wide enough in one
-   row to make the whole right-side column noticeably wider than the other sections above it.
-   Wraps it into 2 rows instead (specificity needs #gameControlsTop #id to beat the row rule
-   above, which is #id .class). */
-#gameControlsTop #zoomControlsSection{flex-direction:column;}
-.ov-row{display:flex;flex-direction:row;gap:4px;align-items:center;}
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:132px;overflow-y:auto;}
-#gamePhaseActionsWrap{position:static;max-height:none;}
+/* Width is the card's own 132px plus the active-card shift below (14px) so that shifted card
+   still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
+   horizontal scrollbar ever appears, without needing to clip anything since nothing actually
+   exceeds this width. */
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:146px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
-  left:50%;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:10px;
+  left:50%;bottom:10px;transform:translateX(-50%);align-items:center;
   max-height:none;white-space:nowrap;
 }
+#turnInfoRow{display:flex;flex-direction:row;align-items:center;gap:10px;}
+#btnPhaseEnd{font-size:13px;padding:8px 14px;}
 
 .ov-section{
-  display:flex;flex-direction:column;gap:4px;align-items:center;
+  display:flex;flex-direction:column;gap:3px;align-items:center;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
-  border-radius:10px;padding:6px;
+  border-radius:9px;padding:5px;
 }
 .ov-btn{
   width:42px;height:42px;border-radius:9px;background:var(--panel2);border:1px solid var(--border);
@@ -233,16 +238,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .ov-btn:hover{background:var(--panel);}
 .ov-btn.active{background:var(--accent);border-color:var(--accent);}
 .ov-btn:disabled{opacity:.4;cursor:default;}
-.ov-btn.small{width:34px;height:34px;font-size:14px;}
+.ov-btn.small{width:30px;height:30px;font-size:13px;border-radius:8px;}
 .ov-label{font-size:10.5px;color:var(--warn);font-weight:700;text-align:center;white-space:nowrap;}
 .ov-badge{
   position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;font-size:9px;
   min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;
 }
-#phaseActionsSection{width:112px;}
 #actionHint{font-size:10.5px;color:var(--muted);text-align:center;min-height:0;line-height:1.3;}
-#phaseActions{display:flex;flex-direction:column;gap:4px;}
-#phaseActions button{width:100%;font-size:11px;padding:6px 4px;line-height:1.25;}
 
 #gameTurnInfo{background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
 .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;flex-shrink:0;}
@@ -254,16 +256,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 #playerList{display:flex;flex-direction:column;gap:4px;}
 .player-card{
+  width:132px;flex-shrink:0;
   background:rgba(10,14,24,.75);backdrop-filter:blur(4px);border:2px solid var(--border);
   border-radius:8px;padding:5px 7px;
 }
-/* Used to be var(--accent), a blue — same hue as the ocean background and the "Xanh dương"
-   player color, so it stopped reading as a distinct highlight once the map turned ocean-blue.
-   White doesn't collide with the ocean or any PLAYER_COLORS entry. */
-.player-card.active-turn{border-color:#fff;animation:activeTurnGlow 1.8s ease-in-out infinite;}
+/* Shifted right (not scaled — scaling up overflowed the fixed-width column and forced a
+   horizontal scrollbar) so it reads as "this is whose turn it is" at a glance. Fixed card width
+   above + #gamePlayerListWrap's extra 14px of room is what makes this shift fit without either
+   clipping or a scrollbar — see that rule's comment. */
+.player-card.active-turn{
+  border-color:#2f7dff;animation:activeTurnGlow 1.8s ease-in-out infinite;
+  transform:translateX(14px);position:relative;z-index:2;
+}
 @keyframes activeTurnGlow{
-  0%,100%{box-shadow:0 0 8px rgba(255,255,255,.35);}
-  50%{box-shadow:0 0 16px rgba(255,255,255,.65);}
+  0%,100%{box-shadow:0 0 8px rgba(47,125,255,.45);}
+  50%{box-shadow:0 0 16px rgba(47,125,255,.8);}
 }
 .pcard-bar{height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;margin:3px 0;}
 .pcard-bar-fill{height:100%;border-radius:2px;transition:width .4s ease;}
@@ -274,25 +281,24 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   text-shadow:0 1px 2px rgba(0,0,0,.5);
 }
 .player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
+.crown-icon{margin-left:auto;font-size:13px;flex-shrink:0;}
 .player-card .pline2{display:flex;gap:8px;font-size:10px;color:#fff;}
 /* The player list is always a narrow column now (not just on mobile) — icon+number reads fine
    on its own, the word after it doesn't fit and isn't needed. */
 .stat-label{display:none;}
 .player-card.eliminated{opacity:.35;}
 
-/* Floats over the map below the top control bar, centered, rather than sharing grid/flex space
-   with anything — rarely looked at, so it's a toggle (#btnToggleLog, in the top bar) on every
-   screen size, collapsed by default (see body.html). */
-/* Right-anchored (was centered) so it lines up under #gameRightPanelWrap on the same side —
-   z-index 6, one below that wrap's 7, so it can freely overlap the top controls/phase-action
-   buttons above it (accepted — see body.html comment) without ever covering them. */
+/* Floats over the map, vertically centered on the screen (like #gameRightPanelWrap now is)
+   rather than sharing grid/flex space with anything — rarely looked at, so it's a toggle
+   (#btnToggleLog, in the top bar) on every screen size, collapsed by default (see body.html).
+   Sits immediately to the LEFT of #gameRightPanelWrap (right offset set in JS, see
+   positionLogPanel() in 06-render-game.js, which tracks that panel's actual rendered width —
+   it varies with content) rather than anchored to the screen edge; freely overlapping the map
+   underneath it is accepted. z-index 6, one below that wrap's 7, so the right panel always
+   stays on top of/clickable over it. */
 #gameLogPanel{
-  /* top is set in JS (positionLogPanel(), 06-render-game.js) to track #gameRightPanelWrap's
-     actual rendered height — that panel's height varies (phase-action buttons come and go, the
-     zoom row wraps differently per screen width), so a fixed px here previously left the log
-     panel starting too high up and overlapping it once the top bar moved into that same
-     right-side column. Static value here is just a sane first-paint fallback before JS runs. */
-  position:absolute;top:64px;right:10px;bottom:10px;
+  position:absolute;top:50%;transform:translateY(-50%);right:180px; /* right: static first-paint fallback, see positionLogPanel() */
+  height:min(480px, calc(100% - 20px));
   width:min(360px, calc(100% - 20px));
   background:rgba(10,14,24,.95);border:1px solid var(--border);border-radius:12px;
   display:flex;flex-direction:column;padding:12px;overflow:hidden;z-index:6;
@@ -324,14 +330,15 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   #screen-game.active #gamePlayerListWrap,
   #screen-game.active #gameTurnInfo,
   #screen-game.active #gameLogPanel,
-  #screen-game.active #floatingAttackButtons{display:none;}
+  #screen-game.active #floatingAttackButtons,
+  #screen-game.active #floatingFortifyButton{display:none;}
 }
 /* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
-   +/−/reset buttons are desktop-only affordances (no pinch there) and just crowd the top bar
+   reset button is a desktop-only affordance (no pinch there) and just crowds the top bar
    on a phone, orientation aside, so this one isn't limited to (orientation:portrait) like the
    rotate-prompt block above. */
 @media (hover:none) and (pointer:coarse){
-  #btnZoomOut, #btnZoomReset, #btnZoomIn{display:none;}
+  #btnZoomReset{display:none;}
 }
 
 /* dice — hidden in the combat log (reads as noise there); showDice() still runs and populates
@@ -349,10 +356,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 /* modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(4,7,14,.7);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(2px);animation:modalOverlayIn .18s ease;}
-/* showCaptureMoveModal()'s slider is meant to be checked against the live map underneath —
-   blurring it out from under the modal would defeat that. */
-.modal-overlay.no-blur{backdrop-filter:none;}
+/* showCaptureMoveModal()'s slider and openFortifyModal() are both meant to be checked against
+   the live map underneath (current army counts, surrounding territories) while deciding how many
+   troops to move — blurring/darkening it out from under the modal would defeat that, so these
+   dial the overlay down to a light dim instead of the usual near-opaque black. */
+.modal-overlay.no-blur{backdrop-filter:none;background:rgba(4,7,14,.3);}
 .modal{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:480px;width:92%;max-height:85vh;overflow-y:auto;animation:modalPopIn .22s cubic-bezier(.34,1.56,.64,1);}
+/* Paired with .modal-overlay.no-blur above — the panel itself turns see-through too (kept
+   legible with its own light blur) instead of only the overlay behind it, so the map stays
+   visible through the dialog while it's open. */
+.modal.translucent{background:rgba(22,29,46,.82);backdrop-filter:blur(6px);}
 .modal h3{margin-bottom:12px;}
 @keyframes modalOverlayIn{from{opacity:0;}to{opacity:1;}}
 @keyframes modalPopIn{from{opacity:0;transform:scale(.92) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
@@ -364,11 +377,15 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #gameOverOverlay h1{font-size:36px;}
 #gameOverOverlay p{color:var(--muted);}
 
-/* Brief "whose turn is it" banner, shown for ~1s at the start of every turn (human and AI
-   alike — see showTurnIntro() in 06-render-game.js). Sits above the map but pointer-events:none
-   so it never intercepts clicks/taps even while visible; a spotlight-style radial glow behind
-   the player's name stands in for a literal stage-light effect without needing canvas work. */
+/* Brief "whose turn is it" banner, shown for ~1s (+ fade) at the start of every turn (human and
+   AI alike — see showTurnIntro() in 06-render-game.js). Sits above the map; pointer-events:auto
+   while not [hidden] so it deliberately blocks input for its whole ~1.4s lifetime (clicks/taps
+   during it are just swallowed by the overlay, not queued) — the next turn shouldn't start being
+   played until the previous turn's banner has fully cleared. A spotlight-style radial glow
+   behind the player's name stands in for a literal stage-light effect without needing canvas
+   work. */
 #turnIntroOverlay{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;pointer-events:none;background:rgba(4,7,14,0);transition:background .35s ease;}
+#turnIntroOverlay:not([hidden]){pointer-events:auto;}
 #turnIntroOverlay.show{background:rgba(4,7,14,.55);}
 #turnIntroCard{position:relative;text-align:center;opacity:0;transform:scale(.85);transition:opacity .35s ease,transform .35s cubic-bezier(.2,.9,.3,1.3);}
 #turnIntroOverlay.show #turnIntroCard{opacity:1;transform:scale(1);}

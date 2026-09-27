@@ -361,8 +361,6 @@ $('gameCanvasWrap').addEventListener('scroll', ()=>{ if(game) positionFloatingAt
 
 // ---------------- Map zoom (buttons, +/-/0 keys, mouse wheel, 2-finger pinch) ----------------
 const ZOOM_STEP = 1.25;
-$('btnZoomIn').addEventListener('click', ()=> setGameZoom(gameZoom*ZOOM_STEP));
-$('btnZoomOut').addEventListener('click', ()=> setGameZoom(gameZoom/ZOOM_STEP));
 $('btnZoomReset').addEventListener('click', ()=> setGameZoom(1));
 window.addEventListener('keydown', (e)=>{
   if(!game) return;
