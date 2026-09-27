@@ -188,8 +188,12 @@ function updateAttackAnim(now){
 // can reuse it without duplicating the name-label line.
 function drawBadgeWithLabel(ctx, x, y, count, name, opts){
   drawArmyBadge(ctx, x, y, count, opts);
-  ctx.font='9px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.75)'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  ctx.fillText(name, x, y+22);
+  // Dark outline under white text so the name reads the same on any territory color.
+  ctx.font='bold 11px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.lineJoin='round'; ctx.lineWidth=3; ctx.strokeStyle='rgba(8,10,18,0.85)';
+  ctx.strokeText(name, x, y+25);
+  ctx.fillStyle='#fff';
+  ctx.fillText(name, x, y+25);
 }
 
 function drawAttackAnimBadges(ctx, now){
