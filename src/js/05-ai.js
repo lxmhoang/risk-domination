@@ -194,7 +194,16 @@ function pickAIReinforceTarget(pid, mine, intent){
   // toward defending it. Only borders facing the leader still count as under threat.
   const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
   const mustOnlyDefendAgainstLeader = allianceLeaderId!=null && pid!==allianceLeaderId;
+  // This turn's single-minded focus, if it has one: the gang-up leader (forced on every other
+  // AI), or — for the leader itself, or anyone else not under that lock — a kill_weak intent's
+  // chosen victim. Below, a border facing this focus wins outright over every other border,
+  // regardless of score, so reinforcement actually piles into one decisive spearhead instead of
+  // the base score's tendency to spread just-enough parity across every front at once (the base
+  // "maxEnemyArmy - myArmy" term only ever tries to level the score, never to overwhelm it).
+  const focusPlayerId = mustOnlyDefendAgainstLeader ? allianceLeaderId
+    : (intent && intent.type==='kill_weak' ? intent.targetPlayerId : null);
   let best=null, bestScore=-Infinity;
+  let bestFocus=null, bestFocusScore=-Infinity;
   mine.forEach(id=>{
     const t = mapData.territories[id];
     const enemyNb = [...t.neighbors].filter(n=>game.owner[n]!==pid);
@@ -216,8 +225,12 @@ function pickAIReinforceTarget(pid, mine, intent){
       else if(intent.type==='kill_weak' && enemyNb.some(n=>game.owner[n]===intent.targetPlayerId)) score += 1.2;
       else if((intent.type==='defend'||intent.type==='expand') && id===intent.focusTerrId) score += 1.0;
     }
+    if(focusPlayerId!=null && enemyNb.some(n=>game.owner[n]===focusPlayerId)){
+      if(score>bestFocusScore){ bestFocusScore=score; bestFocus=id; }
+    }
     if(score>bestScore){ bestScore=score; best=id; }
   });
+  if(focusPlayerId!=null && bestFocus!=null) return bestFocus;
   if(best===null) best = randChoice(mine);
   return best;
 }
