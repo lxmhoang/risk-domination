@@ -274,15 +274,17 @@
        the right anymore), plus the trade-cards button as its leftmost item (reinforce phase
        only — hidden otherwise). -->
   <div id="gameTurnInfo" class="game-overlay">
-    <div id="turnInfoRow">
-      <button class="ov-btn small" id="btnCardsModal" title="Đổi thẻ bài" hidden>🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
-      <span class="turn-dot" id="turnDot"></span>
-      <span id="turnName">—</span>
-      <span class="phase-badge" id="phaseBadge">—</span>
-      <span id="reinforceCounter"></span>
-      <button class="primary" id="btnPhaseEnd" hidden></button>
+    <button id="btnCardsModal" title="Thẻ bài của bạn">🎴<span class="ov-badge" id="cardCountBadge">0</span></button>
+    <div id="turnInfoPill">
+      <div id="turnInfoRow">
+        <span class="turn-dot" id="turnDot"></span>
+        <span id="turnName">—</span>
+        <span class="phase-badge" id="phaseBadge">—</span>
+        <span id="reinforceCounter"></span>
+      </div>
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
     </div>
-    <div id="actionHint">Chào mừng đến với ván chơi!</div>
+    <button class="primary" id="btnPhaseEnd" hidden></button>
   </div>
 
   <div id="gameLogPanel" class="collapsed">

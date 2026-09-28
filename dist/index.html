@@ -231,11 +231,32 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    exceeds this width. */
 #gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:146px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
-  left:50%;bottom:10px;transform:translateX(-50%);align-items:center;
+  left:50%;bottom:10px;transform:translateX(-50%);
   max-height:none;white-space:nowrap;
+  display:flex;flex-direction:row;align-items:stretch;gap:8px;
+  background:transparent;border:none;backdrop-filter:none;padding:0;
+}
+#turnInfoPill{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
+  border-radius:12px;padding:8px 16px;
 }
 #turnInfoRow{display:flex;flex-direction:row;align-items:center;gap:10px;}
-#btnPhaseEnd{font-size:13px;padding:8px 14px;}
+/* :not([hidden]) matters here — plain #gameTurnInfo #btnPhaseEnd{display:flex} would outrank
+   the UA stylesheet's [hidden]{display:none} (higher specificity) and defeat btnPhaseEnd.hidden
+   entirely, leaving the PREVIOUS phase's stale label visibly stuck on screen. */
+#gameTurnInfo #btnCardsModal:not([hidden]), #gameTurnInfo #btnPhaseEnd:not([hidden]){
+  height:auto;align-self:stretch;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+#btnPhaseEnd{font-size:14px;padding:8px 20px;}
+/* Plain icon, no button chrome — just the card glyph + count badge, big enough to stay
+   noticeable now that it isn't boxed in an .ov-btn anymore. */
+#btnCardsModal{
+  background:transparent;border:none;padding:0 10px;font-size:26px;position:relative;
+}
+#btnCardsModal:hover{background:rgba(255,255,255,.06);border-radius:10px;}
+#btnCardsModal .ov-badge{top:2px;right:2px;}
 
 .ov-section{
   display:flex;flex-direction:column;gap:3px;align-items:center;
@@ -258,7 +279,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #actionHint{font-size:10.5px;color:var(--muted);text-align:center;min-height:0;line-height:1.3;}
 
-#gameTurnInfo{background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
 .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;flex-shrink:0;}
 .phase-badge{
   padding:4px 12px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;
@@ -742,15 +762,17 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
        the right anymore), plus the trade-cards button as its leftmost item (reinforce phase
        only — hidden otherwise). -->
   <div id="gameTurnInfo" class="game-overlay">
-    <div id="turnInfoRow">
-      <button class="ov-btn small" id="btnCardsModal" title="Đổi thẻ bài" hidden>🃏<span class="ov-badge" id="cardCountBadge">0</span></button>
-      <span class="turn-dot" id="turnDot"></span>
-      <span id="turnName">—</span>
-      <span class="phase-badge" id="phaseBadge">—</span>
-      <span id="reinforceCounter"></span>
-      <button class="primary" id="btnPhaseEnd" hidden></button>
+    <button id="btnCardsModal" title="Thẻ bài của bạn">🎴<span class="ov-badge" id="cardCountBadge">0</span></button>
+    <div id="turnInfoPill">
+      <div id="turnInfoRow">
+        <span class="turn-dot" id="turnDot"></span>
+        <span id="turnName">—</span>
+        <span class="phase-badge" id="phaseBadge">—</span>
+        <span id="reinforceCounter"></span>
+      </div>
+      <div id="actionHint">Chào mừng đến với ván chơi!</div>
     </div>
-    <div id="actionHint">Chào mừng đến với ván chơi!</div>
+    <button class="primary" id="btnPhaseEnd" hidden></button>
   </div>
 
   <div id="gameLogPanel" class="collapsed">
@@ -2987,6 +3009,10 @@ function startReinforce(){
   const parts = [`${breakdown.territoryCount} lãnh thổ → ${breakdown.base}`]
     .concat(breakdown.continentBonuses.map(c=>`${c.name} +${c.bonus}`));
   logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`, p.id);
+  // Render right away regardless of whose turn this is — otherwise the previous (human) turn's
+  // phase-end button/phase badge would stay on screen, still clickable, for the whole
+  // TURN_INTRO_TOTAL_MS delay below before the AI actually starts acting.
+  renderGame();
   if(!p.isHuman){
     // Held off by the turn-intro banner's own lifetime (see TURN_INTRO_TOTAL_MS) so the AI
     // doesn't start acting while the "lượt của X" banner is still showing/fading for the
@@ -2996,7 +3022,6 @@ function startReinforce(){
   } else {
     // forced trade if 5+ cards
     if(p.cards.length>=5){ openCardsModal(true); }
-    renderGame();
     setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
   }
 }
@@ -3008,6 +3033,11 @@ function placeReinforcement(terrId){
   game.armies[terrId]++;
   game.reinforceRemaining--;
   renderGame();
+  // Auto-advances once every troop is placed — unlike attack/fortify, there's no real decision
+  // left to make in reinforce once the pool hits 0, so a manual "kết thúc" click here would just
+  // be a needless extra tap. (If the player has 5+ cards, the forced-trade modal blocks placing
+  // the LAST troops until they trade down — see startReinforce()/endAttackPhase() — so this only
+  // ever fires once that's already resolved.)
   if(game.reinforceRemaining<=0){
     beginAttackPhase();
   } else {
@@ -4749,29 +4779,49 @@ function positionFloatingFortifyButton(){
   wrap.style.top = pt.y+'px';
 }
 
+// If the human ends attack while holding 5+ cards (usually from eliminating a player and
+// inheriting their hand), they can't go straight to fortify — bounce back into a reinforce
+// "mini-phase" that only grants whatever the forced trade pays out (not a fresh territory/
+// continent recompute — that already happened at the start of this turn) and force the cards
+// modal open. Ending THAT reinforce mini-phase always leads back to attack (see
+// renderPhaseActions' reinforce branch below), so the player can keep fighting with the new
+// troops before choosing to end attack again for real.
+function endAttackPhase(){
+  const p = currentPlayer();
+  if(p.cards.length>=5){
+    game.phase='reinforce';
+    game.reinforceRemaining=0;
+    renderGame();
+    openCardsModal(true);
+    setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
+    return;
+  }
+  beginFortifyPhase();
+}
+
 // Phase-specific chrome: the end-of-phase button (#btnPhaseEnd, in the bottom bar), the
-// trade-cards button (#btnCardsModal, beside the bottom bar — reinforce phase only) and the
-// floating attack/fortify buttons. Doesn't touch #actionHint — that's set independently by
-// whichever code just entered the phase (see setActionHint() call sites).
+// trade-cards button (#btnCardsModal, beside the bottom bar — always visible/clickable so the
+// player can check their hand any time) and the floating attack/fortify buttons. Doesn't touch
+// #actionHint — that's set independently by whichever code just entered the phase (see
+// setActionHint() call sites).
 function renderPhaseActions(){
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
   const endBtn = $('btnPhaseEnd');
   endBtn.hidden = true; endBtn.onclick = null;
-  $('btnCardsModal').hidden = true;
-  if(game.over) return;
+  if(game.over){ $('btnCardsModal').hidden = true; return; }
   const p = currentPlayer();
+  $('btnCardsModal').hidden = !p.isHuman;
   if(!p.isHuman) return;
   if(game.phase==='setup-place') return;
-  if(game.phase==='reinforce'){
-    $('btnCardsModal').hidden = false;
-    return;
-  }
+  // No end button in reinforce: placeReinforcement() auto-advances to attack once every troop is
+  // placed (see there), so there's never a moment where clicking one here would do anything.
+  if(game.phase==='reinforce') return;
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     endBtn.hidden = false;
     endBtn.textContent = withShortcut('Kết thúc tấn công','K'); endBtn.title='Phím tắt: K';
-    endBtn.onclick = ()=> beginFortifyPhase();
+    endBtn.onclick = ()=> endAttackPhase();
     return;
   }
   if(game.phase==='fortify'){
@@ -4955,9 +5005,11 @@ function gameCanvasClick(evt){
    ========================================================================= */
 function openCardsModal(forced){
   const p = game.players[0];
-  const overlay = el('div','modal-overlay');
-  const modal = el('div','modal');
-  modal.appendChild(el('h3','', forced? '⚠️ Bạn phải đổi thẻ bài (≥5 thẻ)!' : '🃏 Thẻ bài của bạn'));
+  // no-blur/translucent: same reasoning as the fortify/capture-move modals — the map behind
+  // stays visible instead of being blacked out.
+  const overlay = el('div','modal-overlay no-blur');
+  const modal = el('div','modal translucent');
+  if(forced) modal.appendChild(el('h3','', '⚠️ Bạn phải đổi thẻ bài (≥5 thẻ)!'));
   const cardsWrap = el('div','');
   const selected = new Set();
   // Pre-select a valid tradeable combo if the player already has one, so the common case
@@ -4971,11 +5023,18 @@ function openCardsModal(forced){
     const uniq = new Set(idxs.map(i=>p.cards[i]));
     return (uniq.size===1||uniq.size===3) ? idxs : null;
   }
+  // Trading is only ever a reinforce-phase action (it hands out extra armies to place) — during
+  // attack/fortify the button stays hidden even with a valid combo selected, so the player can
+  // still browse their hand mid-phase without being able to actually cash cards in there.
+  const canTradeThisPhase = game.phase==='reinforce';
   function updatePreview(){
-    const idxs = comboIfValid();
+    const idxs = canTradeThisPhase ? comboIfValid() : null;
     previewEl.textContent = idxs
       ? `Đổi 3 thẻ này sẽ nhận ${tradeInValue(game.tradeRule, game.tradeCount+1, (p.personalTradeCount||0)+1)} quân.`
       : '';
+    // Only worth showing the button once the current selection is actually tradeable —
+    // otherwise it'd just alert() the same thing back at the player on every click.
+    tradeBtn.hidden = !idxs;
   }
 
   p.cards.forEach((type,i)=>{
@@ -4996,6 +5055,7 @@ function openCardsModal(forced){
   const btnRow = el('div',''); btnRow.style.marginTop='14px'; btnRow.style.display='flex'; btnRow.style.gap='8px';
   const tradeBtn = el('button','primary',withShortcut('Đổi thẻ','D')); tradeBtn.title='Phím tắt: D';
   tradeBtn.addEventListener('click', ()=>{
+    if(!canTradeThisPhase) return; // hidden, but still reachable via the 'D' shortcut below
     const idxs = comboIfValid();
     if(!idxs){ alert('Phải chọn 3 thẻ cùng loại hoặc 3 loại khác nhau.'); return; }
     tradeCards(p, idxs);
@@ -5589,7 +5649,7 @@ window.addEventListener('keydown', (e)=>{
   if(game.phase==='attack'){
     if(key==='c'){ e.preventDefault(); allOutAttack(); }
     else if(key==='t'){ e.preventDefault(); doSingleAttack(); }
-    else if(key==='k'){ e.preventDefault(); beginFortifyPhase(); }
+    else if(key==='k'){ e.preventDefault(); endAttackPhase(); }
   } else if(game.phase==='fortify'){
     if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
     else if(key==='k'){ e.preventDefault(); endTurn(); }

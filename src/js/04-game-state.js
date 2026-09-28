@@ -237,6 +237,10 @@ function startReinforce(){
   const parts = [`${breakdown.territoryCount} lãnh thổ → ${breakdown.base}`]
     .concat(breakdown.continentBonuses.map(c=>`${c.name} +${c.bonus}`));
   logMsg('info', `${p.name} nhận ${game.reinforceRemaining} quân tăng viện (${parts.join(', ')}).`, p.id);
+  // Render right away regardless of whose turn this is — otherwise the previous (human) turn's
+  // phase-end button/phase badge would stay on screen, still clickable, for the whole
+  // TURN_INTRO_TOTAL_MS delay below before the AI actually starts acting.
+  renderGame();
   if(!p.isHuman){
     // Held off by the turn-intro banner's own lifetime (see TURN_INTRO_TOTAL_MS) so the AI
     // doesn't start acting while the "lượt của X" banner is still showing/fading for the
@@ -246,7 +250,6 @@ function startReinforce(){
   } else {
     // forced trade if 5+ cards
     if(p.cards.length>=5){ openCardsModal(true); }
-    renderGame();
     setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
   }
 }
@@ -258,6 +261,11 @@ function placeReinforcement(terrId){
   game.armies[terrId]++;
   game.reinforceRemaining--;
   renderGame();
+  // Auto-advances once every troop is placed — unlike attack/fortify, there's no real decision
+  // left to make in reinforce once the pool hits 0, so a manual "kết thúc" click here would just
+  // be a needless extra tap. (If the player has 5+ cards, the forced-trade modal blocks placing
+  // the LAST troops until they trade down — see startReinforce()/endAttackPhase() — so this only
+  // ever fires once that's already resolved.)
   if(game.reinforceRemaining<=0){
     beginAttackPhase();
   } else {

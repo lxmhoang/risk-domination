@@ -219,11 +219,32 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    exceeds this width. */
 #gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:146px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
-  left:50%;bottom:10px;transform:translateX(-50%);align-items:center;
+  left:50%;bottom:10px;transform:translateX(-50%);
   max-height:none;white-space:nowrap;
+  display:flex;flex-direction:row;align-items:stretch;gap:8px;
+  background:transparent;border:none;backdrop-filter:none;padding:0;
+}
+#turnInfoPill{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
+  border-radius:12px;padding:8px 16px;
 }
 #turnInfoRow{display:flex;flex-direction:row;align-items:center;gap:10px;}
-#btnPhaseEnd{font-size:13px;padding:8px 14px;}
+/* :not([hidden]) matters here — plain #gameTurnInfo #btnPhaseEnd{display:flex} would outrank
+   the UA stylesheet's [hidden]{display:none} (higher specificity) and defeat btnPhaseEnd.hidden
+   entirely, leaving the PREVIOUS phase's stale label visibly stuck on screen. */
+#gameTurnInfo #btnCardsModal:not([hidden]), #gameTurnInfo #btnPhaseEnd:not([hidden]){
+  height:auto;align-self:stretch;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+#btnPhaseEnd{font-size:14px;padding:8px 20px;}
+/* Plain icon, no button chrome — just the card glyph + count badge, big enough to stay
+   noticeable now that it isn't boxed in an .ov-btn anymore. */
+#btnCardsModal{
+  background:transparent;border:none;padding:0 10px;font-size:26px;position:relative;
+}
+#btnCardsModal:hover{background:rgba(255,255,255,.06);border-radius:10px;}
+#btnCardsModal .ov-badge{top:2px;right:2px;}
 
 .ov-section{
   display:flex;flex-direction:column;gap:3px;align-items:center;
@@ -246,7 +267,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #actionHint{font-size:10.5px;color:var(--muted);text-align:center;min-height:0;line-height:1.3;}
 
-#gameTurnInfo{background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);border-radius:12px;padding:8px 16px;}
 .turn-dot{width:14px;height:14px;border-radius:50%;box-shadow:0 0 8px currentColor;flex-shrink:0;}
 .phase-badge{
   padding:4px 12px;border-radius:20px;background:var(--panel2);font-size:12px;font-weight:700;

@@ -879,29 +879,49 @@ function positionFloatingFortifyButton(){
   wrap.style.top = pt.y+'px';
 }
 
+// If the human ends attack while holding 5+ cards (usually from eliminating a player and
+// inheriting their hand), they can't go straight to fortify — bounce back into a reinforce
+// "mini-phase" that only grants whatever the forced trade pays out (not a fresh territory/
+// continent recompute — that already happened at the start of this turn) and force the cards
+// modal open. Ending THAT reinforce mini-phase always leads back to attack (see
+// renderPhaseActions' reinforce branch below), so the player can keep fighting with the new
+// troops before choosing to end attack again for real.
+function endAttackPhase(){
+  const p = currentPlayer();
+  if(p.cards.length>=5){
+    game.phase='reinforce';
+    game.reinforceRemaining=0;
+    renderGame();
+    openCardsModal(true);
+    setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
+    return;
+  }
+  beginFortifyPhase();
+}
+
 // Phase-specific chrome: the end-of-phase button (#btnPhaseEnd, in the bottom bar), the
-// trade-cards button (#btnCardsModal, beside the bottom bar — reinforce phase only) and the
-// floating attack/fortify buttons. Doesn't touch #actionHint — that's set independently by
-// whichever code just entered the phase (see setActionHint() call sites).
+// trade-cards button (#btnCardsModal, beside the bottom bar — always visible/clickable so the
+// player can check their hand any time) and the floating attack/fortify buttons. Doesn't touch
+// #actionHint — that's set independently by whichever code just entered the phase (see
+// setActionHint() call sites).
 function renderPhaseActions(){
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
   const endBtn = $('btnPhaseEnd');
   endBtn.hidden = true; endBtn.onclick = null;
-  $('btnCardsModal').hidden = true;
-  if(game.over) return;
+  if(game.over){ $('btnCardsModal').hidden = true; return; }
   const p = currentPlayer();
+  $('btnCardsModal').hidden = !p.isHuman;
   if(!p.isHuman) return;
   if(game.phase==='setup-place') return;
-  if(game.phase==='reinforce'){
-    $('btnCardsModal').hidden = false;
-    return;
-  }
+  // No end button in reinforce: placeReinforcement() auto-advances to attack once every troop is
+  // placed (see there), so there's never a moment where clicking one here would do anything.
+  if(game.phase==='reinforce') return;
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     endBtn.hidden = false;
     endBtn.textContent = withShortcut('Kết thúc tấn công','K'); endBtn.title='Phím tắt: K';
-    endBtn.onclick = ()=> beginFortifyPhase();
+    endBtn.onclick = ()=> endAttackPhase();
     return;
   }
   if(game.phase==='fortify'){

@@ -3,9 +3,11 @@
    ========================================================================= */
 function openCardsModal(forced){
   const p = game.players[0];
-  const overlay = el('div','modal-overlay');
-  const modal = el('div','modal');
-  modal.appendChild(el('h3','', forced? '⚠️ Bạn phải đổi thẻ bài (≥5 thẻ)!' : '🃏 Thẻ bài của bạn'));
+  // no-blur/translucent: same reasoning as the fortify/capture-move modals — the map behind
+  // stays visible instead of being blacked out.
+  const overlay = el('div','modal-overlay no-blur');
+  const modal = el('div','modal translucent');
+  if(forced) modal.appendChild(el('h3','', '⚠️ Bạn phải đổi thẻ bài (≥5 thẻ)!'));
   const cardsWrap = el('div','');
   const selected = new Set();
   // Pre-select a valid tradeable combo if the player already has one, so the common case
@@ -19,11 +21,18 @@ function openCardsModal(forced){
     const uniq = new Set(idxs.map(i=>p.cards[i]));
     return (uniq.size===1||uniq.size===3) ? idxs : null;
   }
+  // Trading is only ever a reinforce-phase action (it hands out extra armies to place) — during
+  // attack/fortify the button stays hidden even with a valid combo selected, so the player can
+  // still browse their hand mid-phase without being able to actually cash cards in there.
+  const canTradeThisPhase = game.phase==='reinforce';
   function updatePreview(){
-    const idxs = comboIfValid();
+    const idxs = canTradeThisPhase ? comboIfValid() : null;
     previewEl.textContent = idxs
       ? `Đổi 3 thẻ này sẽ nhận ${tradeInValue(game.tradeRule, game.tradeCount+1, (p.personalTradeCount||0)+1)} quân.`
       : '';
+    // Only worth showing the button once the current selection is actually tradeable —
+    // otherwise it'd just alert() the same thing back at the player on every click.
+    tradeBtn.hidden = !idxs;
   }
 
   p.cards.forEach((type,i)=>{
@@ -44,6 +53,7 @@ function openCardsModal(forced){
   const btnRow = el('div',''); btnRow.style.marginTop='14px'; btnRow.style.display='flex'; btnRow.style.gap='8px';
   const tradeBtn = el('button','primary',withShortcut('Đổi thẻ','D')); tradeBtn.title='Phím tắt: D';
   tradeBtn.addEventListener('click', ()=>{
+    if(!canTradeThisPhase) return; // hidden, but still reachable via the 'D' shortcut below
     const idxs = comboIfValid();
     if(!idxs){ alert('Phải chọn 3 thẻ cùng loại hoặc 3 loại khác nhau.'); return; }
     tradeCards(p, idxs);

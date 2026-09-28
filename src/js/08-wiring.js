@@ -517,7 +517,7 @@ window.addEventListener('keydown', (e)=>{
   if(game.phase==='attack'){
     if(key==='c'){ e.preventDefault(); allOutAttack(); }
     else if(key==='t'){ e.preventDefault(); doSingleAttack(); }
-    else if(key==='k'){ e.preventDefault(); beginFortifyPhase(); }
+    else if(key==='k'){ e.preventDefault(); endAttackPhase(); }
   } else if(game.phase==='fortify'){
     if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
     else if(key==='k'){ e.preventDefault(); endTurn(); }
