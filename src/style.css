@@ -195,12 +195,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #floatingAttackButtons[hidden]{display:none;}
 /* See-through white instead of the usual solid .danger red — these two sit right on top of the
-   map/arrow, and a solid button here hid too much of what's underneath. */
+   map/arrow, and a solid button here hid too much of what's underneath. Kept fairly translucent
+   (not the near-opaque .88 it used to be) since they can end up parked over territory names/
+   badges for a while mid-decision — the light blur still keeps the red text legible over any
+   territory color underneath. */
 #floatingAttackButtons button{
-  background:rgba(255,255,255,.88);backdrop-filter:blur(3px);
-  color:var(--danger);border:1px solid rgba(255,255,255,.95);
+  background:rgba(255,255,255,.4);backdrop-filter:blur(4px);
+  color:var(--danger);border:1px solid rgba(255,255,255,.7);
+  text-shadow:0 1px 2px rgba(255,255,255,.6);
 }
-#floatingAttackButtons button:hover{background:rgba(255,255,255,.98);}
+#floatingAttackButtons button:hover{background:rgba(255,255,255,.65);}
 /* Same positioning trick as #floatingAttackButtons, tracking the fortify phase's white dashed
    line instead of the attack arrow — see positionFloatingFortifyButton() in 06-render-game.js. */
 #floatingFortifyButton{

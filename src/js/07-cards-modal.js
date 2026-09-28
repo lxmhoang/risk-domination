@@ -21,10 +21,10 @@ function openCardsModal(forced){
     const uniq = new Set(idxs.map(i=>p.cards[i]));
     return (uniq.size===1||uniq.size===3) ? idxs : null;
   }
-  // Trading is only ever a reinforce-phase action (it hands out extra armies to place) — during
-  // attack/fortify the button stays hidden even with a valid combo selected, so the player can
-  // still browse their hand mid-phase without being able to actually cash cards in there.
-  const canTradeThisPhase = game.phase==='reinforce';
+  // Trading is only ever a reinforce-phase action of your OWN turn (it hands out extra armies to
+  // place) — the cards button stays open/browsable during other players' turns or your own
+  // attack/fortify, but the button stays hidden then even with a valid combo selected.
+  const canTradeThisPhase = game.phase==='reinforce' && currentPlayerId()===p.id;
   function updatePreview(){
     const idxs = canTradeThisPhase ? comboIfValid() : null;
     previewEl.textContent = idxs
@@ -62,21 +62,23 @@ function openCardsModal(forced){
     else renderGame();
   });
   btnRow.appendChild(tradeBtn);
-  let cancelBtn = null;
-  if(!forced){
-    cancelBtn = el('button','ghost',withShortcut('Huỷ','H')); cancelBtn.title='Phím tắt: H';
-    cancelBtn.addEventListener('click', close);
-    btnRow.appendChild(cancelBtn);
-  }
   modal.appendChild(btnRow);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
   updatePreview();
 
+  // No explicit "Huỷ" button anymore — clicking the dimmed area outside the panel dismisses it,
+  // same as tapping away from any other non-forced popover. Still can't be dismissed at all
+  // while forced (≥5 cards): there's nothing to click outside of that should let you escape
+  // without trading down.
+  if(!forced){
+    overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
+  }
+
   function keyHandler(e){
     const key = e.key.toLowerCase();
     if(key==='d'){ e.preventDefault(); tradeBtn.click(); }
-    else if(key==='h' && cancelBtn){ e.preventDefault(); cancelBtn.click(); }
+    else if(key==='escape' && !forced){ e.preventDefault(); close(); }
   }
   document.addEventListener('keydown', keyHandler);
   function close(){

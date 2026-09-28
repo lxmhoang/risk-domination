@@ -381,10 +381,23 @@ function drawGameCanvas(){
   const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
   const fitScale = Math.min(availW/nativeW, availH/nativeH);
   const displayScale = fitScale*gameZoom;
-  canvas.width = Math.max(1, Math.round(nativeW*displayScale));
-  canvas.height = Math.max(1, Math.round(nativeH*displayScale));
-  canvas.style.width = canvas.width+'px';
-  canvas.style.height = canvas.height+'px';
+  // cssW/cssH: the map's actual on-screen (CSS pixel / layout) size — used for the style.width/
+  // height below and every margin/centering calc, since those all reason in CSS-pixel layout
+  // space regardless of the device's pixel density.
+  //
+  // canvas.width/height (the backing-store bitmap) is that same size multiplied by
+  // devicePixelRatio — without this, the bitmap has exactly 1 pixel per CSS pixel, so on any
+  // dpr>1 screen (basically every phone) the browser stretches it to cover MORE physical
+  // pixels than it actually has data for, which is what made the map/army badges/territory
+  // names look soft/blurry on mobile. ctx.scale() below is multiplied by dpr to match, so every
+  // draw call downstream still just thinks in native map-pixel coordinates as before.
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = Math.max(1, Math.round(nativeW*displayScale));
+  const cssH = Math.max(1, Math.round(nativeH*displayScale));
+  canvas.width = Math.round(cssW*dpr);
+  canvas.height = Math.round(cssH*dpr);
+  canvas.style.width = cssW+'px';
+  canvas.style.height = cssH+'px';
   // Center within the SAFE AREA specifically (the box between the 4 overlays), not the wrap's
   // full box — CSS margin:auto centers in the full wrap, which only happens to clear every
   // overlay when they're all roughly the same size on their axis. The player list and the
@@ -403,16 +416,18 @@ function drawGameCanvas(){
   // those overlays happen to be narrower.)
   const safeLeft = leftW+margin, safeRight = wrap.clientWidth-rightW-margin;
   const safeTop = topH+margin, safeBottom = wrap.clientHeight-bottomH-margin;
-  const marginLeftPx = Math.max(safeLeft, (safeLeft+safeRight)/2 - canvas.width/2);
-  const marginTopPx = Math.max(safeTop, (safeTop+safeBottom)/2 - canvas.height/2);
+  // cssW/cssH (not canvas.width/height, which now include the dpr multiplier) — this is all CSS
+  // layout math, so it needs to stay in the same CSS-pixel space as wrap.clientWidth/clientHeight.
+  const marginLeftPx = Math.max(safeLeft, (safeLeft+safeRight)/2 - cssW/2);
+  const marginTopPx = Math.max(safeTop, (safeTop+safeBottom)/2 - cssH/2);
   const rightReserve = wrap.clientWidth - safeRight; // = rightW+margin
   const bottomReserve = wrap.clientHeight - safeBottom; // = bottomH+margin
   canvas.style.marginLeft = marginLeftPx+'px';
   canvas.style.marginTop = marginTopPx+'px';
-  canvas.style.marginRight = Math.max(rightReserve, wrap.clientWidth-marginLeftPx-canvas.width)+'px';
-  canvas.style.marginBottom = Math.max(bottomReserve, wrap.clientHeight-marginTopPx-canvas.height)+'px';
+  canvas.style.marginRight = Math.max(rightReserve, wrap.clientWidth-marginLeftPx-cssW)+'px';
+  canvas.style.marginBottom = Math.max(bottomReserve, wrap.clientHeight-marginTopPx-cssH)+'px';
   const ctx = canvas.getContext('2d');
-  ctx.scale(displayScale, displayScale); // canvas.width/height assignment above already reset the transform to identity
+  ctx.scale(displayScale*dpr, displayScale*dpr); // canvas.width/height assignment above already reset the transform to identity
   ctx.fillStyle=OCEAN_COLOR;
   ctx.fillRect(0,0,nativeW,nativeH);
 
@@ -722,11 +737,20 @@ function doSingleAttack(){
   const res = doBattle(fromId, toId);
   recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
   const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
-  if(fromCountAfter<2) game.selectedFrom=null;
+  // Captured: hop the "attack from" selection onto the territory you just took, so the next
+  // click only needs to pick a new target instead of re-selecting a source every time you push
+  // forward. Otherwise, same as before — drop the selection once the source can't attack again.
+  if(res.captured){ game.selectedFrom=toId; game.selectedTo=null; }
+  else if(fromCountAfter<2){ game.selectedFrom=null; }
   startAttackAnim({
     fromId, toId, attLoss:res.attLoss, defLoss:res.defLoss, captured:res.captured,
     fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
   }, ()=>{
+    // A kill that pushes the hand to 5+ cards takes priority over the optional "move extra
+    // troops in" dialog below — the guaranteed minimum already moved via doBattle(), so skipping
+    // the optional split is a fine tradeoff for forcing the trade down immediately instead of
+    // waiting for the player to eventually click "Kết thúc tấn công".
+    if(!game.over && currentPlayer().cards.length>=5){ forceCardTradeBounce(); return; }
     if(res.captured && res.maxMovable>res.moving) showCaptureMoveModal(fromId, toId, res.moving, res.maxMovable);
   });
   renderGame();
@@ -756,12 +780,15 @@ function allOutAttack(){
     recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
   }
   const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
-  if(fromCountAfter<2) game.selectedFrom=null;
+  // Same source-follows-capture behavior as doSingleAttack() above.
+  if(captured){ game.selectedFrom=toId; game.selectedTo=null; }
+  else if(fromCountAfter<2){ game.selectedFrom=null; }
   if(rounds>0){
     startAttackAnim({
       fromId, toId, attLoss:attLossTotal, defLoss:defLossTotal, captured,
       fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
     }, ()=>{
+      if(!game.over && currentPlayer().cards.length>=5){ forceCardTradeBounce(); return; }
       if(captured && lastRes.maxMovable>lastRes.moving) showCaptureMoveModal(fromId, toId, lastRes.moving, lastRes.maxMovable);
     });
   }
@@ -879,23 +906,24 @@ function positionFloatingFortifyButton(){
   wrap.style.top = pt.y+'px';
 }
 
-// If the human ends attack while holding 5+ cards (usually from eliminating a player and
-// inheriting their hand), they can't go straight to fortify — bounce back into a reinforce
-// "mini-phase" that only grants whatever the forced trade pays out (not a fresh territory/
-// continent recompute — that already happened at the start of this turn) and force the cards
-// modal open. Ending THAT reinforce mini-phase always leads back to attack (see
-// renderPhaseActions' reinforce branch below), so the player can keep fighting with the new
-// troops before choosing to end attack again for real.
+// If the human is holding 5+ cards (from eliminating a player and inheriting their hand),
+// they can't keep going — bounce back into a reinforce "mini-phase" that only grants whatever
+// the forced trade pays out (not a fresh territory/continent recompute — that already happened
+// at the start of this turn) and force the cards modal open. Ending THAT reinforce mini-phase
+// always leads back to attack (see renderPhaseActions' reinforce branch), so the player can
+// keep fighting with the new troops before choosing to end attack again for real. Called right
+// after whichever kill pushed the hand to 5+ (see doSingleAttack()/allOutAttack()) — not held
+// off until the player next clicks "Kết thúc tấn công".
+function forceCardTradeBounce(){
+  game.phase='reinforce';
+  game.reinforceRemaining=0;
+  renderGame();
+  openCardsModal(true);
+  setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
+}
 function endAttackPhase(){
   const p = currentPlayer();
-  if(p.cards.length>=5){
-    game.phase='reinforce';
-    game.reinforceRemaining=0;
-    renderGame();
-    openCardsModal(true);
-    setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
-    return;
-  }
+  if(p.cards.length>=5){ forceCardTradeBounce(); return; }
   beginFortifyPhase();
 }
 
@@ -909,9 +937,13 @@ function renderPhaseActions(){
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
   const endBtn = $('btnPhaseEnd');
   endBtn.hidden = true; endBtn.onclick = null;
-  if(game.over){ $('btnCardsModal').hidden = true; return; }
+  // The cards button always shows/opens the VIEWER's own hand (game.players[0]) — it stays
+  // clickable during other players' turns too (only hidden once the game is over, or in
+  // spectator mode where slot 0 isn't a real human viewer), independent of whose turn it
+  // actually is.
+  $('btnCardsModal').hidden = game.over || !game.players[0].isHuman;
+  if(game.over) return;
   const p = currentPlayer();
-  $('btnCardsModal').hidden = !p.isHuman;
   if(!p.isHuman) return;
   if(game.phase==='setup-place') return;
   // No end button in reinforce: placeReinforcement() auto-advances to attack once every troop is
