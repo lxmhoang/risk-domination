@@ -1042,6 +1042,38 @@ function openFortifyModal(fromId, toId){
   }
 }
 
+// Renders the VIEWER's (game.players[0]) hand directly as a fanned row of little rectangular
+// cards inside #btnCardsModal — no separate click-to-see-your-hand step, the icons are already
+// legible at a glance. Each card overlaps the previous one (negative margin) but still clears
+// enough of it to read its icon; later cards stack on top (z-index) so the overlap reads as a
+// physical fan rather than random draw order. When the hand forms a tradeable combo, the
+// container gets a gold outline and a badge showing the army value trading it in would pay —
+// all valid combos pay the same amount (see tradeInValue()), so there's no "best" combo to pick
+// between, any one found is already the best available.
+function renderCardsHandView(){
+  const wrap = $('btnCardsModal');
+  const viewer = game.players[0];
+  const cards = viewer.cards;
+  const combo = findTradeCombo(cards);
+  wrap.classList.toggle('tradeable', !!combo);
+  wrap.innerHTML = '';
+  if(cards.length===0){
+    wrap.appendChild(el('div','mini-card empty','🎴'));
+  } else {
+    cards.forEach((type,i)=>{
+      const mini = el('div','mini-card', CARD_ICON[type]);
+      mini.style.zIndex = String(i+1);
+      mini.title = type;
+      wrap.appendChild(mini);
+    });
+  }
+  if(combo){
+    const value = tradeInValue(game.tradeRule, game.tradeCount+1, (viewer.personalTradeCount||0)+1);
+    const badge = el('span','ov-badge trade-badge', String(value));
+    wrap.appendChild(badge);
+  }
+}
+
 function renderTopbar(){
   const p = currentPlayer();
   $('turnDot').style.background = p.color;
@@ -1053,9 +1085,7 @@ function renderTopbar(){
   $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
   $('reinforceCounter').textContent = (game.phase==='reinforce'||game.phase==='setup-place') ?
     ('Quân đặt: ' + (game.phase==='setup-place'? game.pool[p.id] : game.reinforceRemaining)) : '';
-  const humanCards = game.players[0].cards;
-  $('cardCountBadge').textContent = humanCards.length;
-  $('cardCountBadge').style.display = findTradeCombo(humanCards) ? 'flex' : 'none';
+  renderCardsHandView();
   // Play/pause only matters (and is only clickable) while an AI is actually taking its turn.
   const aiTurn = !p.isHuman && !game.over;
   $('btnPauseAI').disabled = !aiTurn;
@@ -1106,7 +1136,14 @@ function gameCanvasClick(evt){
   // (so holding down can keep placing armies) — see $('gameCanvas') pointer wiring in 08-wiring.js.
   if(game.phase==='setup-place' || game.phase==='reinforce') return;
   const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), evt);
-  if(terrId===-1) return;
+  if(terrId===-1){
+    // Clicking empty ocean while an attack pair is chosen dismisses the floating attack buttons
+    // (drops just the target) without losing the source — same idea as the document-level
+    // "click outside the buttons" listener in 08-wiring.js for clicks that land off the canvas
+    // entirely.
+    if(game.phase==='attack' && game.selectedTo!=null){ game.selectedTo=null; renderGame(); }
+    return;
+  }
 
   if(game.phase==='attack'){
     if(game.owner[terrId]===p.id){

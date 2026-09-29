@@ -36,7 +36,7 @@ function openCardsModal(forced){
   }
 
   p.cards.forEach((type,i)=>{
-    const item = el('div','card-item'+(selected.has(i)?' selected':''), CARD_ICON[type]+`<span class="label">${type}</span>`);
+    const item = el('div','card-item'+(selected.has(i)?' selected':''), `<span class="icon">${CARD_ICON[type]}</span><span class="label">${type}</span>`);
     item.addEventListener('click', ()=>{
       if(selected.has(i)){ selected.delete(i); item.classList.remove('selected'); }
       else if(selected.size<3){ selected.add(i); item.classList.add('selected'); }

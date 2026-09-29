@@ -239,16 +239,44 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    entirely, leaving the PREVIOUS phase's stale label visibly stuck on screen. */
 #gameTurnInfo #btnCardsModal:not([hidden]), #gameTurnInfo #btnPhaseEnd:not([hidden]){
   height:auto;align-self:stretch;flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;
+  display:flex;justify-content:center;
 }
-#btnPhaseEnd{font-size:14px;padding:8px 20px;}
-/* Plain icon, no button chrome — just the card glyph + count badge, big enough to stay
-   noticeable now that it isn't boxed in an .ov-btn anymore. */
+/* Overrides the shared rule's align-items:center specifically for btnCardsModal (equal
+   specificity to the rule above, but declared after it so it wins) — btnPhaseEnd still wants its
+   single line of text centered, but btnCardsModal wants its .mini-card children STRETCHED to
+   fill the full height instead of centered at their own natural size. */
+#gameTurnInfo #btnCardsModal:not([hidden]){ align-items:stretch; justify-content:flex-start; }
+#btnPhaseEnd{font-size:14px;padding:8px 20px;align-items:center;}
+/* The hand itself, fanned out — see renderCardsHandView() in 06-render-game.js, which fills
+   this with one .mini-card per card actually held (no button chrome around it, and no separate
+   click-to-see-your-cards step: the icons are already legible here at a glance). align-items
+   stretch (set above) makes every .mini-card exactly as tall as this container, which the
+   :not([hidden]) rule stretches to match #turnInfoPill/#btnPhaseEnd's height. */
 #btnCardsModal{
-  background:transparent;border:none;padding:0 10px;font-size:26px;position:relative;
+  background:transparent;border:2px solid transparent;border-radius:12px;
+  padding:4px 14px 4px 4px;cursor:pointer;position:relative;
 }
-#btnCardsModal:hover{background:rgba(255,255,255,.06);border-radius:10px;}
-#btnCardsModal .ov-badge{top:2px;right:2px;}
+#btnCardsModal:hover{background:rgba(255,255,255,.06);}
+/* Gold outline whenever the hand can currently be traded in (see findTradeCombo() call in
+   renderCardsHandView()) — the badge above then shows exactly how much that trade pays. */
+#btnCardsModal.tradeable{border-color:var(--warn);}
+.mini-card{
+  width:30px;flex-shrink:0;background:var(--panel2);border:1px solid var(--border);
+  border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:17px;
+  box-shadow:-2px 0 4px rgba(0,0,0,.35);
+}
+/* Each card overlaps the previous one, painted on top (later siblings paint over earlier ones
+   by default — no z-index needed for that, though renderCardsHandView() sets one anyway) —
+   reads as a fanned hand instead of a loose row, while still clearing enough of each card to
+   the left to tell its icon apart. */
+.mini-card+.mini-card{margin-left:-14px;}
+.mini-card.empty{opacity:.55;font-size:22px;}
+.trade-badge{
+  position:absolute;top:-6px;right:4px;background:var(--good);color:#0b1f13;
+  font-weight:800;font-size:11px;min-width:20px;height:20px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;padding:0 5px;
+  box-shadow:0 0 0 2px rgba(10,14,24,.9);
+}
 
 .ov-section{
   display:flex;flex-direction:column;gap:3px;align-items:center;
@@ -393,9 +421,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .modal h3{margin-bottom:12px;}
 @keyframes modalOverlayIn{from{opacity:0;}to{opacity:1;}}
 @keyframes modalPopIn{from{opacity:0;transform:scale(.92) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
-.card-item{display:inline-flex;align-items:center;gap:8px;background:var(--panel2);padding:10px 14px;border-radius:10px;margin:4px;font-size:24px;border:2px solid transparent;cursor:pointer;}
+/* Rectangular, upright playing-card shape — icon fills the top half, the type name (infantry/
+   cavalry/artillery) sits in its own bottom half, split by a faint divider, instead of the old
+   icon-and-label-side-by-side pill. */
+.card-item{
+  display:inline-flex;flex-direction:column;width:72px;height:100px;
+  background:var(--panel2);border-radius:10px;margin:4px;border:2px solid transparent;cursor:pointer;
+  overflow:hidden;
+}
 .card-item.selected{border-color:var(--accent);}
-.card-item .label{font-size:11px;color:var(--muted);}
+.card-item .icon{flex:1;display:flex;align-items:center;justify-content:center;font-size:30px;}
+.card-item .label{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
 
 #gameOverOverlay{position:fixed;inset:0;background:rgba(4,7,14,.88);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px;padding:20px;text-align:center;animation:modalOverlayIn .25s ease;}
 #gameOverOverlay h1{font-size:36px;}

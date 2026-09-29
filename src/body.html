@@ -271,10 +271,11 @@
 
   <!-- Bottom-center pill: turn/phase status + the phase-specific end button and hint (formerly
        the separate #gamePhaseActionsWrap side panel — folded in here so nothing sits floating on
-       the right anymore), plus the trade-cards button as its leftmost item (reinforce phase
-       only — hidden otherwise). -->
+       the right anymore), plus the trade-cards hand view as its leftmost item (always
+       visible/clickable — see renderCardsHandView() in 06-render-game.js, which fills this in
+       with one mini-card per card actually held instead of static markup). -->
   <div id="gameTurnInfo" class="game-overlay">
-    <button id="btnCardsModal" title="Thẻ bài của bạn">🎴<span class="ov-badge" id="cardCountBadge">0</span></button>
+    <div id="btnCardsModal" title="Thẻ bài của bạn"></div>
     <div id="turnInfoPill">
       <div id="turnInfoRow">
         <span class="turn-dot" id="turnDot"></span>

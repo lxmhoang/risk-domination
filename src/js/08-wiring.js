@@ -283,6 +283,21 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
 
+// Clicking anywhere outside the floating "Tấn công"/"Công triệt để" buttons (and outside the
+// canvas itself, which handles ocean clicks separately — see gameCanvasClick's terrId===-1
+// branch) dismisses them by dropping just the target, keeping the source territory selected so
+// the player only has to pick a new target instead of re-picking both.
+document.addEventListener('click', (e)=>{
+  if(!game || game.over || game.phase!=='attack' || game.selectedTo==null) return;
+  const p = currentPlayer();
+  if(!p.isHuman) return;
+  const floatWrap = $('floatingAttackButtons');
+  if(floatWrap.hidden || floatWrap.contains(e.target)) return;
+  if(e.target===$('gameCanvas')) return;
+  game.selectedTo = null;
+  renderGame();
+});
+
 // Setup-place AND reinforce: holding down on a territory keeps placing armies into it — 1
 // as soon as the press is confirmed (see pendingPlacement below), then (after a short initial
 // delay, like a keyboard's key-repeat) once per tick for as long as the pointer stays down,
