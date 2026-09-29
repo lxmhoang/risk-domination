@@ -1,6 +1,17 @@
 /* =========================================================================
    NAVIGATION / WIRING
    ========================================================================= */
+// A clicked <button> keeps keyboard focus afterward (standard browser behavior) — left alone,
+// that means the NEXT Space or Enter press activates THAT button again instead of whatever
+// global shortcut the key is supposed to mean (e.g. click "📜 Nhật ký trận đấu" once, then press
+// Space expecting it to toggle continent view — instead the log button quietly re-toggles
+// itself). Blurring every button right after a mouse click keeps each key mapped to exactly one
+// thing: this doesn't affect real keyboard (Tab-focus) use of a button, only the leftover focus
+// a click leaves behind.
+document.addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(btn) btn.blur();
+});
 $('btnQuickPlay').addEventListener('click', ()=>{
   const {cols, rows, numTerr, numCont} = computeMapGenPlan();
   mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
