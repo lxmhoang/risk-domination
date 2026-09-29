@@ -952,14 +952,14 @@ function renderPhaseActions(){
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     endBtn.hidden = false;
-    endBtn.textContent = withShortcut('Kết thúc tấn công','X'); endBtn.title='Phím tắt: X';
+    endBtn.textContent = withShortcut('Kết thúc tấn công','V'); endBtn.title='Phím tắt: V';
     endBtn.onclick = ()=> endAttackPhase();
     return;
   }
   if(game.phase==='fortify'){
     if(canFortifyNow(p)) showFloatingFortifyButton();
     endBtn.hidden = false;
-    endBtn.textContent = withShortcut('Kết thúc lượt','X'); endBtn.title='Phím tắt: X';
+    endBtn.textContent = withShortcut('Kết thúc lượt','V'); endBtn.title='Phím tắt: V';
     endBtn.onclick = ()=> endTurn();
   }
 }

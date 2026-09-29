@@ -558,10 +558,15 @@ window.addEventListener('keydown', (e)=>{
   else if(key==='p'){ e.preventDefault(); $('btnPauseAI').click(); }
 });
 
-// Phase-action keyboard shortcuts — attack: D = Công triệt để, A = Tấn công, X = Kết thúc tấn
-// công; fortify: C = Chuyển quân, X = Kết thúc lượt. Modal-specific shortcuts (the capture-move
-// and fortify popups) are wired locally in their own open functions instead, since a modal
-// being open already blocks these via the same guard the Space-bar shortcut uses above.
+// Phase-action keyboard shortcuts — attack: D = Công triệt để, A = Tấn công, V = Kết thúc tấn
+// công; fortify: C = Chuyển quân, V = Kết thúc lượt. (Deliberately NOT X — every popup's confirm
+// button is X, and closing one on X fires its own keyHandler, calls close() removing
+// .modal-overlay from the DOM, THEN this window-level listener re-checks that same query on the
+// same keydown as it bubbles up — by then the overlay is already gone, so the guard below no
+// longer blocks it and the SAME X press would also end the phase. V has no such popup to collide
+// with.) Modal-specific shortcuts (the capture-move and fortify popups) are wired locally in
+// their own open functions instead, since a modal being open already blocks these via the guard
+// right below (and via the Space-bar shortcut's identical guard above).
 window.addEventListener('keydown', (e)=>{
   if(!game || game.over) return;
   const activeScreen = document.querySelector('.screen.active');
@@ -575,10 +580,10 @@ window.addEventListener('keydown', (e)=>{
   if(game.phase==='attack'){
     if(key==='d'){ e.preventDefault(); allOutAttack(); }
     else if(key==='a'){ e.preventDefault(); doSingleAttack(); }
-    else if(key==='x'){ e.preventDefault(); endAttackPhase(); }
+    else if(key==='v'){ e.preventDefault(); endAttackPhase(); }
   } else if(game.phase==='fortify'){
     if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
-    else if(key==='x'){ e.preventDefault(); endTurn(); }
+    else if(key==='v'){ e.preventDefault(); endTurn(); }
   }
 });
 
