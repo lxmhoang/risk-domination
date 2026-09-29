@@ -1093,7 +1093,7 @@ function renderTopbar(){
   const aiTurn = !p.isHuman && !game.over;
   $('btnPauseAI').disabled = !aiTurn;
   $('btnPauseAI').textContent = aiPaused ? '▶️' : '⏸️';
-  $('btnPauseAI').title = aiPaused ? 'Tiếp tục lượt AI' : 'Tạm dừng lượt AI';
+  $('btnPauseAI').title = (aiPaused ? 'Tiếp tục lượt AI' : 'Tạm dừng lượt AI')+' (P)';
 }
 
 function renderGame(){

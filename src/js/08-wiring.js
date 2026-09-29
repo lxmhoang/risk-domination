@@ -539,6 +539,25 @@ window.addEventListener('keydown', (e)=>{
   $('btnToggleContinentView').click();
 });
 
+// Global game-chrome shortcuts — Q = về menu chính, S = lưu ván, N = nhật ký trận đấu,
+// P = tạm dừng/tiếp tục lượt AI. Always available in-game regardless of phase or whose turn it
+// is (unlike the phase-action shortcuts below), same guard as the Space-bar shortcut above minus
+// the BUTTON exclusion — none of these are Enter/Space, so there's no native "activate the
+// focused button" behavior to avoid stepping on. .click() on btnPauseAI is a no-op while it's
+// disabled (not currently an AI turn), so no extra guard needed there either.
+window.addEventListener('keydown', (e)=>{
+  const activeScreen = document.querySelector('.screen.active');
+  if(!activeScreen || activeScreen.id!=='screen-game') return;
+  if(document.querySelector('.modal-overlay') || $('gameOverOverlay')) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return;
+  const key = e.key.toLowerCase();
+  if(key==='q'){ e.preventDefault(); $('btnQuitGame').click(); }
+  else if(key==='s'){ e.preventDefault(); $('btnSaveGame').click(); }
+  else if(key==='n'){ e.preventDefault(); $('btnToggleLog').click(); }
+  else if(key==='p'){ e.preventDefault(); $('btnPauseAI').click(); }
+});
+
 // Phase-action keyboard shortcuts — attack: D = Công triệt để, A = Tấn công, X = Kết thúc tấn
 // công; fortify: C = Chuyển quân, X = Kết thúc lượt. Modal-specific shortcuts (the capture-move
 // and fortify popups) are wired locally in their own open functions instead, since a modal
