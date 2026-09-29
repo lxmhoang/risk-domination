@@ -412,9 +412,9 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
 
   const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
-  const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','G')); quickMin.title='Phím tắt: G';
+  const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','A')); quickMin.title='Phím tắt: A';
   quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
-  const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
+  const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
   // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
   // closes the modal, nothing left to actually move.
@@ -425,8 +425,8 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
 
   keyHandler = function(e){
     const key = e.key.toLowerCase();
-    if(key==='g'){ e.preventDefault(); quickMin.click(); }
-    else if(key==='t'){ e.preventDefault(); quickMax.click(); }
+    if(key==='a'){ e.preventDefault(); quickMin.click(); }
+    else if(key==='d'){ e.preventDefault(); quickMax.click(); }
     else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
   };
   document.addEventListener('keydown', keyHandler);

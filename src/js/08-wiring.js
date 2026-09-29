@@ -303,15 +303,19 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
 
-// Clicking anywhere outside the floating "Tấn công"/"Công triệt để" buttons (and outside the
-// canvas itself, which handles ocean clicks separately — see gameCanvasClick's terrId===-1
-// branch) dismisses them by dropping just the target, keeping the source territory selected so
-// the player only has to pick a new target instead of re-picking both.
+// Clicking anywhere outside the floating "Tấn công"/"Công triệt để" buttons (attack phase) or
+// the floating "Chuyển quân" button (fortify phase) — and outside the canvas itself, which
+// handles ocean clicks separately, see gameCanvasClick's terrId===-1 branch — dismisses them by
+// dropping just the target, keeping the source territory selected so the player only has to
+// pick a new target instead of re-picking both.
+const FLOATING_PAIR_BUTTONS_BY_PHASE = {attack:'floatingAttackButtons', fortify:'floatingFortifyButton'};
 document.addEventListener('click', (e)=>{
-  if(!game || game.over || game.phase!=='attack' || game.selectedTo==null) return;
+  if(!game || game.over || game.selectedTo==null) return;
+  const floatWrapId = FLOATING_PAIR_BUTTONS_BY_PHASE[game.phase];
+  if(!floatWrapId) return;
   const p = currentPlayer();
   if(!p.isHuman) return;
-  const floatWrap = $('floatingAttackButtons');
+  const floatWrap = $(floatWrapId);
   if(floatWrap.hidden || floatWrap.contains(e.target)) return;
   if(e.target===$('gameCanvas')) return;
   game.selectedTo = null;
@@ -535,8 +539,8 @@ window.addEventListener('keydown', (e)=>{
   $('btnToggleContinentView').click();
 });
 
-// Phase-action keyboard shortcuts — attack: C = Công triệt để, T = Tấn công, K = Kết thúc tấn
-// công; fortify: C = Chuyển quân, K = Kết thúc lượt. Modal-specific shortcuts (the capture-move
+// Phase-action keyboard shortcuts — attack: D = Công triệt để, A = Tấn công, X = Kết thúc tấn
+// công; fortify: C = Chuyển quân, X = Kết thúc lượt. Modal-specific shortcuts (the capture-move
 // and fortify popups) are wired locally in their own open functions instead, since a modal
 // being open already blocks these via the same guard the Space-bar shortcut uses above.
 window.addEventListener('keydown', (e)=>{
@@ -550,12 +554,12 @@ window.addEventListener('keydown', (e)=>{
   if(!p.isHuman) return;
   const key = e.key.toLowerCase();
   if(game.phase==='attack'){
-    if(key==='c'){ e.preventDefault(); allOutAttack(); }
-    else if(key==='t'){ e.preventDefault(); doSingleAttack(); }
-    else if(key==='k'){ e.preventDefault(); endAttackPhase(); }
+    if(key==='d'){ e.preventDefault(); allOutAttack(); }
+    else if(key==='a'){ e.preventDefault(); doSingleAttack(); }
+    else if(key==='x'){ e.preventDefault(); endAttackPhase(); }
   } else if(game.phase==='fortify'){
     if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
-    else if(key==='k'){ e.preventDefault(); endTurn(); }
+    else if(key==='x'){ e.preventDefault(); endTurn(); }
   }
 });
 

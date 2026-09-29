@@ -815,12 +815,12 @@ function showFloatingAttackButtons(){
   const wrap = $('floatingAttackButtons');
   wrap.hidden = false;
   wrap.innerHTML = '';
-  const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack';
-  allOutBtn.title='Phím tắt: C';
+  const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','D')); allOutBtn.id='btnAllOutAttack';
+  allOutBtn.title='Phím tắt: D';
   allOutBtn.addEventListener('click', allOutAttack);
   wrap.appendChild(allOutBtn);
-  const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack';
-  atkBtn.title='Phím tắt: T';
+  const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','A')); atkBtn.id='btnDoAttack';
+  atkBtn.title='Phím tắt: A';
   atkBtn.addEventListener('click', doSingleAttack);
   wrap.appendChild(atkBtn);
   positionFloatingAttackButtons();
@@ -952,14 +952,14 @@ function renderPhaseActions(){
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     endBtn.hidden = false;
-    endBtn.textContent = withShortcut('Kết thúc tấn công','K'); endBtn.title='Phím tắt: K';
+    endBtn.textContent = withShortcut('Kết thúc tấn công','X'); endBtn.title='Phím tắt: X';
     endBtn.onclick = ()=> endAttackPhase();
     return;
   }
   if(game.phase==='fortify'){
     if(canFortifyNow(p)) showFloatingFortifyButton();
     endBtn.hidden = false;
-    endBtn.textContent = withShortcut('Kết thúc lượt','K'); endBtn.title='Phím tắt: K';
+    endBtn.textContent = withShortcut('Kết thúc lượt','X'); endBtn.title='Phím tắt: X';
     endBtn.onclick = ()=> endTurn();
   }
 }
@@ -1007,7 +1007,7 @@ function openFortifyModal(fromId, toId){
   const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
   const cancelBtn = el('button','ghost','Huỷ');
   cancelBtn.addEventListener('click', close);
-  const quickMin = el('button','ghost',withShortcut('Tối thiểu (1)','T')); quickMin.title='Phím tắt: T';
+  const quickMin = el('button','ghost',withShortcut('Tối thiểu (1)','A')); quickMin.title='Phím tắt: A';
   quickMin.addEventListener('click', ()=>{ slider.value='1'; slider.dispatchEvent(new Event('input')); });
   const quickMax = el('button','ghost',withShortcut('Tối đa ('+max+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(max); slider.dispatchEvent(new Event('input')); });
@@ -1028,10 +1028,13 @@ function openFortifyModal(fromId, toId){
   // sync the big from/to numbers with the slider's initial value (defaults to max) — without
   // this they show the pre-transfer counts until the user drags the slider at least once.
   slider.dispatchEvent(new Event('input'));
+  // Clicking the dimmed area outside the panel dismisses it same as Huỷ — doesn't touch
+  // game.selectedFrom/selectedTo, so the source/target stay selected same as clicking Huỷ does.
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
 
   function keyHandler(e){
     const key = e.key.toLowerCase();
-    if(key==='t'){ e.preventDefault(); quickMin.click(); }
+    if(key==='a'){ e.preventDefault(); quickMin.click(); }
     else if(key==='d'){ e.preventDefault(); quickMax.click(); }
     else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
   }
@@ -1137,11 +1140,13 @@ function gameCanvasClick(evt){
   if(game.phase==='setup-place' || game.phase==='reinforce') return;
   const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), evt);
   if(terrId===-1){
-    // Clicking empty ocean while an attack pair is chosen dismisses the floating attack buttons
-    // (drops just the target) without losing the source — same idea as the document-level
-    // "click outside the buttons" listener in 08-wiring.js for clicks that land off the canvas
-    // entirely.
-    if(game.phase==='attack' && game.selectedTo!=null){ game.selectedTo=null; renderGame(); }
+    // Clicking empty ocean while an attack/fortify pair is chosen dismisses the matching
+    // floating button (drops just the target) without losing the source — same idea as the
+    // document-level "click outside the buttons" listener in 08-wiring.js for clicks that land
+    // off the canvas entirely.
+    if((game.phase==='attack' || game.phase==='fortify') && game.selectedTo!=null){
+      game.selectedTo=null; renderGame();
+    }
     return;
   }
 

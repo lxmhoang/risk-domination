@@ -3228,9 +3228,9 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
 
   const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
-  const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','G')); quickMin.title='Phím tắt: G';
+  const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','A')); quickMin.title='Phím tắt: A';
   quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
-  const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','T')); quickMax.title='Phím tắt: T';
+  const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
   // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
   // closes the modal, nothing left to actually move.
@@ -3241,8 +3241,8 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
 
   keyHandler = function(e){
     const key = e.key.toLowerCase();
-    if(key==='g'){ e.preventDefault(); quickMin.click(); }
-    else if(key==='t'){ e.preventDefault(); quickMax.click(); }
+    if(key==='a'){ e.preventDefault(); quickMin.click(); }
+    else if(key==='d'){ e.preventDefault(); quickMax.click(); }
     else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
   };
   document.addEventListener('keydown', keyHandler);
@@ -4759,12 +4759,12 @@ function showFloatingAttackButtons(){
   const wrap = $('floatingAttackButtons');
   wrap.hidden = false;
   wrap.innerHTML = '';
-  const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','C')); allOutBtn.id='btnAllOutAttack';
-  allOutBtn.title='Phím tắt: C';
+  const allOutBtn = el('button','danger',withShortcut('💥 Công triệt để','D')); allOutBtn.id='btnAllOutAttack';
+  allOutBtn.title='Phím tắt: D';
   allOutBtn.addEventListener('click', allOutAttack);
   wrap.appendChild(allOutBtn);
-  const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','T')); atkBtn.id='btnDoAttack';
-  atkBtn.title='Phím tắt: T';
+  const atkBtn = el('button','danger',withShortcut('⚔️ Tấn công','A')); atkBtn.id='btnDoAttack';
+  atkBtn.title='Phím tắt: A';
   atkBtn.addEventListener('click', doSingleAttack);
   wrap.appendChild(atkBtn);
   positionFloatingAttackButtons();
@@ -4896,14 +4896,14 @@ function renderPhaseActions(){
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     endBtn.hidden = false;
-    endBtn.textContent = withShortcut('Kết thúc tấn công','K'); endBtn.title='Phím tắt: K';
+    endBtn.textContent = withShortcut('Kết thúc tấn công','X'); endBtn.title='Phím tắt: X';
     endBtn.onclick = ()=> endAttackPhase();
     return;
   }
   if(game.phase==='fortify'){
     if(canFortifyNow(p)) showFloatingFortifyButton();
     endBtn.hidden = false;
-    endBtn.textContent = withShortcut('Kết thúc lượt','K'); endBtn.title='Phím tắt: K';
+    endBtn.textContent = withShortcut('Kết thúc lượt','X'); endBtn.title='Phím tắt: X';
     endBtn.onclick = ()=> endTurn();
   }
 }
@@ -4951,7 +4951,7 @@ function openFortifyModal(fromId, toId){
   const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
   const cancelBtn = el('button','ghost','Huỷ');
   cancelBtn.addEventListener('click', close);
-  const quickMin = el('button','ghost',withShortcut('Tối thiểu (1)','T')); quickMin.title='Phím tắt: T';
+  const quickMin = el('button','ghost',withShortcut('Tối thiểu (1)','A')); quickMin.title='Phím tắt: A';
   quickMin.addEventListener('click', ()=>{ slider.value='1'; slider.dispatchEvent(new Event('input')); });
   const quickMax = el('button','ghost',withShortcut('Tối đa ('+max+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(max); slider.dispatchEvent(new Event('input')); });
@@ -4972,10 +4972,13 @@ function openFortifyModal(fromId, toId){
   // sync the big from/to numbers with the slider's initial value (defaults to max) — without
   // this they show the pre-transfer counts until the user drags the slider at least once.
   slider.dispatchEvent(new Event('input'));
+  // Clicking the dimmed area outside the panel dismisses it same as Huỷ — doesn't touch
+  // game.selectedFrom/selectedTo, so the source/target stay selected same as clicking Huỷ does.
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) close(); });
 
   function keyHandler(e){
     const key = e.key.toLowerCase();
-    if(key==='t'){ e.preventDefault(); quickMin.click(); }
+    if(key==='a'){ e.preventDefault(); quickMin.click(); }
     else if(key==='d'){ e.preventDefault(); quickMax.click(); }
     else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
   }
@@ -5081,11 +5084,13 @@ function gameCanvasClick(evt){
   if(game.phase==='setup-place' || game.phase==='reinforce') return;
   const terrId = getTerritoryFromCanvasEvent($('gameCanvas'), evt);
   if(terrId===-1){
-    // Clicking empty ocean while an attack pair is chosen dismisses the floating attack buttons
-    // (drops just the target) without losing the source — same idea as the document-level
-    // "click outside the buttons" listener in 08-wiring.js for clicks that land off the canvas
-    // entirely.
-    if(game.phase==='attack' && game.selectedTo!=null){ game.selectedTo=null; renderGame(); }
+    // Clicking empty ocean while an attack/fortify pair is chosen dismisses the matching
+    // floating button (drops just the target) without losing the source — same idea as the
+    // document-level "click outside the buttons" listener in 08-wiring.js for clicks that land
+    // off the canvas entirely.
+    if((game.phase==='attack' || game.phase==='fortify') && game.selectedTo!=null){
+      game.selectedTo=null; renderGame();
+    }
     return;
   }
 
@@ -5550,15 +5555,19 @@ $('toggleSpectatorMode').addEventListener('change', ()=>{
 // Game wiring
 $('gameCanvas').addEventListener('click', gameCanvasClick);
 
-// Clicking anywhere outside the floating "Tấn công"/"Công triệt để" buttons (and outside the
-// canvas itself, which handles ocean clicks separately — see gameCanvasClick's terrId===-1
-// branch) dismisses them by dropping just the target, keeping the source territory selected so
-// the player only has to pick a new target instead of re-picking both.
+// Clicking anywhere outside the floating "Tấn công"/"Công triệt để" buttons (attack phase) or
+// the floating "Chuyển quân" button (fortify phase) — and outside the canvas itself, which
+// handles ocean clicks separately, see gameCanvasClick's terrId===-1 branch — dismisses them by
+// dropping just the target, keeping the source territory selected so the player only has to
+// pick a new target instead of re-picking both.
+const FLOATING_PAIR_BUTTONS_BY_PHASE = {attack:'floatingAttackButtons', fortify:'floatingFortifyButton'};
 document.addEventListener('click', (e)=>{
-  if(!game || game.over || game.phase!=='attack' || game.selectedTo==null) return;
+  if(!game || game.over || game.selectedTo==null) return;
+  const floatWrapId = FLOATING_PAIR_BUTTONS_BY_PHASE[game.phase];
+  if(!floatWrapId) return;
   const p = currentPlayer();
   if(!p.isHuman) return;
-  const floatWrap = $('floatingAttackButtons');
+  const floatWrap = $(floatWrapId);
   if(floatWrap.hidden || floatWrap.contains(e.target)) return;
   if(e.target===$('gameCanvas')) return;
   game.selectedTo = null;
@@ -5782,8 +5791,8 @@ window.addEventListener('keydown', (e)=>{
   $('btnToggleContinentView').click();
 });
 
-// Phase-action keyboard shortcuts — attack: C = Công triệt để, T = Tấn công, K = Kết thúc tấn
-// công; fortify: C = Chuyển quân, K = Kết thúc lượt. Modal-specific shortcuts (the capture-move
+// Phase-action keyboard shortcuts — attack: D = Công triệt để, A = Tấn công, X = Kết thúc tấn
+// công; fortify: C = Chuyển quân, X = Kết thúc lượt. Modal-specific shortcuts (the capture-move
 // and fortify popups) are wired locally in their own open functions instead, since a modal
 // being open already blocks these via the same guard the Space-bar shortcut uses above.
 window.addEventListener('keydown', (e)=>{
@@ -5797,12 +5806,12 @@ window.addEventListener('keydown', (e)=>{
   if(!p.isHuman) return;
   const key = e.key.toLowerCase();
   if(game.phase==='attack'){
-    if(key==='c'){ e.preventDefault(); allOutAttack(); }
-    else if(key==='t'){ e.preventDefault(); doSingleAttack(); }
-    else if(key==='k'){ e.preventDefault(); endAttackPhase(); }
+    if(key==='d'){ e.preventDefault(); allOutAttack(); }
+    else if(key==='a'){ e.preventDefault(); doSingleAttack(); }
+    else if(key==='x'){ e.preventDefault(); endAttackPhase(); }
   } else if(game.phase==='fortify'){
     if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
-    else if(key==='k'){ e.preventDefault(); endTurn(); }
+    else if(key==='x'){ e.preventDefault(); endTurn(); }
   }
 });
 
