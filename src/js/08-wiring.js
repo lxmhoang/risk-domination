@@ -89,8 +89,17 @@ $('btnHowTo').addEventListener('click', ()=>{
 6. THẮNG: Người cuối cùng còn lãnh thổ trên bản đồ.`);
 });
 
+// Default AI names (historical/literary commanders) instead of a generic "AI 1"/"AI 2" — order
+// reshuffled fresh every time the setup screen is (re-)entered (see goToSetup()). Only used as
+// the STARTING value for a slot that hasn't been named yet; once the player edits a name (or
+// even just re-renders with the default still showing — see readPlayerConfigs()), that becomes
+// the remembered draft and this pool is no longer consulted for that slot.
+const AI_NAME_POOL = ['Bạch Khởi','Hàn Tín','Nhạc Phi','Napoleon','Caesar','Quang Trung'];
+let aiNamePool = [];
+
 function goToSetup(){
   $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục.`;
+  aiNamePool = shuffle(AI_NAME_POOL);
   renderPlayerConfigList();
   renderConfigControls();
   showScreen('screen-setup');
@@ -129,7 +138,7 @@ function renderPlayerConfigList(){
     const dot = el('div','pdot'); dot.style.background=defaultColor; dot.dataset.hex=defaultColor;
 
     const nameInput = el('input'); nameInput.type='text'; nameInput.className='player-name-input';
-    nameInput.value = draft.name || (isYou ? 'Bạn' : ('AI '+(i+1)));
+    nameInput.value = draft.name || (isYou ? 'Bạn' : (aiNamePool[i-1] || ('AI '+(i+1))));
 
     const persSel = el('select'); persSel.className='player-personality-select';
     Object.keys(AI_PERSONALITIES).forEach(key=>{

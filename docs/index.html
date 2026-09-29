@@ -673,8 +673,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
         <option value="1">1 AI (2 người chơi)</option>
         <option value="2">2 AI (3 người chơi)</option>
         <option value="3">3 AI (4 người chơi)</option>
-        <option value="4">4 AI (5 người chơi)</option>
-        <option value="5" selected>5 AI (6 người chơi)</option>
+        <option value="4" selected>4 AI (5 người chơi)</option>
+        <option value="5">5 AI (6 người chơi)</option>
       </select>
     </div>
 
@@ -682,16 +682,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       <label>Độ khó AI</label>
       <select id="aiDifficultySelect">
         <option value="easy">Dễ</option>
-        <option value="normal" selected>Thường</option>
-        <option value="hard">Khó</option>
+        <option value="normal">Thường</option>
+        <option value="hard" selected>Khó</option>
       </select>
     </div>
 
     <div class="setup-row">
       <label>Luật đổi thẻ bài</label>
       <select id="tradeRuleSelect">
-        <option value="fixed">Cố định (bảng giá trị, dừng ở mức trần)</option>
-        <option value="progressive" selected>Leo thang (tăng dần theo tổng số lần đổi của cả ván)</option>
+        <option value="fixed" selected>Cố định (bảng giá trị, dừng ở mức trần)</option>
+        <option value="progressive">Leo thang (tăng dần theo tổng số lần đổi của cả ván)</option>
         <option value="exponential">Cấp số nhân (tăng theo số lần đổi của riêng từng người)</option>
       </select>
     </div>
@@ -702,7 +702,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     </div>
 
     <div class="setup-row">
-      <label class="switch-row"><input type="checkbox" id="toggleAlliance"> 🤝 Liên minh chống người dẫn đầu (AI yếu tạm ngừng đánh nhau, dồn lực vào kẻ mạnh nhất)</label>
+      <label class="switch-row"><input type="checkbox" id="toggleAlliance" checked> 🤝 Liên minh chống người dẫn đầu (AI yếu tạm ngừng đánh nhau, dồn lực vào kẻ mạnh nhất)</label>
     </div>
 
     <div class="setup-row">
@@ -5337,8 +5337,17 @@ $('btnHowTo').addEventListener('click', ()=>{
 6. THẮNG: Người cuối cùng còn lãnh thổ trên bản đồ.`);
 });
 
+// Default AI names (historical/literary commanders) instead of a generic "AI 1"/"AI 2" — order
+// reshuffled fresh every time the setup screen is (re-)entered (see goToSetup()). Only used as
+// the STARTING value for a slot that hasn't been named yet; once the player edits a name (or
+// even just re-renders with the default still showing — see readPlayerConfigs()), that becomes
+// the remembered draft and this pool is no longer consulted for that slot.
+const AI_NAME_POOL = ['Bạch Khởi','Hàn Tín','Nhạc Phi','Napoleon','Caesar','Quang Trung'];
+let aiNamePool = [];
+
 function goToSetup(){
   $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục.`;
+  aiNamePool = shuffle(AI_NAME_POOL);
   renderPlayerConfigList();
   renderConfigControls();
   showScreen('screen-setup');
@@ -5377,7 +5386,7 @@ function renderPlayerConfigList(){
     const dot = el('div','pdot'); dot.style.background=defaultColor; dot.dataset.hex=defaultColor;
 
     const nameInput = el('input'); nameInput.type='text'; nameInput.className='player-name-input';
-    nameInput.value = draft.name || (isYou ? 'Bạn' : ('AI '+(i+1)));
+    nameInput.value = draft.name || (isYou ? 'Bạn' : (aiNamePool[i-1] || ('AI '+(i+1))));
 
     const persSel = el('select'); persSel.className='player-personality-select';
     Object.keys(AI_PERSONALITIES).forEach(key=>{
