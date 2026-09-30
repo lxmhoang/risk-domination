@@ -390,12 +390,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 @media (orientation:portrait){
   #gamePlayerListWrap{
     left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
-    flex-direction:row;overflow-x:auto;overflow-y:hidden;max-height:none;
+    overflow-x:hidden;overflow-y:visible;max-height:none;
   }
-  #playerList{flex-direction:row;}
-  /* Same width as landscape (was shrunk to 108px) — the row already scrolls horizontally for
-     however many players don't fit, so there's no real need to also squeeze every name down to
-     "Bạch..." just to fit a couple more cards in view at once. */
+  /* Wraps onto more rows instead of scrolling sideways — there's plenty of vertical room now
+     that the map no longer needs to be vertically centered (see the portrait branch in
+     drawGameCanvas()), so there's no reason to make players play "find my card" via horizontal
+     scroll when everyone can just be visible at once. */
+  #playerList{flex-direction:row;flex-wrap:wrap;}
+  /* Same width as landscape (was shrunk to 108px) — wrapping already handles however many don't
+     fit per row, so there's no need to also squeeze every name down to "Bạch..." just to fit a
+     couple more cards per row. */
   .player-card{width:132px;}
   /* The landscape shift (see that rule's own comment) assumes stacking vertically in a column —
      sideways in a horizontal row would just make the active card visually jump, so skip it here. */
@@ -417,7 +421,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
      matters here too: a horizontally CENTERED child wider than its flex parent overflows equally
      on both sides, and overflow/scroll on an already-centered overflow starts scrolled to the
      middle — clipping the start AND end of the text — instead of showing it from the left. */
-  #gameTurnInfo{left:10px;right:10px;transform:none;width:auto;white-space:normal;}
+  /* bottom:auto so the JS-set inline `top` (positionPortraitBottomBar(), tracking the map's own
+     bottom edge) actually takes effect instead of fighting the landscape rule's bottom:10px. */
+  #gameTurnInfo{left:10px;right:10px;bottom:auto;transform:none;width:auto;white-space:normal;}
   #turnInfoPill{flex:1;min-width:0;align-items:flex-start;}
   #turnInfoRow{flex-wrap:wrap;row-gap:4px;font-size:12px;}
   #actionHint{white-space:normal;}
@@ -4361,6 +4367,19 @@ function positionPortraitTopBar(){
   rightWrap.style.top = Math.round(listRect.bottom-canvasWrapRect.top+6)+'px';
 }
 
+// Portrait only: pulls #gameTurnInfo up to sit right under the map's actual bottom edge instead
+// of pinned to the screen's bottom edge (landscape's bottom:10px) — since drawGameCanvas() now
+// top-anchors the map instead of centering it, the map's height alone determines where this
+// bar sits; whatever's left over collects below the bar instead of splitting into gaps on both
+// sides of the map. Must run AFTER drawGameCanvas() has set the map's final position/size.
+function positionPortraitBottomBar(){
+  const bar = $('gameTurnInfo');
+  if(!isPortraitLayout()){ bar.style.top = ''; return; }
+  const canvasRect = $('gameCanvas').getBoundingClientRect();
+  const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
+  bar.style.top = Math.round(canvasRect.bottom-canvasWrapRect.top+10)+'px';
+}
+
 function drawGameCanvas(){
   const canvas = $('gameCanvas');
   const cs = mapData.cellSize;
@@ -4427,7 +4446,13 @@ function drawGameCanvas(){
   // cssW/cssH (not canvas.width/height, which now include the dpr multiplier) — this is all CSS
   // layout math, so it needs to stay in the same CSS-pixel space as wrap.clientWidth/clientHeight.
   const marginLeftPx = Math.max(safeLeft, (safeLeft+safeRight)/2 - cssW/2);
-  const marginTopPx = Math.max(safeTop, (safeTop+safeBottom)/2 - cssH/2);
+  // Portrait: anchored right under the top band instead of vertically centered — the map's fixed
+  // aspect ratio almost always leaves the safe area taller than the map needs (full WIDTH is the
+  // binding constraint on a narrow screen), and centering it split that leftover space into two
+  // gaps above and below. Anchoring to the top collapses the top gap to just `margin`, and
+  // positionPortraitBottomBar() below then pulls the bottom bar up to sit right under the map
+  // too, so the one remaining gap ends up below everything instead of sandwiching the map.
+  const marginTopPx = portrait ? safeTop : Math.max(safeTop, (safeTop+safeBottom)/2 - cssH/2);
   const rightReserve = wrap.clientWidth - safeRight; // = rightW+margin
   const bottomReserve = wrap.clientHeight - safeBottom; // = bottomH+margin
   canvas.style.marginLeft = marginLeftPx+'px';
@@ -5123,6 +5148,7 @@ function renderGame(){
   // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
   drawGameCanvas();
+  positionPortraitBottomBar(); // after drawGameCanvas() — depends on the map's final position
   positionLogPanel(); // after renderPhaseActions() specifically — #gameRightPanelWrap's height
                        // (which this tracks) depends on how many phase-action buttons it just drew
   if(aiPaused && !currentPlayer().isHuman && !game.over){

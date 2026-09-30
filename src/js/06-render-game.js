@@ -384,6 +384,19 @@ function positionPortraitTopBar(){
   rightWrap.style.top = Math.round(listRect.bottom-canvasWrapRect.top+6)+'px';
 }
 
+// Portrait only: pulls #gameTurnInfo up to sit right under the map's actual bottom edge instead
+// of pinned to the screen's bottom edge (landscape's bottom:10px) — since drawGameCanvas() now
+// top-anchors the map instead of centering it, the map's height alone determines where this
+// bar sits; whatever's left over collects below the bar instead of splitting into gaps on both
+// sides of the map. Must run AFTER drawGameCanvas() has set the map's final position/size.
+function positionPortraitBottomBar(){
+  const bar = $('gameTurnInfo');
+  if(!isPortraitLayout()){ bar.style.top = ''; return; }
+  const canvasRect = $('gameCanvas').getBoundingClientRect();
+  const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
+  bar.style.top = Math.round(canvasRect.bottom-canvasWrapRect.top+10)+'px';
+}
+
 function drawGameCanvas(){
   const canvas = $('gameCanvas');
   const cs = mapData.cellSize;
@@ -450,7 +463,13 @@ function drawGameCanvas(){
   // cssW/cssH (not canvas.width/height, which now include the dpr multiplier) — this is all CSS
   // layout math, so it needs to stay in the same CSS-pixel space as wrap.clientWidth/clientHeight.
   const marginLeftPx = Math.max(safeLeft, (safeLeft+safeRight)/2 - cssW/2);
-  const marginTopPx = Math.max(safeTop, (safeTop+safeBottom)/2 - cssH/2);
+  // Portrait: anchored right under the top band instead of vertically centered — the map's fixed
+  // aspect ratio almost always leaves the safe area taller than the map needs (full WIDTH is the
+  // binding constraint on a narrow screen), and centering it split that leftover space into two
+  // gaps above and below. Anchoring to the top collapses the top gap to just `margin`, and
+  // positionPortraitBottomBar() below then pulls the bottom bar up to sit right under the map
+  // too, so the one remaining gap ends up below everything instead of sandwiching the map.
+  const marginTopPx = portrait ? safeTop : Math.max(safeTop, (safeTop+safeBottom)/2 - cssH/2);
   const rightReserve = wrap.clientWidth - safeRight; // = rightW+margin
   const bottomReserve = wrap.clientHeight - safeBottom; // = bottomH+margin
   canvas.style.marginLeft = marginLeftPx+'px';
@@ -1146,6 +1165,7 @@ function renderGame(){
   // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
   drawGameCanvas();
+  positionPortraitBottomBar(); // after drawGameCanvas() — depends on the map's final position
   positionLogPanel(); // after renderPhaseActions() specifically — #gameRightPanelWrap's height
                        // (which this tracks) depends on how many phase-action buttons it just drew
   if(aiPaused && !currentPlayer().isHuman && !game.over){

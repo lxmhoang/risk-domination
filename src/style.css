@@ -378,12 +378,16 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 @media (orientation:portrait){
   #gamePlayerListWrap{
     left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
-    flex-direction:row;overflow-x:auto;overflow-y:hidden;max-height:none;
+    overflow-x:hidden;overflow-y:visible;max-height:none;
   }
-  #playerList{flex-direction:row;}
-  /* Same width as landscape (was shrunk to 108px) — the row already scrolls horizontally for
-     however many players don't fit, so there's no real need to also squeeze every name down to
-     "Bạch..." just to fit a couple more cards in view at once. */
+  /* Wraps onto more rows instead of scrolling sideways — there's plenty of vertical room now
+     that the map no longer needs to be vertically centered (see the portrait branch in
+     drawGameCanvas()), so there's no reason to make players play "find my card" via horizontal
+     scroll when everyone can just be visible at once. */
+  #playerList{flex-direction:row;flex-wrap:wrap;}
+  /* Same width as landscape (was shrunk to 108px) — wrapping already handles however many don't
+     fit per row, so there's no need to also squeeze every name down to "Bạch..." just to fit a
+     couple more cards per row. */
   .player-card{width:132px;}
   /* The landscape shift (see that rule's own comment) assumes stacking vertically in a column —
      sideways in a horizontal row would just make the active card visually jump, so skip it here. */
@@ -405,7 +409,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
      matters here too: a horizontally CENTERED child wider than its flex parent overflows equally
      on both sides, and overflow/scroll on an already-centered overflow starts scrolled to the
      middle — clipping the start AND end of the text — instead of showing it from the left. */
-  #gameTurnInfo{left:10px;right:10px;transform:none;width:auto;white-space:normal;}
+  /* bottom:auto so the JS-set inline `top` (positionPortraitBottomBar(), tracking the map's own
+     bottom edge) actually takes effect instead of fighting the landscape rule's bottom:10px. */
+  #gameTurnInfo{left:10px;right:10px;bottom:auto;transform:none;width:auto;white-space:normal;}
   #turnInfoPill{flex:1;min-width:0;align-items:flex-start;}
   #turnInfoRow{flex-wrap:wrap;row-gap:4px;font-size:12px;}
   #actionHint{white-space:normal;}
