@@ -381,7 +381,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     flex-direction:row;overflow-x:auto;overflow-y:hidden;max-height:none;
   }
   #playerList{flex-direction:row;}
-  .player-card{width:108px;}
+  /* Same width as landscape (was shrunk to 108px) — the row already scrolls horizontally for
+     however many players don't fit, so there's no real need to also squeeze every name down to
+     "Bạch..." just to fit a couple more cards in view at once. */
+  .player-card{width:132px;}
   /* The landscape shift (see that rule's own comment) assumes stacking vertically in a column —
      sideways in a horizontal row would just make the active card visually jump, so skip it here. */
   .player-card.active-turn{transform:none;}
