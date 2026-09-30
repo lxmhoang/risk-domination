@@ -366,24 +366,54 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .log-entry.info{border-left:3px solid var(--accent);}
 
 #rotatePrompt{display:none;}
-/* Touch device held in portrait: this layout only really works landscape (that's where a
-   phone's thumbs land near the left/right edges), so block play with a rotate prompt instead of
-   trying to adapt — hover:none + pointer:coarse targets an actual phone/tablet, not just a
-   narrow desktop browser window (which can't be "rotated" anyway, so it wouldn't help there). */
-@media (orientation:portrait) and (hover:none) and (pointer:coarse){
-  #screen-game.active #rotatePrompt{
-    display:flex;position:absolute;inset:0;z-index:999;background:#0a0e18;
-    flex-direction:column;align-items:center;justify-content:center;gap:14px;
-    font-size:18px;text-align:center;color:var(--text);padding:24px;
+/* Portrait: the map takes the full screen WIDTH (was flanked left/right by the player list and
+   icon controls) and those two panels relocate into a stacked band along the TOP instead —
+   "panel đặt bên trên hoặc dưới" — while the bottom turn-info bar and log panel stay where they
+   conceptually are, just widened/repositioned to fit. This used to be blocked entirely by a
+   "rotate your phone" prompt (landscape-only layout); the JS side of this (isPortraitLayout(),
+   positionPortraitTopBar(), and drawGameCanvas()'s safe-area calc in 06-render-game.js) reads
+   the actual measured size of these panels either way, so it adapts to whatever CSS arranges
+   here without needing its own copy of this breakpoint. Landscape (no media match) is completely
+   untouched by anything in this block. */
+@media (orientation:portrait){
+  #gamePlayerListWrap{
+    left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
+    flex-direction:row;overflow-x:auto;overflow-y:hidden;max-height:none;
   }
-  #rotatePrompt div:first-child{font-size:48px;}
-  #screen-game.active #gameCanvasWrap,
-  #screen-game.active #gameRightPanelWrap,
-  #screen-game.active #gamePlayerListWrap,
-  #screen-game.active #gameTurnInfo,
-  #screen-game.active #gameLogPanel,
-  #screen-game.active #floatingAttackButtons,
-  #screen-game.active #floatingFortifyButton{display:none;}
+  #playerList{flex-direction:row;}
+  .player-card{width:108px;}
+  /* The landscape shift (see that rule's own comment) assumes stacking vertically in a column —
+     sideways in a horizontal row would just make the active card visually jump, so skip it here. */
+  .player-card.active-turn{transform:none;}
+
+  #gameRightPanelWrap{
+    left:10px;right:10px;top:0;bottom:auto;transform:none;width:auto;
+    flex-direction:row;flex-wrap:wrap;align-items:flex-start;justify-content:center;
+    max-height:none;overflow-y:visible;
+    /* actual top offset (right under the player-list row, whose height varies with content) is
+       set inline by positionPortraitTopBar() in 06-render-game.js */
+  }
+  #gameControlsTop{flex-direction:row;}
+  .ov-section{flex-direction:row;}
+
+  /* white-space:normal (overriding the landscape rule's nowrap) so the long turnName line can
+     actually wrap onto a 2nd line instead of needing horizontal scroll — a scrollable status bar
+     is a bad match for a HUD you glance at. align-items:flex-start (not the landscape center)
+     matters here too: a horizontally CENTERED child wider than its flex parent overflows equally
+     on both sides, and overflow/scroll on an already-centered overflow starts scrolled to the
+     middle — clipping the start AND end of the text — instead of showing it from the left. */
+  #gameTurnInfo{left:10px;right:10px;transform:none;width:auto;white-space:normal;}
+  #turnInfoPill{flex:1;min-width:0;align-items:flex-start;}
+  #turnInfoRow{flex-wrap:wrap;row-gap:4px;font-size:12px;}
+  #actionHint{white-space:normal;}
+
+  /* Right column no longer exists in portrait to sit "immediately left of" (see
+     positionLogPanel() in 06-render-game.js) — anchor from the top band instead, full-width-ish
+     capped the same way the landscape version caps its width. */
+  #gameLogPanel{
+    right:10px;transform:none;
+    height:min(55vh, calc(100% - 20px));
+  }
 }
 /* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
    reset button is a desktop-only affordance (no pinch there) and just crowds the top bar

@@ -378,24 +378,54 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .log-entry.info{border-left:3px solid var(--accent);}
 
 #rotatePrompt{display:none;}
-/* Touch device held in portrait: this layout only really works landscape (that's where a
-   phone's thumbs land near the left/right edges), so block play with a rotate prompt instead of
-   trying to adapt — hover:none + pointer:coarse targets an actual phone/tablet, not just a
-   narrow desktop browser window (which can't be "rotated" anyway, so it wouldn't help there). */
-@media (orientation:portrait) and (hover:none) and (pointer:coarse){
-  #screen-game.active #rotatePrompt{
-    display:flex;position:absolute;inset:0;z-index:999;background:#0a0e18;
-    flex-direction:column;align-items:center;justify-content:center;gap:14px;
-    font-size:18px;text-align:center;color:var(--text);padding:24px;
+/* Portrait: the map takes the full screen WIDTH (was flanked left/right by the player list and
+   icon controls) and those two panels relocate into a stacked band along the TOP instead —
+   "panel đặt bên trên hoặc dưới" — while the bottom turn-info bar and log panel stay where they
+   conceptually are, just widened/repositioned to fit. This used to be blocked entirely by a
+   "rotate your phone" prompt (landscape-only layout); the JS side of this (isPortraitLayout(),
+   positionPortraitTopBar(), and drawGameCanvas()'s safe-area calc in 06-render-game.js) reads
+   the actual measured size of these panels either way, so it adapts to whatever CSS arranges
+   here without needing its own copy of this breakpoint. Landscape (no media match) is completely
+   untouched by anything in this block. */
+@media (orientation:portrait){
+  #gamePlayerListWrap{
+    left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
+    flex-direction:row;overflow-x:auto;overflow-y:hidden;max-height:none;
   }
-  #rotatePrompt div:first-child{font-size:48px;}
-  #screen-game.active #gameCanvasWrap,
-  #screen-game.active #gameRightPanelWrap,
-  #screen-game.active #gamePlayerListWrap,
-  #screen-game.active #gameTurnInfo,
-  #screen-game.active #gameLogPanel,
-  #screen-game.active #floatingAttackButtons,
-  #screen-game.active #floatingFortifyButton{display:none;}
+  #playerList{flex-direction:row;}
+  .player-card{width:108px;}
+  /* The landscape shift (see that rule's own comment) assumes stacking vertically in a column —
+     sideways in a horizontal row would just make the active card visually jump, so skip it here. */
+  .player-card.active-turn{transform:none;}
+
+  #gameRightPanelWrap{
+    left:10px;right:10px;top:0;bottom:auto;transform:none;width:auto;
+    flex-direction:row;flex-wrap:wrap;align-items:flex-start;justify-content:center;
+    max-height:none;overflow-y:visible;
+    /* actual top offset (right under the player-list row, whose height varies with content) is
+       set inline by positionPortraitTopBar() in 06-render-game.js */
+  }
+  #gameControlsTop{flex-direction:row;}
+  .ov-section{flex-direction:row;}
+
+  /* white-space:normal (overriding the landscape rule's nowrap) so the long turnName line can
+     actually wrap onto a 2nd line instead of needing horizontal scroll — a scrollable status bar
+     is a bad match for a HUD you glance at. align-items:flex-start (not the landscape center)
+     matters here too: a horizontally CENTERED child wider than its flex parent overflows equally
+     on both sides, and overflow/scroll on an already-centered overflow starts scrolled to the
+     middle — clipping the start AND end of the text — instead of showing it from the left. */
+  #gameTurnInfo{left:10px;right:10px;transform:none;width:auto;white-space:normal;}
+  #turnInfoPill{flex:1;min-width:0;align-items:flex-start;}
+  #turnInfoRow{flex-wrap:wrap;row-gap:4px;font-size:12px;}
+  #actionHint{white-space:normal;}
+
+  /* Right column no longer exists in portrait to sit "immediately left of" (see
+     positionLogPanel() in 06-render-game.js) — anchor from the top band instead, full-width-ish
+     capped the same way the landscape version caps its width. */
+  #gameLogPanel{
+    right:10px;transform:none;
+    height:min(55vh, calc(100% - 20px));
+  }
 }
 /* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
    reset button is a desktop-only affordance (no pinch there) and just crowds the top bar
@@ -4305,21 +4335,52 @@ function setGameZoom(z, anchorClientX, anchorClientY){
   wrap.scrollTop = contentY*ratio-ay;
 }
 
+// Portrait mode (see the @media (orientation:portrait) block in style.css) stacks the player
+// list and icon controls into a top band instead of sitting them along the left/right edges —
+// driven purely by the WRAP's own aspect ratio (not a media-feature check here) so the exact
+// same JS layout logic below just naturally adapts to however CSS has actually arranged things,
+// including a portrait-ish desktop window, not just a real phone.
+function isPortraitLayout(){
+  const wrap = $('gameCanvasWrap');
+  return wrap.clientHeight > wrap.clientWidth;
+}
+
+// Portrait only: #gameRightPanelWrap can't use the landscape CSS's top:50% (that's mid-screen,
+// not "right under the player list") since the player-list row's height varies with content
+// (card count, whether names wrap, etc) — so its top offset is measured and set here instead of
+// being a fixed CSS value. Landscape leaves it alone (clears the inline override) since that
+// layout positions it with plain CSS (top:50%) and never needs this.
+function positionPortraitTopBar(){
+  const rightWrap = $('gameRightPanelWrap');
+  if(!isPortraitLayout()){ rightWrap.style.top = ''; return; }
+  const listRect = $('gamePlayerListWrap').getBoundingClientRect();
+  const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
+  rightWrap.style.top = Math.round(listRect.bottom-canvasWrapRect.top+6)+'px';
+}
+
 function drawGameCanvas(){
   const canvas = $('gameCanvas');
   const cs = mapData.cellSize;
   const nativeW = mapData.cols*cs, nativeH = mapData.rows*cs;
   const wrap = $('gameCanvasWrap');
-  // "Safe area" = the wrap's box minus the fixed overlays around the edges (left player list,
-  // right control column, bottom turn-info panel — no dedicated top overlay anymore now that
-  // the former top icon bar lives inside #gameRightPanelWrap on the right) plus a little
-  // breathing room. This is what zoom=1 (== GAME_ZOOM_MIN) fits the map into, so at minimum
-  // zoom the overlays only ever sit over empty background, never over the map itself — "zoom
-  // out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa khoảng trống xung quanh".
+  // "Safe area" = the wrap's box minus the fixed overlays around its edges, plus a little
+  // breathing room, so at minimum zoom (GAME_ZOOM_MIN) the overlays only ever sit over empty
+  // background, never over the map itself — "zoom out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa
+  // khoảng trống xung quanh". Landscape: player list (left) + icon controls (right) + turn-info
+  // (bottom), no top overlay. Portrait: those same two panels relocate into a stacked top band
+  // instead (see style.css), so their combined HEIGHT eats into the top instead of their width
+  // eating into the sides — see isPortraitLayout().
   const margin = 16;
-  const topH = 0;
-  const leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
-  const rightW = $('gameRightPanelWrap').getBoundingClientRect().width;
+  const portrait = isPortraitLayout();
+  let topH, leftW, rightW;
+  if(portrait){
+    leftW = 0; rightW = 0;
+    topH = $('gamePlayerListWrap').getBoundingClientRect().height + $('gameRightPanelWrap').getBoundingClientRect().height;
+  } else {
+    topH = 0;
+    leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
+    rightW = $('gameRightPanelWrap').getBoundingClientRect().width;
+  }
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
   const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
   const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
@@ -4769,12 +4830,22 @@ function showFloatingAttackButtons(){
   wrap.appendChild(atkBtn);
   positionFloatingAttackButtons();
 }
-// #gameLogPanel sits immediately to the left of #gameRightPanelWrap (vertically centered via
-// CSS) instead of a fixed px offset from the screen edge — that panel's own width varies (icon
-// column width, scrollbar appearing), so this is recomputed on every render rather than relying
-// on any one fixed value staying correct.
+// Landscape: sits immediately to the left of #gameRightPanelWrap (vertically centered via CSS)
+// instead of a fixed px offset from the screen edge — that panel's own width varies (icon column
+// width, scrollbar appearing), so this is recomputed on every render rather than relying on any
+// one fixed value staying correct. Portrait: that panel is now a top band instead of a right
+// column (see style.css), so there's nothing to sit "immediately left of" — instead this drops
+// the log panel right below the whole top band, full-width-ish (see the portrait CSS override).
 function positionLogPanel(){
   const panel = $('gameLogPanel');
+  if(isPortraitLayout()){
+    panel.style.right = '';
+    const barRect = $('gameRightPanelWrap').getBoundingClientRect();
+    const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
+    panel.style.top = Math.max(10, Math.round(barRect.bottom-canvasWrapRect.top+10))+'px';
+    return;
+  }
+  panel.style.top = '';
   const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
   const screenRect = $('screen-game').getBoundingClientRect();
   panel.style.right = Math.max(10, screenRect.right-wrapRect.left+10)+'px';
@@ -5044,6 +5115,7 @@ function renderGame(){
   if(!game) return;
   renderTopbar();
   renderPlayerList();
+  positionPortraitTopBar(); // after renderPlayerList() — depends on its just-rendered height
   // Rendered before drawGameCanvas() since its fitScale computation measures the overlay
   // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
