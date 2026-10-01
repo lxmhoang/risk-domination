@@ -288,7 +288,6 @@ $('btnStartGame').addEventListener('click', ()=>{
   initGame(playerConfigs, diff, spectator, alliance, tradeRule);
   showScreen('screen-game');
   maybeRotateMapForPortrait();
-  enterFullscreenIfSupported();
   renderGame();
   if(RUNTIME_CONFIG.manualInitialPlacement){
     setupPlaceNext();
@@ -628,20 +627,6 @@ function updateFullscreenButtons(){
   if(gameBtn){ gameBtn.textContent = label; gameBtn.title = title; gameBtn.classList.toggle('active', fs); }
   const topbarBtn = document.getElementById('btnFullscreenTopbar');
   if(topbarBtn){ topbarBtn.textContent = label; topbarBtn.title = title; topbarBtn.classList.toggle('active', fs); }
-}
-// Best-effort auto-fullscreen right as a game actually starts/resumes — unsupported (iOS Safari
-// has no Fullscreen API for page content, see fullscreenSupported() above) or blocked for any
-// other reason (browser declines outside a strong enough user-gesture context, a previous denial,
-// a sandboxed iframe) just silently does nothing instead of surfacing an error, since this is a
-// nicety the game doesn't depend on. Must be called synchronously from within the same click
-// handler that led here (not deferred via setTimeout/await) or browsers drop the user-gesture
-// permission and silently reject anyway.
-function enterFullscreenIfSupported(){
-  if(!fullscreenSupported() || isFullscreen()) return;
-  const e = document.documentElement;
-  const request = e.requestFullscreen || e.webkitRequestFullscreen || e.mozRequestFullScreen || e.msRequestFullscreen;
-  const result = request.call(e);
-  if(result && result.catch) result.catch(()=>{});
 }
 if(fullscreenSupported()){
   $('btnFullscreenGame').addEventListener('click', toggleFullscreen);
