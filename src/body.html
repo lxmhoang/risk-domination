@@ -243,25 +243,27 @@
     </div>
   </div>
 
-  <!-- Icon column anchored middle-right (see #gameRightPanelWrap in style.css), one icon per
-       row within each section — z-index above #gameLogPanel so these stay clickable even while
-       the log panel is open and overlapping. -->
-  <div id="gameRightPanelWrap">
-    <div id="gameControlsTop" class="game-overlay">
-      <div class="ov-section">
-        <button class="ov-btn small" id="btnQuitGame" title="Về Menu (Q)">🏠</button>
-        <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
-        <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau (S)">💾</button>
-      </div>
-      <div class="ov-section">
-        <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
-      </div>
-      <div class="ov-section" id="zoomControlsSection">
-        <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu (N)">📜</button>
-        <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI (P)">⏸️</button>
-        <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
-        <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">🔍</button>
-      </div>
+  <!-- Landscape: two independent edge-anchored stacks instead of one middle-right column —
+       #gameControlsLeft (home/fullscreen/save) bottom-anchored at the left edge,
+       #gameControlsRight (zoom/round/log/pause/continent, continent at the bottom so it sits
+       right above the phase-info bar for easy reach) bottom-anchored at the right edge. Both
+       positioned via positionLandscapeControlStacks() in 06-render-game.js, which tracks
+       #gameTurnInfo's actual top edge. Portrait keeps these in the shared top band instead (see
+       #gameControlsBand in style.css) — same buttons, just laid out differently; that split is
+       landscape-only, same as the position logic. z-index above #gameLogPanel so these stay
+       clickable even while the log panel is open and overlapping. -->
+  <div id="gameControlsBand">
+    <div id="gameControlsLeft" class="game-overlay ov-section">
+      <button class="ov-btn small" id="btnQuitGame" title="Về Menu (Q)">🏠</button>
+      <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
+      <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau (S)">💾</button>
+    </div>
+    <div id="gameControlsRight" class="game-overlay ov-section">
+      <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">🔍</button>
+      <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+      <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu (N)">📜</button>
+      <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI (P)">⏸️</button>
+      <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
     </div>
   </div>
 

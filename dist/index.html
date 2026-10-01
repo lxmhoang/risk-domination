@@ -49,6 +49,11 @@ button.primary{background:linear-gradient(135deg,var(--accent),#4a6fd6);color:#f
 button.primary:hover{box-shadow:0 4px 16px rgba(91,141,239,.4);}
 button.danger{background:linear-gradient(135deg,var(--danger),#c94656);color:#fff;}
 button.good{background:linear-gradient(135deg,var(--good),#2fa864);color:#fff;}
+/* #btnPhaseEnd's two phase-specific looks (set via className in renderPhaseActions()) — orange
+   while it means "Kết thúc tấn công", green while it means "Kết thúc lượt", so the color itself
+   hints at which action is about to happen before you even read the label. */
+button.phase-end-attack{background:linear-gradient(135deg,#ff9f43,#e8701a);color:#fff;}
+button.phase-end-fortify{background:linear-gradient(135deg,var(--good),#1f8f57);color:#fff;}
 button:disabled{opacity:.4;cursor:not-allowed;transform:none;}
 button.ghost{background:transparent;border:1px solid var(--border);}
 button.ghost.active{border-color:var(--accent);color:var(--accent2);}
@@ -193,15 +198,20 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    its content ever runs longer than the screen has room for (a short/narrow viewport with many
    sections, say) rather than overflowing off-screen. */
 .game-overlay{position:absolute;z-index:5;display:flex;flex-direction:column;gap:6px;max-height:calc(100% - 20px);}
-/* Top controls + phase actions now share ONE vertical column anchored top-right (see
-   #gameRightPanelWrap in body.html) instead of each independently absolutely-positioned —
-   z-index above #gameLogPanel (6) so phase-action buttons (attack/reinforce/etc) stay usable
-   even while the log panel is open and overlapping this same corner. */
-#gameRightPanelWrap{
-  position:absolute;top:50%;right:10px;transform:translateY(-50%);z-index:7;
-  display:flex;flex-direction:column;align-items:flex-end;gap:8px;
+/* Landscape: #gameControlsBand itself takes no part in layout (display:contents) — its two
+   children size/position independently, each bottom-anchored to its own screen edge (exact
+   `bottom` px set in JS, see positionLandscapeControlStacks() in 06-render-game.js, since it has
+   to track #gameTurnInfo's actual top edge). z-index above #gameLogPanel (6) so these stay usable
+   even while the log panel is open and overlapping. Portrait overrides #gameControlsBand back
+   into an actual flex container instead (see the @media block below) so both stacks merge into
+   the one shared top band like before this split. */
+#gameControlsBand{display:contents;}
+#gameControlsLeft, #gameControlsRight{
+  position:absolute;z-index:7;bottom:10px;
   max-height:calc(100% - 20px);overflow-y:auto;
 }
+#gameControlsLeft{left:10px;}
+#gameControlsRight{right:10px;}
 /* Positioned in JS (positionFloatingAttackButtons()) with inline left/top tracking the midpoint
    of the animated attack arrow — transform centers it horizontally and sits it above that point
    instead of the top-left corner landing there. z-index above the arrow (drawn on the canvas,
@@ -230,11 +240,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   pointer-events:auto;
 }
 #floatingFortifyButton[hidden]{display:none;}
-#gameControlsTop{
-  position:static;max-height:none;
-  background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
-  border-radius:12px;padding:5px 6px;gap:5px;
-}
 /* Width is the card's own 132px plus the active-card shift below (14px) so that shifted card
    still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
    horizontal scrollbar ever appears, without needing to clip anything since nothing actually
@@ -242,6 +247,11 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:146px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);
+  /* Landscape only: a real width to actually split 1/3 (cards) : 2/3 (phase info/end button)
+     from — min() so it doesn't balloon absurdly wide on a huge desktop window, or overflow a
+     narrower landscape one. Portrait resets this back to full-width-minus-margins (its own
+     concern is wrapping, not a fixed ratio) — see that media block. */
+  width:min(760px, calc(100% - 40px));
   max-height:none;white-space:nowrap;
   display:flex;flex-direction:row;align-items:stretch;gap:8px;
   background:transparent;border:none;backdrop-filter:none;padding:0;
@@ -250,6 +260,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   background:rgba(10,14,24,.5);backdrop-filter:blur(4px);border:1px solid var(--border);
   border-radius:12px;padding:8px 16px;
+  /* Grows to fill whatever #btnCardsModal's fixed share + #btnPhaseEnd's own content width
+     don't use — since cards is a fixed 1/3 (below), this + btnPhaseEnd together land on exactly
+     2/3 of #gameTurnInfo's width without needing to size them as a pair explicitly. */
+  flex:1 1 auto;min-width:0;
 }
 #turnInfoRow{display:flex;flex-direction:row;align-items:center;gap:10px;}
 /* :not([hidden]) matters here — plain #gameTurnInfo #btnPhaseEnd{display:flex} would outrank
@@ -262,17 +276,27 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 /* Overrides the shared rule's align-items:center specifically for btnCardsModal (equal
    specificity to the rule above, but declared after it so it wins) — btnPhaseEnd still wants its
    single line of text centered, but btnCardsModal wants its .mini-card children STRETCHED to
-   fill the full height instead of centered at their own natural size. */
-#gameTurnInfo #btnCardsModal:not([hidden]){ align-items:stretch; justify-content:flex-start; }
-#btnPhaseEnd{font-size:14px;padding:8px 20px;align-items:center;}
+   fill the full height instead of centered at their own natural size. justify-content:flex-end
+   (landscape/default) packs the fanned cards against the pill-side edge of this 1/3 slot, so the
+   OLDEST card (first in DOM — see renderCardsHandView()) sits anchored there and each new card
+   extends further away from it, toward the screen edge; portrait overrides this back to
+   flex-start (unchanged from before this fixed-ratio layout existed). */
+#gameTurnInfo #btnCardsModal:not([hidden]){ align-items:stretch; justify-content:flex-end; }
+/* 44px ≈ iOS's own minimum comfortable tap-target height (their HIG recommends 44pt, and a CSS
+   px is near enough the same physical size to treat as a 1:1 stand-in on the web) — this was
+   relying entirely on align-self:stretch before, which could end up shorter than that on a
+   compact pill. min-height only raises the floor; stretch still applies above it. */
+#btnPhaseEnd{font-size:14px;padding:8px 20px;align-items:center;min-height:44px;}
 /* The hand itself, fanned out — see renderCardsHandView() in 06-render-game.js, which fills
    this with one .mini-card per card actually held (no button chrome around it, and no separate
    click-to-see-your-cards step: the icons are already legible here at a glance). align-items
    stretch (set above) makes every .mini-card exactly as tall as this container, which the
-   :not([hidden]) rule stretches to match #turnInfoPill/#btnPhaseEnd's height. */
+   :not([hidden]) rule stretches to match #turnInfoPill/#btnPhaseEnd's height. flex-basis is the
+   fixed 1/3 share (landscape/default) — portrait resets it back to content-sized. */
 #btnCardsModal{
   background:transparent;border:2px solid transparent;border-radius:12px;
-  padding:4px 14px 4px 4px;cursor:pointer;position:relative;
+  flex:0 0 33.3333%;
+  padding:4px;cursor:pointer;position:relative;
 }
 #btnCardsModal:hover{background:rgba(255,255,255,.06);}
 /* Gold outline whenever the hand can currently be traded in (see findTradeCombo() call in
@@ -358,14 +382,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .stat-label{display:none;}
 .player-card.eliminated{opacity:.35;}
 
-/* Floats over the map, vertically centered on the screen (like #gameRightPanelWrap now is)
-   rather than sharing grid/flex space with anything — rarely looked at, so it's a toggle
-   (#btnToggleLog, in the top bar) on every screen size, collapsed by default (see body.html).
-   Sits immediately to the LEFT of #gameRightPanelWrap (right offset set in JS, see
-   positionLogPanel() in 06-render-game.js, which tracks that panel's actual rendered width —
+/* Floats over the map rather than sharing grid/flex space with anything — rarely looked at, so
+   it's a toggle (#btnToggleLog, in the top bar) on every screen size, collapsed by default (see
+   body.html). Sits immediately to the LEFT of #gameControlsRight (right offset set in JS, see
+   positionLogPanel() in 06-render-game.js, which tracks that panel's actual rendered position —
    it varies with content) rather than anchored to the screen edge; freely overlapping the map
-   underneath it is accepted. z-index 6, one below that wrap's 7, so the right panel always
-   stays on top of/clickable over it. */
+   underneath it is accepted. z-index 6, one below that stack's 7, so it always stays on top of/
+   clickable over this. */
 #gameLogPanel{
   position:absolute;top:50%;transform:translateY(-50%);right:180px; /* right: static first-paint fallback, see positionLogPanel() */
   height:min(480px, calc(100% - 20px));
@@ -408,15 +431,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
      sideways in a horizontal row would just make the active card visually jump, so skip it here. */
   .player-card.active-turn{transform:none;}
 
-  #gameRightPanelWrap{
-    left:10px;right:10px;top:0;bottom:auto;transform:none;width:auto;
-    flex-direction:row;flex-wrap:wrap;align-items:flex-start;justify-content:center;
+  /* Landscape's display:contents is what lets #gameControlsLeft/Right position independently —
+     portrait instead turns the band back into an actual flex container so both stacks merge back
+     into one shared row like a single unit, and resets the two children to flow normally inside
+     it instead of each being independently absolute-positioned to its own screen edge. */
+  #gameControlsBand{
+    display:flex;position:absolute;left:10px;right:10px;top:0;bottom:auto;width:auto;z-index:7;
+    flex-direction:row;flex-wrap:wrap;align-items:flex-start;justify-content:center;gap:8px;
     max-height:none;overflow-y:visible;
     /* actual top offset (right under the player-list row, whose height varies with content) is
        set inline by positionPortraitTopBar() in 06-render-game.js */
   }
-  #gameControlsTop{flex-direction:row;}
-  .ov-section{flex-direction:row;}
+  #gameControlsLeft, #gameControlsRight{
+    position:static;left:auto;right:auto;bottom:auto;z-index:auto;
+    flex-direction:row;max-height:none;overflow-y:visible;
+  }
 
   /* Sticks to the bottom of the SCREEN (same idea as landscape's bottom:10px, just spelled out
      explicitly here) rather than tracking the map's edge — the map is top-anchored instead (see
@@ -433,6 +462,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   }
   #gameTurnInfo #btnPhaseEnd{flex-basis:100%;}
   #turnInfoPill{flex:1;min-width:0;}
+  /* Undoes the landscape-only 1/3 fixed share + right-anchored fan (see the base rules) — portrait
+     keeps the original content-sized, left-anchored hand it always had. */
+  #btnCardsModal{flex:0 1 auto;}
+  #gameTurnInfo #btnCardsModal:not([hidden]){justify-content:flex-start;}
   /* Safety nets only — row 1 is wide enough now that these rarely actually trigger: wrap (not
      overflow/scroll) if a long name or hint sentence ever doesn't fit on one line, same graceful
      fallback as before, just no longer the common case. */
@@ -824,25 +857,27 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     </div>
   </div>
 
-  <!-- Icon column anchored middle-right (see #gameRightPanelWrap in style.css), one icon per
-       row within each section — z-index above #gameLogPanel so these stay clickable even while
-       the log panel is open and overlapping. -->
-  <div id="gameRightPanelWrap">
-    <div id="gameControlsTop" class="game-overlay">
-      <div class="ov-section">
-        <button class="ov-btn small" id="btnQuitGame" title="Về Menu (Q)">🏠</button>
-        <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
-        <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau (S)">💾</button>
-      </div>
-      <div class="ov-section">
-        <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
-      </div>
-      <div class="ov-section" id="zoomControlsSection">
-        <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu (N)">📜</button>
-        <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI (P)">⏸️</button>
-        <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
-        <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">🔍</button>
-      </div>
+  <!-- Landscape: two independent edge-anchored stacks instead of one middle-right column —
+       #gameControlsLeft (home/fullscreen/save) bottom-anchored at the left edge,
+       #gameControlsRight (zoom/round/log/pause/continent, continent at the bottom so it sits
+       right above the phase-info bar for easy reach) bottom-anchored at the right edge. Both
+       positioned via positionLandscapeControlStacks() in 06-render-game.js, which tracks
+       #gameTurnInfo's actual top edge. Portrait keeps these in the shared top band instead (see
+       #gameControlsBand in style.css) — same buttons, just laid out differently; that split is
+       landscape-only, same as the position logic. z-index above #gameLogPanel so these stay
+       clickable even while the log panel is open and overlapping. -->
+  <div id="gameControlsBand">
+    <div id="gameControlsLeft" class="game-overlay ov-section">
+      <button class="ov-btn small" id="btnQuitGame" title="Về Menu (Q)">🏠</button>
+      <button class="ov-btn small" id="btnFullscreenGame" title="Toàn màn hình">⛶</button>
+      <button class="ov-btn small" id="btnSaveGame" title="Lưu ván chơi hiện tại ra file để chơi tiếp sau (S)">💾</button>
+    </div>
+    <div id="gameControlsRight" class="game-overlay ov-section">
+      <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">🔍</button>
+      <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
+      <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu (N)">📜</button>
+      <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI (P)">⏸️</button>
+      <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
     </div>
   </div>
 
@@ -3144,6 +3179,11 @@ function placeReinforcement(terrId){
 function beginAttackPhase(){
   game.phase='attack';
   game.selectedFrom=null; game.selectedTo=null;
+  // "Kết thúc tấn công" only reveals itself ATTACK_END_BUTTON_DELAY_MS after landing here (see
+  // renderPhaseActions() in 06-render-game.js) — a fresh timestamp every time this phase is
+  // (re-)entered, including the forced-card-trade bounce-back in endAttackPhase() that returns
+  // here, so that always gets its own full wait too.
+  game.attackPhaseEnteredAt = Date.now();
   renderGame();
   setActionHint('Chọn lãnh thổ của bạn (≥2 quân) rồi lãnh thổ địch liền kề để tấn công.');
 }
@@ -4365,17 +4405,30 @@ function isPortraitLayout(){
   return wrap.clientHeight > wrap.clientWidth;
 }
 
-// Portrait only: #gameRightPanelWrap can't use the landscape CSS's top:50% (that's mid-screen,
-// not "right under the player list") since the player-list row's height varies with content
-// (card count, whether names wrap, etc) — so its top offset is measured and set here instead of
-// being a fixed CSS value. Landscape leaves it alone (clears the inline override) since that
-// layout positions it with plain CSS (top:50%) and never needs this.
+// Portrait only: #gameControlsBand can't use a fixed CSS top (its own height varies, and so does
+// the player-list row's height above it — card count, whether names wrap, etc) — so its top
+// offset is measured and set here instead. Landscape leaves it alone (clears the inline override)
+// since positionLandscapeControlStacks() below handles that layout instead.
 function positionPortraitTopBar(){
-  const rightWrap = $('gameRightPanelWrap');
-  if(!isPortraitLayout()){ rightWrap.style.top = ''; return; }
+  const band = $('gameControlsBand');
+  if(!isPortraitLayout()){ band.style.top = ''; return; }
   const listRect = $('gamePlayerListWrap').getBoundingClientRect();
   const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
-  rightWrap.style.top = Math.round(listRect.bottom-canvasWrapRect.top+6)+'px';
+  band.style.top = Math.round(listRect.bottom-canvasWrapRect.top+6)+'px';
+}
+
+// Landscape only: #gameControlsLeft/Right are each bottom-anchored right above #gameTurnInfo
+// (whose own height varies — 1 row in reinforce with no end button, 2 rows once one shows) rather
+// than a fixed CSS bottom value. Portrait leaves them alone (clears the inline override) since
+// they flow normally inside #gameControlsBand there instead — see positionPortraitTopBar().
+function positionLandscapeControlStacks(){
+  const left = $('gameControlsLeft'), right = $('gameControlsRight');
+  if(isPortraitLayout()){ left.style.bottom=''; right.style.bottom=''; return; }
+  const barRect = $('gameTurnInfo').getBoundingClientRect();
+  const wrapRect = $('gameCanvasWrap').getBoundingClientRect();
+  const bottomPx = Math.round(wrapRect.bottom-barRect.top+10)+'px';
+  left.style.bottom = bottomPx;
+  right.style.bottom = bottomPx;
 }
 
 function drawGameCanvas(){
@@ -4386,20 +4439,22 @@ function drawGameCanvas(){
   // "Safe area" = the wrap's box minus the fixed overlays around its edges, plus a little
   // breathing room, so at minimum zoom (GAME_ZOOM_MIN) the overlays only ever sit over empty
   // background, never over the map itself — "zoom out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa
-  // khoảng trống xung quanh". Landscape: player list (left) + icon controls (right) + turn-info
-  // (bottom), no top overlay. Portrait: those same two panels relocate into a stacked top band
-  // instead (see style.css), so their combined HEIGHT eats into the top instead of their width
-  // eating into the sides — see isPortraitLayout().
+  // khoảng trống xung quanh". Landscape: player list + #gameControlsLeft both eat into the left
+  // edge (whichever is wider — they sit at different heights so either could be the one the map
+  // needs to clear), #gameControlsRight eats into the right edge, #gameTurnInfo eats into the
+  // bottom, no top overlay. Portrait: the player list + control band relocate into a stacked top
+  // band instead (see style.css), so their combined HEIGHT eats into the top instead of either
+  // side's width — see isPortraitLayout().
   const margin = 16;
   const portrait = isPortraitLayout();
   let topH, leftW, rightW;
   if(portrait){
     leftW = 0; rightW = 0;
-    topH = $('gamePlayerListWrap').getBoundingClientRect().height + $('gameRightPanelWrap').getBoundingClientRect().height;
+    topH = $('gamePlayerListWrap').getBoundingClientRect().height + $('gameControlsBand').getBoundingClientRect().height;
   } else {
     topH = 0;
-    leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
-    rightW = $('gameRightPanelWrap').getBoundingClientRect().width;
+    leftW = Math.max($('gamePlayerListWrap').getBoundingClientRect().width, $('gameControlsLeft').getBoundingClientRect().width);
+    rightW = $('gameControlsRight').getBoundingClientRect().width;
   }
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
   const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
@@ -4857,23 +4912,23 @@ function showFloatingAttackButtons(){
   wrap.appendChild(atkBtn);
   positionFloatingAttackButtons();
 }
-// Landscape: sits immediately to the left of #gameRightPanelWrap (vertically centered via CSS)
-// instead of a fixed px offset from the screen edge — that panel's own width varies (icon column
-// width, scrollbar appearing), so this is recomputed on every render rather than relying on any
-// one fixed value staying correct. Portrait: that panel is now a top band instead of a right
-// column (see style.css), so there's nothing to sit "immediately left of" — instead this drops
+// Landscape: sits immediately to the left of #gameControlsRight instead of a fixed px offset
+// from the screen edge — that stack's own width varies (scrollbar appearing, etc), so this is
+// recomputed on every render rather than relying on any one fixed value staying correct.
+// Portrait: the control band is now a top row instead of a right column (see style.css), so
+// there's nothing to sit "immediately left of" — instead this drops
 // the log panel right below the whole top band, full-width-ish (see the portrait CSS override).
 function positionLogPanel(){
   const panel = $('gameLogPanel');
   if(isPortraitLayout()){
     panel.style.right = '';
-    const barRect = $('gameRightPanelWrap').getBoundingClientRect();
+    const barRect = $('gameControlsBand').getBoundingClientRect();
     const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
     panel.style.top = Math.max(10, Math.round(barRect.bottom-canvasWrapRect.top+10))+'px';
     return;
   }
   panel.style.top = '';
-  const wrapRect = $('gameRightPanelWrap').getBoundingClientRect();
+  const wrapRect = $('gameControlsRight').getBoundingClientRect();
   const screenRect = $('screen-game').getBoundingClientRect();
   panel.style.right = Math.max(10, screenRect.right-wrapRect.left+10)+'px';
 }
@@ -4974,6 +5029,13 @@ function endAttackPhase(){
 // player can check their hand any time) and the floating attack/fortify buttons. Doesn't touch
 // #actionHint — that's set independently by whichever code just entered the phase (see
 // setActionHint() call sites).
+// "Kết thúc tấn công" stays hidden for this long after entering attack (see beginAttackPhase()'s
+// attackPhaseEnteredAt) — gives a beat to actually look at the board before the exit is offered,
+// in both orientations. Re-render is scheduled once per wait (not every renderPhaseActions()
+// call) so it doesn't stack a pile of redundant timers while the player clicks around mid-wait.
+const ATTACK_END_BUTTON_DELAY_MS = 3000;
+let attackEndRevealTimer = null;
+
 function renderPhaseActions(){
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
@@ -4993,14 +5055,25 @@ function renderPhaseActions(){
   if(game.phase==='reinforce') return;
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
-    endBtn.hidden = false;
-    endBtn.textContent = withShortcut('Kết thúc tấn công','V'); endBtn.title='Phím tắt: V';
-    endBtn.onclick = ()=> endAttackPhase();
+    const elapsed = Date.now()-(game.attackPhaseEnteredAt||0);
+    if(elapsed>=ATTACK_END_BUTTON_DELAY_MS){
+      endBtn.hidden = false;
+      endBtn.className = 'phase-end-attack';
+      endBtn.textContent = withShortcut('Kết thúc tấn công','V'); endBtn.title='Phím tắt: V';
+      endBtn.onclick = ()=> endAttackPhase();
+    } else if(attackEndRevealTimer==null){
+      const remaining = ATTACK_END_BUTTON_DELAY_MS-elapsed;
+      attackEndRevealTimer = setTimeout(()=>{
+        attackEndRevealTimer = null;
+        if(game && !game.over && game.phase==='attack') renderGame();
+      }, remaining);
+    }
     return;
   }
   if(game.phase==='fortify'){
     if(canFortifyNow(p)) showFloatingFortifyButton();
     endBtn.hidden = false;
+    endBtn.className = 'phase-end-fortify';
     endBtn.textContent = withShortcut('Kết thúc lượt','V'); endBtn.title='Phím tắt: V';
     endBtn.onclick = ()=> endTurn();
   }
@@ -5105,7 +5178,15 @@ function renderCardsHandView(){
   if(cards.length===0){
     wrap.appendChild(el('div','mini-card empty','🎴'));
   } else {
-    cards.forEach((type,i)=>{
+    // Landscape: the fan is right-anchored against the pill (justify-content:flex-end — see
+    // style.css) with the OLDEST card anchored there and each new one appearing further away
+    // from it — DOM order has to be newest-first for that, since normal row flow + flex-end
+    // keeps relative order but shifts the whole group right, landing the LAST DOM child (meant
+    // to be the oldest) at the anchored edge. Portrait keeps the original oldest-first order
+    // (flex-start, unchanged). z-index always keyed to the card's actual index regardless of DOM
+    // order, so the newest card stays the one drawn on top of any overlap either way.
+    const order = isPortraitLayout() ? cards.map((type,i)=>[type,i]) : cards.map((type,i)=>[type,i]).reverse();
+    order.forEach(([type,i])=>{
       const mini = el('div','mini-card', CARD_ICON[type]);
       mini.style.zIndex = String(i+1);
       mini.title = type;
@@ -5125,7 +5206,7 @@ function renderTopbar(){
   $('turnDot').style.color = p.color;
   $('roundBadge').textContent = '🔁 '+game.roundNumber;
   $('turnName').textContent = p.name+(p.isHuman?' (Bạn)':'')+
-    ' 📦'+p.totalReinforced+' | 😵'+p.totalKills+' - lượt - ';
+    ' 📦'+p.totalReinforced+' - lượt - ';
   const phaseNames = {'setup-place':'Đặt quân ban đầu','reinforce':'Tăng viện','attack':'Tấn công','fortify':'Tăng cường'};
   $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
   $('reinforceCounter').textContent = (game.phase==='reinforce'||game.phase==='setup-place') ?
@@ -5146,8 +5227,9 @@ function renderGame(){
   // Rendered before drawGameCanvas() since its fitScale computation measures the overlay
   // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
+  positionLandscapeControlStacks(); // after renderPhaseActions() — tracks #gameTurnInfo's height
   drawGameCanvas();
-  positionLogPanel(); // after renderPhaseActions() specifically — #gameRightPanelWrap's height
+  positionLogPanel(); // after renderPhaseActions() specifically — #gameControlsRight's height
                        // (which this tracks) depends on how many phase-action buttons it just drew
   if(aiPaused && !currentPlayer().isHuman && !game.over){
     setActionHint('⏸️ Đã tạm dừng lượt của '+currentPlayer().name+'. Bấm ▶️ ở góc trên để tiếp tục.');
