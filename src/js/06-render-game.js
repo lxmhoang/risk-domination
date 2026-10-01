@@ -380,12 +380,35 @@ function isPortraitLayout(){
 // Always starts from unrotateMapData(mapData) rather than rotating whatever's already there, so
 // repeat calls (loading another save, "Chơi lại" after a game-over, without a full page reload)
 // are idempotent instead of compounding into 180°/270°.
+// lastAdaptedPortraitLayout records which way THIS call just decided, so a later orientation FLIP
+// (the device/window actually turning, not just any resize) can be detected and re-trigger this —
+// see handleGameOrientationResize() below, wired to the resize listener in 08-wiring.js.
+let lastAdaptedPortraitLayout = null;
 function maybeRotateMapForPortrait(){
   mapData = unrotateMapData(mapData);
   if(isPortraitLayout() && mapData.cols > mapData.rows){
     mapData = rotateMapData90CW(mapData);
     mapData._rotatedFor90 = true;
   }
+  lastAdaptedPortraitLayout = isPortraitLayout();
+}
+
+// "Xoay màn hình khi đang chơi thì map cũng xoay theo" — re-runs the portrait/landscape rotation
+// decision when the screen's actual SHAPE flips mid-game, not on every resize (resize fires for
+// lots of harmless reasons too, e.g. a mobile browser's address bar showing/hiding, which
+// shouldn't go reset the player's zoom/pan every time). Zoom/pan reset to a clean fit alongside
+// the rotation itself, since the map's whole aspect ratio just changed and whatever the player
+// had zoomed/panned to almost certainly doesn't line up with the new framing anymore. Called from
+// the existing debounced resize listener in 08-wiring.js (only while the game screen is active).
+function handleGameOrientationResize(){
+  const nowPortrait = isPortraitLayout();
+  if(lastAdaptedPortraitLayout!==null && nowPortrait!==lastAdaptedPortraitLayout){
+    maybeRotateMapForPortrait();
+    gameZoom = 1;
+    const wrap = $('gameCanvasWrap');
+    wrap.scrollLeft = 0; wrap.scrollTop = 0;
+  }
+  renderGame();
 }
 
 // Portrait only: #gameControlsLeft/Right are each bottom-anchored right above #gameTurnInfo

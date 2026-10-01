@@ -520,11 +520,15 @@ $('btnToggleLog').addEventListener('click', ()=>{
 // switching device presets in devtools) with no game action in between left the OLD choice
 // applied to the NEW size, producing a visibly broken layout until the next click. Re-run on
 // resize too, debounced since resize fires continuously while dragging a window/devtools pane.
+// handleGameOrientationResize() (06-render-game.js) additionally re-checks the map's own
+// portrait-auto-rotation (see maybeRotateMapForPortrait()) whenever this resize reflects an actual
+// orientation flip, not just any resize — same debounce, so rotating the device doesn't trigger
+// the map-rotation logic repeatedly while the resize events are still settling.
 let _resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(()=>{
-    if(game && document.getElementById('screen-game').classList.contains('active')) renderGame();
+    if(game && document.getElementById('screen-game').classList.contains('active')) handleGameOrientationResize();
   }, 120);
 });
 
