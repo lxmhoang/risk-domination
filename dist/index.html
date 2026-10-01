@@ -268,9 +268,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    specificity to the rule above, but declared after it so it wins) — btnPhaseEnd still wants its
    single line of text centered, but btnCardsModal wants its .mini-card children STRETCHED to
    fill the full height instead of centered at their own natural size. justify-content:flex-start
-   (landscape/default) is the original content-sized, left-anchored hand; portrait overrides this
-   to flex-end to pack the fanned cards against the pill-side edge of its fixed 1/3 slot instead
-   (see that media block). */
+   (both orientations) anchors the oldest card at the left edge of the slot, with each new card
+   appearing to its right. */
 #gameTurnInfo #btnCardsModal:not([hidden]){ align-items:stretch; justify-content:flex-start; }
 /* 44px ≈ iOS's own minimum comfortable tap-target height (their HIG recommends 44pt, and a CSS
    px is near enough the same physical size to treat as a 1:1 stand-in on the web) — this was
@@ -301,7 +300,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    reads as a fanned hand instead of a loose row, while still clearing enough of each card to
    the left to tell its icon apart. */
 .mini-card+.mini-card{margin-left:-14px;}
-.mini-card.empty{opacity:.55;font-size:22px;}
 .trade-badge{
   position:absolute;top:-6px;right:4px;background:var(--good);color:#0b1f13;
   font-weight:800;font-size:11px;min-width:20px;height:20px;border-radius:10px;
@@ -436,63 +434,49 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
   /* Sticks to the bottom of the SCREEN (same idea as landscape's bottom:10px, just spelled out
      explicitly here) rather than tracking the map's edge — the map is top-anchored instead (see
-     drawGameCanvas()). Split into 2 rows via flex-wrap: row 1 is btnCardsModal (1/3) +
-     turnInfoPill (2/3), row 2 is btnPhaseEnd alone (flex-basis:100% forces it onto its own line —
-     see that rule below). Each row's own children stretch to match ONLY each other (align-items:
-     stretch applies per flex LINE, not across the whole wrapped container), so a tall row 1 no
-     longer inflates btnPhaseEnd's height on row 2, or vice versa — that's what was actually
-     ballooning the whole bar's height before (all 3 shared one line and had to stretch together). */
+     drawGameCanvas()). Split into 2 rows via flex-wrap: row 1 is turnInfoPill ALONE (full width —
+     order:-1 puts it first regardless of its DOM position, and flex-basis:100% means it's the
+     only thing that fits on that first line), row 2 is btnCardsModal (1/3) + btnPhaseEnd (2/3),
+     the next two items in `order` once row 1 is full. Each row's own children stretch to match
+     ONLY each other (align-items:stretch applies per flex LINE, not across the whole wrapped
+     container), so row 1 and row 2 size independently instead of ballooning to match each other. */
   #gameTurnInfo{
     left:10px;right:10px;bottom:10px;transform:none;width:auto;
     flex-wrap:wrap;row-gap:8px;
   }
-  #gameTurnInfo #btnPhaseEnd{flex-basis:100%;}
-  /* Row 1 (cards + pill) kept to the same ~44px iOS tap-target height as row 2's button —
-     tighter padding/line-height than landscape's pill (which has the whole screen width to
-     spread its 2 lines of text across) so both rows read as a matched pair instead of row 1
-     looming taller. flex-basis:0 (not auto) matters here specifically because the row wraps:
-     flex-wrap decides whether an item fits the CURRENT line using its flex-basis, before any
-     shrinking — "auto" resolves to the pill's full content width (hundreds of px, since nothing
-     constrains it), which is wider than what's left after #btnCardsModal's 1/3 share, so the
-     browser bumped the pill to its own line instead of growing to fill the rest of row 1. A 0
-     basis always "fits" (it starts at zero width), then flex-grow expands it to fill row 1 as
-     intended. */
   #turnInfoPill{
-    flex:1 1 0;min-width:0;min-height:44px;
-    padding:4px 10px;gap:0;line-height:1.15;
+    order:-1;flex:1 1 100%;min-height:44px;
+    padding:6px 12px;
   }
-  /* Fixed 1/3 share, matching #turnInfoPill's comment above — landscape keeps the original
-     content-sized hand instead (see the base rules). */
-  #btnCardsModal{flex:0 0 33.3333%;padding:4px;min-height:44px;}
-  /* justify-content:flex-end packs the fanned cards against the pill-side edge of this 1/3 slot,
-     so the OLDEST card (first in DOM — see renderCardsHandView()) sits anchored there and each new
-     card extends further away from it, toward the screen edge. */
-  #gameTurnInfo #btnCardsModal:not([hidden]){justify-content:flex-end;}
-  /* Name + phase badge shrunk down and tightened up — at the ~230px this row actually gets (after
-     the 1/3 cards slot), the landscape-size text+badge wraps onto 2 lines by itself, which on top
-     of the hint line below pushes the pill to 3 lines total, blowing well past the 44px target
-     above. Smaller/tighter still reads fine at a glance and reliably fits on one line instead. */
+  /* Fixed 1/3 share of row 2 — landscape keeps the original content-sized hand instead (see the
+     base rules). order:0 (vs btnPhaseEnd's order:1 below) keeps it on the LEFT of row 2 even
+     though btnPhaseEnd comes earlier in the DOM (markup order is cards, pill, end-button; #turnInfoPill
+     jumping to order:-1 for row 1 left cards/end-button to fall in after it in `order`, in their
+     original relative order, which already happens to be cards-then-button — order:0/1 here is
+     just making that explicit rather than relying on it). */
+  #btnCardsModal{order:0;flex:0 0 33.3333%;padding:4px;min-height:44px;}
+  /* Fills the remaining 2/3 of row 2. flex-basis:0 (not auto) for the same reason #turnInfoPill
+     needed it before: flex-wrap checks an item's flex-basis (not its post-shrink size) to decide
+     if it still fits the CURRENT line — btnPhaseEnd's own full text width as "auto" basis is wider
+     than the 2/3 left after the cards slot, which bumped it to a 3rd line by itself; a 0 basis
+     always "fits", then flex-grow expands it to fill the rest of row 2 as intended. */
+  #gameTurnInfo #btnPhaseEnd{order:1;flex:1 1 0;min-width:0;}
   /* #turnInfoPill's align-items:center (base rule) means #turnInfoRow is centered at its own
      NATURAL content width rather than stretched to the pill's — without an explicit width here it
-     just sizes to its children's combined min-content (dot + name + badge + counter all refusing
-     to shrink below their own natural widths) and overflows evenly past both edges of the pill
+     just sizes to its children's combined min-content and can overflow past the pill's edges
      instead of actually fitting inside it. width:100% + min-width:0 forces it to the pill's real
-     width, which is what finally makes turnName's own ellipsis/shrink rule below do anything. */
-  #turnInfoRow{
-    flex-wrap:nowrap;row-gap:0;gap:4px;font-size:12px;overflow:hidden;
-    width:100%;min-width:0;
-  }
-  #turnInfoRow .turn-dot{width:10px;height:10px;flex-shrink:0;}
+     width. Name ellipsizes as a safety net for a long player name; with the dot/army-count/
+     reinforce-counter all gone now and the pill spanning the FULL row width, this rarely needs to
+     actually kick in. */
+  #turnInfoRow{flex-wrap:nowrap;gap:6px;width:100%;min-width:0;}
   #turnInfoRow #turnName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-  #turnInfoRow .phase-badge{padding:2px 8px;font-size:9.5px;flex-shrink:0;}
-  #turnInfoRow #reinforceCounter{font-size:11px;flex-shrink:0;}
-  /* The hint sentence (e.g. "Chọn lãnh thổ của bạn...") is long, and the pill only has the narrow
-     leftover width once cards (1/3) and the end button both claim their own share — left
-     unclamped, it'd wrap into many lines and blow past the 44px target above. Clamped to a single
-     line (ellipsized) instead, so row 1 stays pinned to that height regardless of sentence length. */
+  #turnInfoRow .phase-badge{flex-shrink:0;}
+  /* Same safety net as #turnName above, now that the hint has the full row width rather than a
+     squeezed 2/3 share — 2 lines is plenty of room for the usual sentence, just capped so an
+     unusually long one can't blow past row 1's height. */
   #actionHint{
     white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;
-    -webkit-line-clamp:1;overflow:hidden;font-size:9.5px;
+    -webkit-line-clamp:2;overflow:hidden;
   }
 }
 /* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
@@ -889,7 +873,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     </div>
     <div id="gameControlsRight" class="game-overlay ov-section">
       <button class="ov-btn small" id="btnZoomReset" title="Về 100% (phím 0)">🔍</button>
-      <span class="ov-label" id="roundBadge" title="Số vòng chơi đã trôi qua (mỗi lần tất cả người chơi đi xong 1 lượt thì +1)">🔁 —</span>
       <button class="ov-btn small" id="btnToggleLog" title="Nhật ký trận đấu (N)">📜</button>
       <button class="ov-btn small" id="btnPauseAI" title="Tạm dừng / tiếp tục lượt AI (P)">⏸️</button>
       <button class="ov-btn small" id="btnToggleContinentView" title="Xem châu lục (phím Space)">🌍</button>
@@ -909,10 +892,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <div id="btnCardsModal" title="Thẻ bài của bạn"></div>
     <div id="turnInfoPill">
       <div id="turnInfoRow">
-        <span class="turn-dot" id="turnDot"></span>
         <span id="turnName">—</span>
         <span class="phase-badge" id="phaseBadge">—</span>
-        <span id="reinforceCounter"></span>
       </div>
       <div id="actionHint">Chào mừng đến với ván chơi!</div>
     </div>
@@ -5105,19 +5086,25 @@ function renderPhaseActions(){
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
   const endBtn = $('btnPhaseEnd');
-  endBtn.hidden = true; endBtn.onclick = null;
+  endBtn.hidden = true; endBtn.disabled = false; endBtn.onclick = null;
   // The cards button always shows/opens the VIEWER's own hand (game.players[0]) — it stays
-  // clickable during other players' turns too (only hidden once the game is over, or in
-  // spectator mode where slot 0 isn't a real human viewer), independent of whose turn it
-  // actually is.
-  $('btnCardsModal').hidden = game.over || !game.players[0].isHuman;
+  // clickable during other players' turns too (only hidden once the game is over, in spectator
+  // mode where slot 0 isn't a real human viewer, or simply once there's nothing in hand to show).
+  $('btnCardsModal').hidden = game.over || !game.players[0].isHuman || game.players[0].cards.length===0;
   if(game.over) return;
   const p = currentPlayer();
   if(!p.isHuman) return;
   if(game.phase==='setup-place') return;
-  // No end button in reinforce: placeReinforcement() auto-advances to attack once every troop is
-  // placed (see there), so there's never a moment where clicking one here would do anything.
-  if(game.phase==='reinforce') return;
+  // Reinforce has no real "end phase" action — placeReinforcement() auto-advances to attack once
+  // every troop is placed (see there), so clicking an end button here would never do anything.
+  // Shown anyway, disabled, just to surface "Quân cần đặt: X" where the phase-info pill used to.
+  if(game.phase==='reinforce'){
+    endBtn.hidden = false;
+    endBtn.disabled = true;
+    endBtn.className = '';
+    endBtn.textContent = 'Quân cần đặt: '+game.reinforceRemaining;
+    return;
+  }
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     const elapsed = Date.now()-(game.attackPhaseEnteredAt||0);
@@ -5240,24 +5227,16 @@ function renderCardsHandView(){
   const combo = findTradeCombo(cards);
   wrap.classList.toggle('tradeable', !!combo);
   wrap.innerHTML = '';
-  if(cards.length===0){
-    wrap.appendChild(el('div','mini-card empty','🎴'));
-  } else {
-    // Portrait: the fan is right-anchored against the pill (justify-content:flex-end — see
-    // style.css) with the OLDEST card anchored there and each new one appearing further away
-    // from it — DOM order has to be newest-first for that, since normal row flow + flex-end
-    // keeps relative order but shifts the whole group right, landing the LAST DOM child (meant
-    // to be the oldest) at the anchored edge. Landscape keeps the original oldest-first order
-    // (flex-start, unchanged). z-index always keyed to the card's actual index regardless of DOM
-    // order, so the newest card stays the one drawn on top of any overlap either way.
-    const order = isPortraitLayout() ? cards.map((type,i)=>[type,i]).reverse() : cards.map((type,i)=>[type,i]);
-    order.forEach(([type,i])=>{
-      const mini = el('div','mini-card', CARD_ICON[type]);
-      mini.style.zIndex = String(i+1);
-      mini.title = type;
-      wrap.appendChild(mini);
-    });
-  }
+  // Oldest-first DOM order + justify-content:flex-start (both orientations — see style.css):
+  // the oldest card sits anchored at the left edge of the slot, each new one appears to its
+  // right. Nothing to show at all when the hand is empty — see the hidden-toggle in
+  // renderPhaseActions(), which hides this whole button rather than leaving an empty placeholder.
+  cards.forEach((type,i)=>{
+    const mini = el('div','mini-card', CARD_ICON[type]);
+    mini.style.zIndex = String(i+1);
+    mini.title = type;
+    wrap.appendChild(mini);
+  });
   if(combo){
     const value = tradeInValue(game.tradeRule, game.tradeCount+1, (viewer.personalTradeCount||0)+1);
     const badge = el('span','ov-badge trade-badge', String(value));
@@ -5267,15 +5246,9 @@ function renderCardsHandView(){
 
 function renderTopbar(){
   const p = currentPlayer();
-  $('turnDot').style.background = p.color;
-  $('turnDot').style.color = p.color;
-  $('roundBadge').textContent = '🔁 '+game.roundNumber;
-  $('turnName').textContent = p.name+(p.isHuman?' (Bạn)':'')+
-    ' 📦'+p.totalReinforced+' - lượt - ';
+  $('turnName').textContent = p.name+(p.isHuman?' (Bạn)':'')+' - lượt '+game.roundNumber+' - ';
   const phaseNames = {'setup-place':'Đặt quân ban đầu','reinforce':'Tăng viện','attack':'Tấn công','fortify':'Tăng cường'};
   $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
-  $('reinforceCounter').textContent = (game.phase==='reinforce'||game.phase==='setup-place') ?
-    ('Quân đặt: ' + (game.phase==='setup-place'? game.pool[p.id] : game.reinforceRemaining)) : '';
   renderCardsHandView();
   // Play/pause only matters (and is only clickable) while an AI is actually taking its turn.
   const aiTurn = !p.isHuman && !game.over;

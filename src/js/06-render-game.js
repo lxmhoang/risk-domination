@@ -1004,19 +1004,25 @@ function renderPhaseActions(){
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
   const endBtn = $('btnPhaseEnd');
-  endBtn.hidden = true; endBtn.onclick = null;
+  endBtn.hidden = true; endBtn.disabled = false; endBtn.onclick = null;
   // The cards button always shows/opens the VIEWER's own hand (game.players[0]) — it stays
-  // clickable during other players' turns too (only hidden once the game is over, or in
-  // spectator mode where slot 0 isn't a real human viewer), independent of whose turn it
-  // actually is.
-  $('btnCardsModal').hidden = game.over || !game.players[0].isHuman;
+  // clickable during other players' turns too (only hidden once the game is over, in spectator
+  // mode where slot 0 isn't a real human viewer, or simply once there's nothing in hand to show).
+  $('btnCardsModal').hidden = game.over || !game.players[0].isHuman || game.players[0].cards.length===0;
   if(game.over) return;
   const p = currentPlayer();
   if(!p.isHuman) return;
   if(game.phase==='setup-place') return;
-  // No end button in reinforce: placeReinforcement() auto-advances to attack once every troop is
-  // placed (see there), so there's never a moment where clicking one here would do anything.
-  if(game.phase==='reinforce') return;
+  // Reinforce has no real "end phase" action — placeReinforcement() auto-advances to attack once
+  // every troop is placed (see there), so clicking an end button here would never do anything.
+  // Shown anyway, disabled, just to surface "Quân cần đặt: X" where the phase-info pill used to.
+  if(game.phase==='reinforce'){
+    endBtn.hidden = false;
+    endBtn.disabled = true;
+    endBtn.className = '';
+    endBtn.textContent = 'Quân cần đặt: '+game.reinforceRemaining;
+    return;
+  }
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     const elapsed = Date.now()-(game.attackPhaseEnteredAt||0);
@@ -1139,24 +1145,16 @@ function renderCardsHandView(){
   const combo = findTradeCombo(cards);
   wrap.classList.toggle('tradeable', !!combo);
   wrap.innerHTML = '';
-  if(cards.length===0){
-    wrap.appendChild(el('div','mini-card empty','🎴'));
-  } else {
-    // Portrait: the fan is right-anchored against the pill (justify-content:flex-end — see
-    // style.css) with the OLDEST card anchored there and each new one appearing further away
-    // from it — DOM order has to be newest-first for that, since normal row flow + flex-end
-    // keeps relative order but shifts the whole group right, landing the LAST DOM child (meant
-    // to be the oldest) at the anchored edge. Landscape keeps the original oldest-first order
-    // (flex-start, unchanged). z-index always keyed to the card's actual index regardless of DOM
-    // order, so the newest card stays the one drawn on top of any overlap either way.
-    const order = isPortraitLayout() ? cards.map((type,i)=>[type,i]).reverse() : cards.map((type,i)=>[type,i]);
-    order.forEach(([type,i])=>{
-      const mini = el('div','mini-card', CARD_ICON[type]);
-      mini.style.zIndex = String(i+1);
-      mini.title = type;
-      wrap.appendChild(mini);
-    });
-  }
+  // Oldest-first DOM order + justify-content:flex-start (both orientations — see style.css):
+  // the oldest card sits anchored at the left edge of the slot, each new one appears to its
+  // right. Nothing to show at all when the hand is empty — see the hidden-toggle in
+  // renderPhaseActions(), which hides this whole button rather than leaving an empty placeholder.
+  cards.forEach((type,i)=>{
+    const mini = el('div','mini-card', CARD_ICON[type]);
+    mini.style.zIndex = String(i+1);
+    mini.title = type;
+    wrap.appendChild(mini);
+  });
   if(combo){
     const value = tradeInValue(game.tradeRule, game.tradeCount+1, (viewer.personalTradeCount||0)+1);
     const badge = el('span','ov-badge trade-badge', String(value));
@@ -1166,15 +1164,9 @@ function renderCardsHandView(){
 
 function renderTopbar(){
   const p = currentPlayer();
-  $('turnDot').style.background = p.color;
-  $('turnDot').style.color = p.color;
-  $('roundBadge').textContent = '🔁 '+game.roundNumber;
-  $('turnName').textContent = p.name+(p.isHuman?' (Bạn)':'')+
-    ' 📦'+p.totalReinforced+' - lượt - ';
+  $('turnName').textContent = p.name+(p.isHuman?' (Bạn)':'')+' - lượt '+game.roundNumber+' - ';
   const phaseNames = {'setup-place':'Đặt quân ban đầu','reinforce':'Tăng viện','attack':'Tấn công','fortify':'Tăng cường'};
   $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
-  $('reinforceCounter').textContent = (game.phase==='reinforce'||game.phase==='setup-place') ?
-    ('Quân đặt: ' + (game.phase==='setup-place'? game.pool[p.id] : game.reinforceRemaining)) : '';
   renderCardsHandView();
   // Play/pause only matters (and is only clickable) while an AI is actually taking its turn.
   const aiTurn = !p.isHuman && !game.over;
