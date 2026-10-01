@@ -27,7 +27,13 @@
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);height:100%;}
-body{display:flex;flex-direction:column;min-height:100vh;}
+/* 100vh on mobile Chrome/Safari is the LARGEST possible viewport (address bar collapsed) —
+   while the address bar is actually showing, the real visible area is shorter, so a min-height
+   of 100vh made body taller than what's on screen and pushed the bottom bar/action panel below
+   the fold, needing a scroll to reach. 100dvh tracks the ACTUAL current visible viewport and
+   updates live as the address bar shows/hides; declared after as a fallback-safe override (an
+   unsupported value is ignored, so older browsers just keep the 100vh above). */
+body{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;}
 /* The game screen is always full-bleed (see #screen-game below) — the outer app header would
    just eat into that, so it's hidden for the whole time you're actually playing, on every
    screen size (not just mobile). body.in-game-screen is set by showScreen() in 01-utils.js. */
