@@ -519,16 +519,28 @@ $('btnToggleLog').addEventListener('click', ()=>{
 // switching device presets in devtools) with no game action in between left the OLD choice
 // applied to the NEW size, producing a visibly broken layout until the next click. Re-run on
 // resize too, debounced since resize fires continuously while dragging a window/devtools pane.
-// handleGameOrientationResize() (06-render-game.js) additionally re-checks the map's own
-// portrait-auto-rotation (see maybeRotateMapForPortrait()) whenever this resize reflects an actual
-// orientation flip, not just any resize — same debounce, so rotating the device doesn't trigger
-// the map-rotation logic repeatedly while the resize events are still settling.
+// Deliberately a plain renderGame() here, NOT handleGameOrientationResize() — `resize` fires for
+// lots of things that aren't an actual orientation flip, including entering/exiting fullscreen,
+// and doing the map-rotation check's heavier work (re-measuring layout, potentially rebuilding the
+// whole map + its border cache) at the exact moment a fullscreen transition is also in flight was
+// enough to freeze real Chrome on macOS (reported: clicking the fullscreen button hung the page).
+// See the matchMedia listener further down for the actual orientation-flip-only trigger.
 let _resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(()=>{
-    if(game && document.getElementById('screen-game').classList.contains('active')) handleGameOrientationResize();
+    if(game && document.getElementById('screen-game').classList.contains('active')) renderGame();
   }, 120);
+});
+
+// The actual "device/window rotated" signal, decoupled from plain `resize` (see above) — only
+// fires when the viewport's orientation genuinely flips, so toggling fullscreen, nudging a
+// desktop window's size, or a mobile browser's address bar showing/hiding don't trigger it. This
+// is what the mid-game map-rotation check (maybeRotateMapForPortrait(), only ever expensive when
+// the map actually needs re-rotating) should be tied to instead of generic resize noise.
+const portraitOrientationQuery = window.matchMedia('(orientation: portrait)');
+portraitOrientationQuery.addEventListener('change', ()=>{
+  if(game && document.getElementById('screen-game').classList.contains('active')) handleGameOrientationResize();
 });
 
 // Space bar toggles continent view while in-game. Ignored when a modal is open or
