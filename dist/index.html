@@ -6040,7 +6040,7 @@ $('btnToggleLog').addEventListener('click', ()=>{
 // and doing the map-rotation check's heavier work (re-measuring layout, potentially rebuilding the
 // whole map + its border cache) at the exact moment a fullscreen transition is also in flight was
 // enough to freeze real Chrome on macOS (reported: clicking the fullscreen button hung the page).
-// See the matchMedia listener further down for the actual orientation-flip-only trigger.
+// See the screen.orientation listener further down for the actual orientation-flip-only trigger.
 let _resizeTimer = null;
 window.addEventListener('resize', ()=>{
   clearTimeout(_resizeTimer);
@@ -6049,15 +6049,19 @@ window.addEventListener('resize', ()=>{
   }, 120);
 });
 
-// The actual "device/window rotated" signal, decoupled from plain `resize` (see above) — only
-// fires when the viewport's orientation genuinely flips, so toggling fullscreen, nudging a
-// desktop window's size, or a mobile browser's address bar showing/hiding don't trigger it. This
-// is what the mid-game map-rotation check (maybeRotateMapForPortrait(), only ever expensive when
-// the map actually needs re-rotating) should be tied to instead of generic resize noise.
-const portraitOrientationQuery = window.matchMedia('(orientation: portrait)');
-portraitOrientationQuery.addEventListener('change', ()=>{
-  if(game && document.getElementById('screen-game').classList.contains('active')) handleGameOrientationResize();
-});
+// The actual "device physically rotated" signal — screen.orientation reflects the real display
+// hardware's orientation, which is untouched by resizing a window or toggling fullscreen (unlike
+// matchMedia('(orientation: portrait)'), which reacts to the WINDOW's current width-vs-height
+// ratio: if that window happened to be narrower than tall before going fullscreen, filling a
+// normal landscape monitor with it flips that media query too, re-triggering this same heavy
+// rotation+render work mid-transition — which was still freezing the fullscreen button even after
+// moving off plain `resize`). Falls back to doing nothing where unsupported (older Safari) — the
+// mid-game re-rotation just won't fire there, same as before this feature existed.
+if(window.screen && window.screen.orientation){
+  window.screen.orientation.addEventListener('change', ()=>{
+    if(game && document.getElementById('screen-game').classList.contains('active')) handleGameOrientationResize();
+  });
+}
 
 // Space bar toggles continent view while in-game. Ignored when a modal is open or
 // focus is on a form control, so it doesn't hijack normal typing/button activation.
