@@ -37,11 +37,14 @@ button.primary{background:linear-gradient(135deg,var(--accent),#4a6fd6);color:#f
 button.primary:hover{box-shadow:0 4px 16px rgba(91,141,239,.4);}
 button.danger{background:linear-gradient(135deg,var(--danger),#c94656);color:#fff;}
 button.good{background:linear-gradient(135deg,var(--good),#2fa864);color:#fff;}
-/* #btnPhaseEnd's two phase-specific looks (set via className in renderPhaseActions()) — orange
-   while it means "Kết thúc tấn công", green while it means "Kết thúc lượt", so the color itself
-   hints at which action is about to happen before you even read the label. */
+/* #btnPhaseEnd's phase-specific looks (set via className in renderPhaseActions()) — orange for
+   "Kết thúc tấn công", green for "Kết thúc lượt", blue for the reinforce phase's inert "Quân cần
+   đặt" readout, so the color itself hints at which phase is active before you even read the
+   label. The reinforce one is always rendered :disabled (see renderPhaseActions()), which dims it
+   via the opacity rule below same as any other disabled button. */
 button.phase-end-attack{background:linear-gradient(135deg,#ff9f43,#e8701a);color:#fff;}
 button.phase-end-fortify{background:linear-gradient(135deg,var(--good),#1f8f57);color:#fff;}
+button.phase-end-reinforce{background:linear-gradient(135deg,var(--accent),#2f5fc9);color:#fff;}
 button:disabled{opacity:.4;cursor:not-allowed;transform:none;}
 button.ghost{background:transparent;border:1px solid var(--border);}
 button.ghost.active{border-color:var(--accent);color:var(--accent2);}
@@ -350,7 +353,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .pcard-bar{height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;margin:3px 0;}
 .pcard-bar-fill{height:100%;border-radius:2px;transition:width .4s ease;}
 .player-card .pline1{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-bottom:2px;}
-.player-card .pname-badge{
+/* Unscoped (not .player-card .pname-badge) so #turnInfoRow's copy of the current player's name
+   (see renderTopbar() in 06-render-game.js) can reuse the exact same look — same color-filled
+   pill + white text as the player list, just reused in a second spot. */
+.pname-badge{
   color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
   text-shadow:0 1px 2px rgba(0,0,0,.5);

@@ -1016,10 +1016,12 @@ function endAttackPhase(){
 // player can check their hand any time) and the floating attack/fortify buttons. Doesn't touch
 // #actionHint — that's set independently by whichever code just entered the phase (see
 // setActionHint() call sites).
-// "Kết thúc tấn công" stays hidden for this long after entering attack (see beginAttackPhase()'s
-// attackPhaseEnteredAt) — gives a beat to actually look at the board before the exit is offered,
-// in both orientations. Re-render is scheduled once per wait (not every renderPhaseActions()
-// call) so it doesn't stack a pile of redundant timers while the player clicks around mid-wait.
+// "Kết thúc tấn công" is shown immediately on entering attack, but stays disabled (dimmed, inert
+// — same :disabled treatment as the reinforce phase's readout below) for this long first (see
+// beginAttackPhase()'s attackPhaseEnteredAt) — gives a beat to actually look at the board before
+// the exit is actionable, in both orientations, without the button itself popping in/out of
+// existence. Re-render is scheduled once per wait (not every renderPhaseActions() call) so it
+// doesn't stack a pile of redundant timers while the player clicks around mid-wait.
 const ATTACK_END_BUTTON_DELAY_MS = 3000;
 let attackEndRevealTimer = null;
 
@@ -1042,19 +1044,21 @@ function renderPhaseActions(){
   if(game.phase==='reinforce'){
     endBtn.hidden = false;
     endBtn.disabled = true;
-    endBtn.className = '';
+    endBtn.className = 'phase-end-reinforce';
     endBtn.textContent = 'Quân cần đặt: '+game.reinforceRemaining;
     return;
   }
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     const elapsed = Date.now()-(game.attackPhaseEnteredAt||0);
-    if(elapsed>=ATTACK_END_BUTTON_DELAY_MS){
-      endBtn.hidden = false;
-      endBtn.className = 'phase-end-attack';
-      endBtn.textContent = withShortcut('Kết thúc tấn công','V'); endBtn.title='Phím tắt: V';
-      endBtn.onclick = ()=> endAttackPhase();
-    } else if(attackEndRevealTimer==null){
+    const ready = elapsed>=ATTACK_END_BUTTON_DELAY_MS;
+    endBtn.hidden = false;
+    endBtn.disabled = !ready;
+    endBtn.className = 'phase-end-attack';
+    endBtn.textContent = withShortcut('Kết thúc tấn công','V');
+    endBtn.title = ready ? 'Phím tắt: V' : 'Đợi vài giây trước khi có thể kết thúc tấn công';
+    endBtn.onclick = ready ? (()=> endAttackPhase()) : null;
+    if(!ready && attackEndRevealTimer==null){
       const remaining = ATTACK_END_BUTTON_DELAY_MS-elapsed;
       attackEndRevealTimer = setTimeout(()=>{
         attackEndRevealTimer = null;
@@ -1187,7 +1191,13 @@ function renderCardsHandView(){
 
 function renderTopbar(){
   const p = currentPlayer();
-  $('turnName').textContent = p.name+(p.isHuman?' (Bạn)':'')+' - lượt '+game.roundNumber+' - ';
+  // Same color-filled pill + white text as the player list (see renderPlayerList(), .pname-badge
+  // in style.css) — the "- lượt N -" round label and the phase badge sit as plain text/badge
+  // alongside it instead of being folded into the one text node like before.
+  const nameEl = $('turnName');
+  nameEl.textContent = p.name+(p.isHuman?' (Bạn)':'');
+  nameEl.style.background = p.color;
+  $('turnRoundLabel').textContent = '- lượt '+game.roundNumber+' -';
   const phaseNames = {'setup-place':'Đặt quân ban đầu','reinforce':'Tăng viện','attack':'Tấn công','fortify':'Tăng cường'};
   $('phaseBadge').textContent = phaseNames[game.phase] || game.phase;
   renderCardsHandView();
