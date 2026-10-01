@@ -208,6 +208,7 @@ function replaySameGame(){
   game.players.forEach(p=>{ game.pool[p.id] = 0; });
   showScreen('screen-game');
   maybeRotateMapForPortrait();
+  enterFullscreenIfSupported();
   beginReinforcePhase();
 }
 
@@ -558,6 +559,7 @@ function importGameJSON(obj){
   resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');
   maybeRotateMapForPortrait();
+  enterFullscreenIfSupported();
   renderGame();
   renderCombatLog();
   if(game.over) return;

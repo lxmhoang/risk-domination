@@ -319,6 +319,12 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 .ov-btn:hover{background:var(--panel);}
 .ov-btn.active{background:var(--accent);border-color:var(--accent);}
+/* Fullscreen toggle: same ⛶ glyph either way (see the comment on updateFullscreenButtons() in
+   08-wiring.js for why no second glyph), rotated 45° on top of the usual .active tint so the
+   icon itself visibly changes between "enter" and "currently in, tap to exit" instead of relying
+   on the title tooltip alone. */
+#btnFullscreenGame.active{transform:rotate(45deg);}
+#btnFullscreenGame.active:active{transform:rotate(45deg) scale(.96);}
 .ov-btn:disabled{opacity:.4;cursor:default;}
 .ov-btn.small{width:30px;height:30px;font-size:13px;border-radius:8px;}
 .ov-label{font-size:10.5px;color:var(--warn);font-weight:700;text-align:center;white-space:nowrap;}
@@ -3151,6 +3157,7 @@ function replaySameGame(){
   game.players.forEach(p=>{ game.pool[p.id] = 0; });
   showScreen('screen-game');
   maybeRotateMapForPortrait();
+  enterFullscreenIfSupported();
   beginReinforcePhase();
 }
 
@@ -3501,6 +3508,7 @@ function importGameJSON(obj){
   resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');
   maybeRotateMapForPortrait();
+  enterFullscreenIfSupported();
   renderGame();
   renderCombatLog();
   if(game.over) return;
@@ -5758,6 +5766,7 @@ $('btnStartGame').addEventListener('click', ()=>{
   initGame(playerConfigs, diff, spectator, alliance, tradeRule);
   showScreen('screen-game');
   maybeRotateMapForPortrait();
+  enterFullscreenIfSupported();
   renderGame();
   if(RUNTIME_CONFIG.manualInitialPlacement){
     setupPlaceNext();
@@ -6080,13 +6089,33 @@ function toggleFullscreen(){
     request.call(e);
   }
 }
+// Same ⛶ glyph either way (a different glyph for "exit fullscreen" — 🗗/🗖 and the like — turned
+// out to render as an empty tofu-ish box on several font stacks when checked, unlike the emoji
+// used everywhere else in this UI) — the .active class (same on/off convention as the other
+// toggle buttons: btnToggleLog, btnToggleContinentView) tints it and rotates it 45° instead, so
+// the SAME character still visually reads as "currently toggled" without any new-glyph risk.
 function updateFullscreenButtons(){
+  const fs = isFullscreen();
   const label = withShortcut('⛶', 'F');
-  const title = (isFullscreen() ? 'Thoát' : 'Vào') + ' toàn màn hình (F)';
+  const title = (fs ? 'Thoát' : 'Vào') + ' toàn màn hình (F)';
   const gameBtn = $('btnFullscreenGame');
-  if(gameBtn){ gameBtn.textContent = label; gameBtn.title = title; }
+  if(gameBtn){ gameBtn.textContent = label; gameBtn.title = title; gameBtn.classList.toggle('active', fs); }
   const topbarBtn = document.getElementById('btnFullscreenTopbar');
-  if(topbarBtn){ topbarBtn.textContent = label; topbarBtn.title = title; }
+  if(topbarBtn){ topbarBtn.textContent = label; topbarBtn.title = title; topbarBtn.classList.toggle('active', fs); }
+}
+// Best-effort auto-fullscreen right as a game actually starts/resumes — unsupported (iOS Safari
+// has no Fullscreen API for page content, see fullscreenSupported() above) or blocked for any
+// other reason (browser declines outside a strong enough user-gesture context, a previous denial,
+// a sandboxed iframe) just silently does nothing instead of surfacing an error, since this is a
+// nicety the game doesn't depend on. Must be called synchronously from within the same click
+// handler that led here (not deferred via setTimeout/await) or browsers drop the user-gesture
+// permission and silently reject anyway.
+function enterFullscreenIfSupported(){
+  if(!fullscreenSupported() || isFullscreen()) return;
+  const e = document.documentElement;
+  const request = e.requestFullscreen || e.webkitRequestFullscreen || e.mozRequestFullScreen || e.msRequestFullscreen;
+  const result = request.call(e);
+  if(result && result.catch) result.catch(()=>{});
 }
 if(fullscreenSupported()){
   $('btnFullscreenGame').addEventListener('click', toggleFullscreen);
