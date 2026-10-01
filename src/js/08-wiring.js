@@ -630,19 +630,21 @@ function toggleFullscreen(){
     request.call(e);
   }
 }
-// Same ⛶ glyph either way (a different glyph for "exit fullscreen" — 🗗/🗖 and the like — turned
-// out to render as an empty tofu-ish box on several font stacks when checked, unlike the emoji
-// used everywhere else in this UI) — the .active class (same on/off convention as the other
-// toggle buttons: btnToggleLog, btnToggleContinentView) tints it and rotates it 45° instead, so
-// the SAME character still visually reads as "currently toggled" without any new-glyph risk.
+// Deliberately does NOT toggle an .active class on the button to reflect state (tried that,
+// reverted it — see git history around "fullscreen hang"): mutating ANY style-affecting class on
+// an element from WITHIN the 'fullscreenchange' handler itself, i.e. synchronously while real
+// Chrome is still in the middle of its own fullscreen transition, reproducibly froze the renderer
+// for several seconds (confirmed via bisection — removing just that one classList.toggle call
+// was the difference between 4/4 hangs and 4/4 clean runs, independent of which CSS it applied).
+// The title tooltip is the only state indicator; same single ⛶ glyph either way.
 function updateFullscreenButtons(){
   const fs = isFullscreen();
   const label = withShortcut('⛶', 'F');
   const title = (fs ? 'Thoát' : 'Vào') + ' toàn màn hình (F)';
   const gameBtn = $('btnFullscreenGame');
-  if(gameBtn){ gameBtn.textContent = label; gameBtn.title = title; gameBtn.classList.toggle('active', fs); }
+  if(gameBtn){ gameBtn.textContent = label; gameBtn.title = title; }
   const topbarBtn = document.getElementById('btnFullscreenTopbar');
-  if(topbarBtn){ topbarBtn.textContent = label; topbarBtn.title = title; topbarBtn.classList.toggle('active', fs); }
+  if(topbarBtn){ topbarBtn.textContent = label; topbarBtn.title = title; }
 }
 if(fullscreenSupported()){
   $('btnFullscreenGame').addEventListener('click', toggleFullscreen);

@@ -310,12 +310,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 .ov-btn:hover{background:var(--panel);}
 .ov-btn.active{background:var(--accent);border-color:var(--accent);}
-/* Fullscreen toggle: same ⛶ glyph either way (see the comment on updateFullscreenButtons() in
-   08-wiring.js for why no second glyph), rotated 45° on top of the usual .active tint so the
-   icon itself visibly changes between "enter" and "currently in, tap to exit" instead of relying
-   on the title tooltip alone. */
-#btnFullscreenGame.active{transform:rotate(45deg);}
-#btnFullscreenGame.active:active{transform:rotate(45deg) scale(.96);}
 .ov-btn:disabled{opacity:.4;cursor:default;}
 .ov-btn.small{width:30px;height:30px;font-size:13px;border-radius:8px;}
 .ov-label{font-size:10.5px;color:var(--warn);font-weight:700;text-align:center;white-space:nowrap;}
