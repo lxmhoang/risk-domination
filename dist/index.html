@@ -436,32 +436,63 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
   /* Sticks to the bottom of the SCREEN (same idea as landscape's bottom:10px, just spelled out
      explicitly here) rather than tracking the map's edge — the map is top-anchored instead (see
-     drawGameCanvas()). A real width (not just left/right:10px's implicit one) to actually split
-     1/3 (cards) : 2/3 (phase info/end button) from. */
+     drawGameCanvas()). Split into 2 rows via flex-wrap: row 1 is btnCardsModal (1/3) +
+     turnInfoPill (2/3), row 2 is btnPhaseEnd alone (flex-basis:100% forces it onto its own line —
+     see that rule below). Each row's own children stretch to match ONLY each other (align-items:
+     stretch applies per flex LINE, not across the whole wrapped container), so a tall row 1 no
+     longer inflates btnPhaseEnd's height on row 2, or vice versa — that's what was actually
+     ballooning the whole bar's height before (all 3 shared one line and had to stretch together). */
   #gameTurnInfo{
     left:10px;right:10px;bottom:10px;transform:none;width:auto;
+    flex-wrap:wrap;row-gap:8px;
   }
-  /* Grows to fill whatever #btnCardsModal's fixed share + #btnPhaseEnd's own content width don't
-     use — since cards is a fixed 1/3 (below), this + btnPhaseEnd together land on exactly 2/3 of
-     #gameTurnInfo's width without needing to size them as a pair explicitly. */
-  #turnInfoPill{flex:1 1 auto;min-width:0;}
+  #gameTurnInfo #btnPhaseEnd{flex-basis:100%;}
+  /* Row 1 (cards + pill) kept to the same ~44px iOS tap-target height as row 2's button —
+     tighter padding/line-height than landscape's pill (which has the whole screen width to
+     spread its 2 lines of text across) so both rows read as a matched pair instead of row 1
+     looming taller. flex-basis:0 (not auto) matters here specifically because the row wraps:
+     flex-wrap decides whether an item fits the CURRENT line using its flex-basis, before any
+     shrinking — "auto" resolves to the pill's full content width (hundreds of px, since nothing
+     constrains it), which is wider than what's left after #btnCardsModal's 1/3 share, so the
+     browser bumped the pill to its own line instead of growing to fill the rest of row 1. A 0
+     basis always "fits" (it starts at zero width), then flex-grow expands it to fill row 1 as
+     intended. */
+  #turnInfoPill{
+    flex:1 1 0;min-width:0;min-height:44px;
+    padding:4px 10px;gap:0;line-height:1.15;
+  }
   /* Fixed 1/3 share, matching #turnInfoPill's comment above — landscape keeps the original
      content-sized hand instead (see the base rules). */
-  #btnCardsModal{flex:0 0 33.3333%;padding:4px;}
+  #btnCardsModal{flex:0 0 33.3333%;padding:4px;min-height:44px;}
   /* justify-content:flex-end packs the fanned cards against the pill-side edge of this 1/3 slot,
      so the OLDEST card (first in DOM — see renderCardsHandView()) sits anchored there and each new
      card extends further away from it, toward the screen edge. */
   #gameTurnInfo #btnCardsModal:not([hidden]){justify-content:flex-end;}
-  /* Safety net: wrap (not overflow/scroll) if a long player name doesn't fit on one line. */
-  #turnInfoRow{flex-wrap:wrap;row-gap:4px;}
-  /* The hint sentence (e.g. "Chọn lãnh thổ của bạn...") is long, and the pill only has the
-     narrow leftover width once cards (1/3) and the end button both claim their own share — left
-     unclamped, it wraps into many short lines and balloons the WHOLE row's height (every sibling
-     stretches to match, via align-items:stretch above). Line-clamped instead of wrapping freely,
-     so the row stays a sane height regardless of how little width the pill ends up with. */
+  /* Name + phase badge shrunk down and tightened up — at the ~230px this row actually gets (after
+     the 1/3 cards slot), the landscape-size text+badge wraps onto 2 lines by itself, which on top
+     of the hint line below pushes the pill to 3 lines total, blowing well past the 44px target
+     above. Smaller/tighter still reads fine at a glance and reliably fits on one line instead. */
+  /* #turnInfoPill's align-items:center (base rule) means #turnInfoRow is centered at its own
+     NATURAL content width rather than stretched to the pill's — without an explicit width here it
+     just sizes to its children's combined min-content (dot + name + badge + counter all refusing
+     to shrink below their own natural widths) and overflows evenly past both edges of the pill
+     instead of actually fitting inside it. width:100% + min-width:0 forces it to the pill's real
+     width, which is what finally makes turnName's own ellipsis/shrink rule below do anything. */
+  #turnInfoRow{
+    flex-wrap:nowrap;row-gap:0;gap:4px;font-size:12px;overflow:hidden;
+    width:100%;min-width:0;
+  }
+  #turnInfoRow .turn-dot{width:10px;height:10px;flex-shrink:0;}
+  #turnInfoRow #turnName{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+  #turnInfoRow .phase-badge{padding:2px 8px;font-size:9.5px;flex-shrink:0;}
+  #turnInfoRow #reinforceCounter{font-size:11px;flex-shrink:0;}
+  /* The hint sentence (e.g. "Chọn lãnh thổ của bạn...") is long, and the pill only has the narrow
+     leftover width once cards (1/3) and the end button both claim their own share — left
+     unclamped, it'd wrap into many lines and blow past the 44px target above. Clamped to a single
+     line (ellipsized) instead, so row 1 stays pinned to that height regardless of sentence length. */
   #actionHint{
     white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;
-    -webkit-line-clamp:3;overflow:hidden;
+    -webkit-line-clamp:1;overflow:hidden;font-size:9.5px;
   }
 }
 /* Touch devices get 2-finger pinch to zoom (see the pinch handler in 08-wiring.js) — the
