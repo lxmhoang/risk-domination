@@ -207,6 +207,7 @@ function replaySameGame(){
   game.turnOrder = [...snap.turnOrder];
   game.players.forEach(p=>{ game.pool[p.id] = 0; });
   showScreen('screen-game');
+  maybeRotateMapForPortrait();
   beginReinforcePhase();
 }
 
@@ -527,11 +528,15 @@ function endTurn(){
 const GAME_SAVE_FORMAT_VERSION = 1;
 
 function exportGameJSON(){
+  // Always the CANONICAL (un-rotated) map, regardless of whether this session is currently
+  // displaying a portrait auto-rotated copy (see maybeRotateMapForPortrait() in
+  // 06-render-game.js) — otherwise reloading the save on a landscape device would show it
+  // sideways relative to how it was actually authored/generated.
   const out = {
     formatVersion: GAME_SAVE_FORMAT_VERSION,
     savedAt: Date.now(),
     spectatorMode,
-    mapData: mapToPlainObject(mapData),
+    mapData: mapToPlainObject(unrotateMapData(mapData)),
     game,
   };
   const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
@@ -552,6 +557,7 @@ function importGameJSON(obj){
   gameZoom = 1;
   resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');
+  maybeRotateMapForPortrait();
   renderGame();
   renderCombatLog();
   if(game.over) return;

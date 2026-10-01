@@ -440,6 +440,52 @@ function recomputeGraph(map){
   });
 }
 
+/* ---------------- Portrait auto-rotation ----------------
+   The map is purely grid-based (cellTerritory + per-territory cell lists), so rotating it 90° is
+   just a coordinate remap — border/centroid rendering, click hit-testing and AI/combat logic all
+   already work generically off of map.cols/map.rows/cellTerritory, with no orientation-specific
+   code of their own, so none of that needs touching. Adjacency is also rotation-invariant (two
+   cells don't stop being neighbors just because the grid turned), so only cell coordinates and
+   the derived centroid/pole-cell actually need recomputing — done here via the same
+   recomputeGraph() every other map-construction path already uses.
+   One 90° clockwise step: (c,r) in a cols×rows grid -> (rows-1-r, c) in the resulting rows×cols
+   grid. See maybeRotateMapForPortrait() in 06-render-game.js for when/why this gets called, and
+   unrotateMapData() below for undoing it (always 3 more of these steps = 270° = -90°). */
+function rotateMapData90CW(map){
+  const oldCols = map.cols, oldRows = map.rows;
+  const newCols = oldRows, newRows = oldCols;
+  const rotated = newMap(newCols, newRows, map.name);
+  rotated.cellSize = map.cellSize;
+  Object.values(map.territories).forEach(t=>{
+    rotated.territories[t.id] = {id:t.id, name:t.name, continentId:t.continentId, color:t.color, cells:[], neighbors:new Set(), centroid:{x:0,y:0}};
+  });
+  Object.values(map.continents).forEach(c=>{
+    rotated.continents[c.id] = {id:c.id, name:c.name, color:c.color, bonus:c.bonus};
+  });
+  for(let r=0;r<oldRows;r++){
+    for(let c=0;c<oldCols;c++){
+      const id = map.cellTerritory[r*oldCols+c];
+      if(id===-1) continue;
+      const nc = oldRows-1-r, nr = c;
+      rotated.cellTerritory[nr*newCols+nc] = id;
+      rotated.territories[id].cells.push([nc,nr]);
+    }
+  }
+  rotated.nextTerrId = map.nextTerrId;
+  rotated.nextContId = map.nextContId;
+  recomputeGraph(rotated);
+  return rotated;
+}
+// Rotating 3 more times (270° CW = -90°) undoes a single rotateMapData90CW() call exactly —
+// the grid is all integer coordinates, so this round-trips back to the identical map, not just an
+// approximation. Tagged with _rotatedFor90 (set by maybeRotateMapForPortrait()) rather than
+// tracked in a separate "original map" variable, so the one map object is always self-describing
+// and nothing needs to remember to reset a side variable whenever a genuinely new map is loaded.
+function unrotateMapData(map){
+  if(!map._rotatedFor90) return map;
+  return rotateMapData90CW(rotateMapData90CW(rotateMapData90CW(map)));
+}
+
 /* ---------------- Procedural random map generator ---------------- */
 /* Generate an organic water mask (1 = water, 0 = land) covering roughly waterRatio of the grid,
    grown from a handful of random blobs so coastlines look natural rather than speckled noise. */

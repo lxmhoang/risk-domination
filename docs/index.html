@@ -1608,6 +1608,52 @@ function recomputeGraph(map){
   });
 }
 
+/* ---------------- Portrait auto-rotation ----------------
+   The map is purely grid-based (cellTerritory + per-territory cell lists), so rotating it 90° is
+   just a coordinate remap — border/centroid rendering, click hit-testing and AI/combat logic all
+   already work generically off of map.cols/map.rows/cellTerritory, with no orientation-specific
+   code of their own, so none of that needs touching. Adjacency is also rotation-invariant (two
+   cells don't stop being neighbors just because the grid turned), so only cell coordinates and
+   the derived centroid/pole-cell actually need recomputing — done here via the same
+   recomputeGraph() every other map-construction path already uses.
+   One 90° clockwise step: (c,r) in a cols×rows grid -> (rows-1-r, c) in the resulting rows×cols
+   grid. See maybeRotateMapForPortrait() in 06-render-game.js for when/why this gets called, and
+   unrotateMapData() below for undoing it (always 3 more of these steps = 270° = -90°). */
+function rotateMapData90CW(map){
+  const oldCols = map.cols, oldRows = map.rows;
+  const newCols = oldRows, newRows = oldCols;
+  const rotated = newMap(newCols, newRows, map.name);
+  rotated.cellSize = map.cellSize;
+  Object.values(map.territories).forEach(t=>{
+    rotated.territories[t.id] = {id:t.id, name:t.name, continentId:t.continentId, color:t.color, cells:[], neighbors:new Set(), centroid:{x:0,y:0}};
+  });
+  Object.values(map.continents).forEach(c=>{
+    rotated.continents[c.id] = {id:c.id, name:c.name, color:c.color, bonus:c.bonus};
+  });
+  for(let r=0;r<oldRows;r++){
+    for(let c=0;c<oldCols;c++){
+      const id = map.cellTerritory[r*oldCols+c];
+      if(id===-1) continue;
+      const nc = oldRows-1-r, nr = c;
+      rotated.cellTerritory[nr*newCols+nc] = id;
+      rotated.territories[id].cells.push([nc,nr]);
+    }
+  }
+  rotated.nextTerrId = map.nextTerrId;
+  rotated.nextContId = map.nextContId;
+  recomputeGraph(rotated);
+  return rotated;
+}
+// Rotating 3 more times (270° CW = -90°) undoes a single rotateMapData90CW() call exactly —
+// the grid is all integer coordinates, so this round-trips back to the identical map, not just an
+// approximation. Tagged with _rotatedFor90 (set by maybeRotateMapForPortrait()) rather than
+// tracked in a separate "original map" variable, so the one map object is always self-describing
+// and nothing needs to remember to reset a side variable whenever a genuinely new map is loaded.
+function unrotateMapData(map){
+  if(!map._rotatedFor90) return map;
+  return rotateMapData90CW(rotateMapData90CW(rotateMapData90CW(map)));
+}
+
 /* ---------------- Procedural random map generator ---------------- */
 /* Generate an organic water mask (1 = water, 0 = land) covering roughly waterRatio of the grid,
    grown from a handful of random blobs so coastlines look natural rather than speckled noise. */
@@ -3123,6 +3169,7 @@ function replaySameGame(){
   game.turnOrder = [...snap.turnOrder];
   game.players.forEach(p=>{ game.pool[p.id] = 0; });
   showScreen('screen-game');
+  maybeRotateMapForPortrait();
   beginReinforcePhase();
 }
 
@@ -3443,11 +3490,15 @@ function endTurn(){
 const GAME_SAVE_FORMAT_VERSION = 1;
 
 function exportGameJSON(){
+  // Always the CANONICAL (un-rotated) map, regardless of whether this session is currently
+  // displaying a portrait auto-rotated copy (see maybeRotateMapForPortrait() in
+  // 06-render-game.js) — otherwise reloading the save on a landscape device would show it
+  // sideways relative to how it was actually authored/generated.
   const out = {
     formatVersion: GAME_SAVE_FORMAT_VERSION,
     savedAt: Date.now(),
     spectatorMode,
-    mapData: mapToPlainObject(mapData),
+    mapData: mapToPlainObject(unrotateMapData(mapData)),
     game,
   };
   const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
@@ -3468,6 +3519,7 @@ function importGameJSON(obj){
   gameZoom = 1;
   resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');
+  maybeRotateMapForPortrait();
   renderGame();
   renderCombatLog();
   if(game.over) return;
@@ -4418,6 +4470,23 @@ function setGameZoom(z, anchorClientX, anchorClientY){
 function isPortraitLayout(){
   const wrap = $('gameCanvasWrap');
   return wrap.clientHeight > wrap.clientWidth;
+}
+
+// Auto-rotates the active map 90° when it's landscape-shaped (wider than tall) but the screen
+// itself is portrait — "màn dọc nhưng map load vào lại ngang" — instead of leaving the player to
+// squint at a wide map squeezed into a narrow screen, or blocking play outright like the old
+// rotate-prompt did. Call once per game-screen entry, right after showScreen('screen-game') makes
+// #gameCanvasWrap measurable (isPortraitLayout() needs real layout, not display:none) and before
+// the first renderGame() — see the call sites in 08-wiring.js/04-game-state.js.
+// Always starts from unrotateMapData(mapData) rather than rotating whatever's already there, so
+// repeat calls (loading another save, "Chơi lại" after a game-over, without a full page reload)
+// are idempotent instead of compounding into 180°/270°.
+function maybeRotateMapForPortrait(){
+  mapData = unrotateMapData(mapData);
+  if(isPortraitLayout() && mapData.cols > mapData.rows){
+    mapData = rotateMapData90CW(mapData);
+    mapData._rotatedFor90 = true;
+  }
 }
 
 // Portrait only: #gameControlsLeft/Right are each bottom-anchored right above #gameTurnInfo
@@ -5715,6 +5784,7 @@ $('btnStartGame').addEventListener('click', ()=>{
   const playerConfigs = readPlayerConfigs();
   initGame(playerConfigs, diff, spectator, alliance, tradeRule);
   showScreen('screen-game');
+  maybeRotateMapForPortrait();
   renderGame();
   if(RUNTIME_CONFIG.manualInitialPlacement){
     setupPlaceNext();

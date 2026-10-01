@@ -287,6 +287,7 @@ $('btnStartGame').addEventListener('click', ()=>{
   const playerConfigs = readPlayerConfigs();
   initGame(playerConfigs, diff, spectator, alliance, tradeRule);
   showScreen('screen-game');
+  maybeRotateMapForPortrait();
   renderGame();
   if(RUNTIME_CONFIG.manualInitialPlacement){
     setupPlaceNext();

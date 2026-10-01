@@ -371,6 +371,23 @@ function isPortraitLayout(){
   return wrap.clientHeight > wrap.clientWidth;
 }
 
+// Auto-rotates the active map 90° when it's landscape-shaped (wider than tall) but the screen
+// itself is portrait — "màn dọc nhưng map load vào lại ngang" — instead of leaving the player to
+// squint at a wide map squeezed into a narrow screen, or blocking play outright like the old
+// rotate-prompt did. Call once per game-screen entry, right after showScreen('screen-game') makes
+// #gameCanvasWrap measurable (isPortraitLayout() needs real layout, not display:none) and before
+// the first renderGame() — see the call sites in 08-wiring.js/04-game-state.js.
+// Always starts from unrotateMapData(mapData) rather than rotating whatever's already there, so
+// repeat calls (loading another save, "Chơi lại" after a game-over, without a full page reload)
+// are idempotent instead of compounding into 180°/270°.
+function maybeRotateMapForPortrait(){
+  mapData = unrotateMapData(mapData);
+  if(isPortraitLayout() && mapData.cols > mapData.rows){
+    mapData = rotateMapData90CW(mapData);
+    mapData._rotatedFor90 = true;
+  }
+}
+
 // Portrait only: #gameControlsLeft/Right are each bottom-anchored right above #gameTurnInfo
 // (whose own height varies — 1 row in reinforce with no end button, 2 rows once one shows) rather
 // than a fixed CSS bottom value. Landscape leaves them alone (clears the inline override) since
