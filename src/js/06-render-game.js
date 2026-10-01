@@ -371,25 +371,13 @@ function isPortraitLayout(){
   return wrap.clientHeight > wrap.clientWidth;
 }
 
-// Portrait only: #gameControlsBand can't use a fixed CSS top (its own height varies, and so does
-// the player-list row's height above it — card count, whether names wrap, etc) — so its top
-// offset is measured and set here instead. Landscape leaves it alone (clears the inline override)
-// since positionLandscapeControlStacks() below handles that layout instead.
-function positionPortraitTopBar(){
-  const band = $('gameControlsBand');
-  if(!isPortraitLayout()){ band.style.top = ''; return; }
-  const listRect = $('gamePlayerListWrap').getBoundingClientRect();
-  const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
-  band.style.top = Math.round(listRect.bottom-canvasWrapRect.top+6)+'px';
-}
-
-// Landscape only: #gameControlsLeft/Right are each bottom-anchored right above #gameTurnInfo
+// Portrait only: #gameControlsLeft/Right are each bottom-anchored right above #gameTurnInfo
 // (whose own height varies — 1 row in reinforce with no end button, 2 rows once one shows) rather
-// than a fixed CSS bottom value. Portrait leaves them alone (clears the inline override) since
-// they flow normally inside #gameControlsBand there instead — see positionPortraitTopBar().
-function positionLandscapeControlStacks(){
+// than a fixed CSS bottom value. Landscape leaves them alone (clears the inline override) since
+// they're a single static right-edge column there instead — see style.css.
+function positionPortraitControlStacks(){
   const left = $('gameControlsLeft'), right = $('gameControlsRight');
-  if(isPortraitLayout()){ left.style.bottom=''; right.style.bottom=''; return; }
+  if(!isPortraitLayout()){ left.style.bottom=''; right.style.bottom=''; return; }
   const barRect = $('gameTurnInfo').getBoundingClientRect();
   const wrapRect = $('gameCanvasWrap').getBoundingClientRect();
   const bottomPx = Math.round(wrapRect.bottom-barRect.top+10)+'px';
@@ -405,22 +393,22 @@ function drawGameCanvas(){
   // "Safe area" = the wrap's box minus the fixed overlays around its edges, plus a little
   // breathing room, so at minimum zoom (GAME_ZOOM_MIN) the overlays only ever sit over empty
   // background, never over the map itself — "zoom out hết cỡ thì bản đồ lọt thỏm vào giữa, chừa
-  // khoảng trống xung quanh". Landscape: player list + #gameControlsLeft both eat into the left
-  // edge (whichever is wider — they sit at different heights so either could be the one the map
-  // needs to clear), #gameControlsRight eats into the right edge, #gameTurnInfo eats into the
-  // bottom, no top overlay. Portrait: the player list + control band relocate into a stacked top
-  // band instead (see style.css), so their combined HEIGHT eats into the top instead of either
-  // side's width — see isPortraitLayout().
+  // khoảng trống xung quanh". Landscape: player list eats into the left edge, the merged
+  // #gameControlsBand column eats into the right edge, #gameTurnInfo eats into the bottom, no top
+  // overlay. Portrait: the player list relocates into a top band (its height eats into the top
+  // instead), while #gameControlsLeft/Right float as two edge columns eating into the left/right
+  // the same way landscape's single column does — see isPortraitLayout().
   const margin = 16;
   const portrait = isPortraitLayout();
   let topH, leftW, rightW;
   if(portrait){
-    leftW = 0; rightW = 0;
-    topH = $('gamePlayerListWrap').getBoundingClientRect().height + $('gameControlsBand').getBoundingClientRect().height;
+    topH = $('gamePlayerListWrap').getBoundingClientRect().height;
+    leftW = $('gameControlsLeft').getBoundingClientRect().width;
+    rightW = $('gameControlsRight').getBoundingClientRect().width;
   } else {
     topH = 0;
-    leftW = Math.max($('gamePlayerListWrap').getBoundingClientRect().width, $('gameControlsLeft').getBoundingClientRect().width);
-    rightW = $('gameControlsRight').getBoundingClientRect().width;
+    leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
+    rightW = $('gameControlsBand').getBoundingClientRect().width;
   }
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
   const availW = Math.max(50, wrap.clientWidth-leftW-rightW-margin*3);
@@ -878,23 +866,16 @@ function showFloatingAttackButtons(){
   wrap.appendChild(atkBtn);
   positionFloatingAttackButtons();
 }
-// Landscape: sits immediately to the left of #gameControlsRight instead of a fixed px offset
-// from the screen edge — that stack's own width varies (scrollbar appearing, etc), so this is
-// recomputed on every render rather than relying on any one fixed value staying correct.
-// Portrait: the control band is now a top row instead of a right column (see style.css), so
-// there's nothing to sit "immediately left of" — instead this drops
-// the log panel right below the whole top band, full-width-ish (see the portrait CSS override).
+// Sits immediately to the left of the right-edge control stack instead of a fixed px offset from
+// the screen edge — that stack's own width varies (scrollbar appearing, etc), so this is
+// recomputed on every render rather than relying on any one fixed value staying correct. Landscape
+// that stack is #gameControlsBand (the merged column); portrait it's #gameControlsRight (its own
+// floating edge column) — either way the log panel sits just left of it, vertically centered.
 function positionLogPanel(){
   const panel = $('gameLogPanel');
-  if(isPortraitLayout()){
-    panel.style.right = '';
-    const barRect = $('gameControlsBand').getBoundingClientRect();
-    const canvasWrapRect = $('gameCanvasWrap').getBoundingClientRect();
-    panel.style.top = Math.max(10, Math.round(barRect.bottom-canvasWrapRect.top+10))+'px';
-    return;
-  }
   panel.style.top = '';
-  const wrapRect = $('gameControlsRight').getBoundingClientRect();
+  const refEl = isPortraitLayout() ? $('gameControlsRight') : $('gameControlsBand');
+  const wrapRect = refEl.getBoundingClientRect();
   const screenRect = $('screen-game').getBoundingClientRect();
   panel.style.right = Math.max(10, screenRect.right-wrapRect.left+10)+'px';
 }
@@ -1144,14 +1125,14 @@ function renderCardsHandView(){
   if(cards.length===0){
     wrap.appendChild(el('div','mini-card empty','🎴'));
   } else {
-    // Landscape: the fan is right-anchored against the pill (justify-content:flex-end — see
+    // Portrait: the fan is right-anchored against the pill (justify-content:flex-end — see
     // style.css) with the OLDEST card anchored there and each new one appearing further away
     // from it — DOM order has to be newest-first for that, since normal row flow + flex-end
     // keeps relative order but shifts the whole group right, landing the LAST DOM child (meant
-    // to be the oldest) at the anchored edge. Portrait keeps the original oldest-first order
+    // to be the oldest) at the anchored edge. Landscape keeps the original oldest-first order
     // (flex-start, unchanged). z-index always keyed to the card's actual index regardless of DOM
     // order, so the newest card stays the one drawn on top of any overlap either way.
-    const order = isPortraitLayout() ? cards.map((type,i)=>[type,i]) : cards.map((type,i)=>[type,i]).reverse();
+    const order = isPortraitLayout() ? cards.map((type,i)=>[type,i]).reverse() : cards.map((type,i)=>[type,i]);
     order.forEach(([type,i])=>{
       const mini = el('div','mini-card', CARD_ICON[type]);
       mini.style.zIndex = String(i+1);
@@ -1189,13 +1170,12 @@ function renderGame(){
   if(!game) return;
   renderTopbar();
   renderPlayerList();
-  positionPortraitTopBar(); // after renderPlayerList() — depends on its just-rendered height
   // Rendered before drawGameCanvas() since its fitScale computation measures the overlay
   // elements' current on-screen size (see the "safe area" comment there).
   renderPhaseActions();
-  positionLandscapeControlStacks(); // after renderPhaseActions() — tracks #gameTurnInfo's height
+  positionPortraitControlStacks(); // after renderPhaseActions() — tracks #gameTurnInfo's height
   drawGameCanvas();
-  positionLogPanel(); // after renderPhaseActions() specifically — #gameControlsRight's height
+  positionLogPanel(); // after renderPhaseActions() specifically — the right-edge stack's height
                        // (which this tracks) depends on how many phase-action buttons it just drew
   if(aiPaused && !currentPlayer().isHuman && !game.over){
     setActionHint('⏸️ Đã tạm dừng lượt của '+currentPlayer().name+'. Bấm ▶️ ở góc trên để tiếp tục.');

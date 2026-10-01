@@ -243,15 +243,15 @@
     </div>
   </div>
 
-  <!-- Landscape: two independent edge-anchored stacks instead of one middle-right column —
+  <!-- Portrait: two independent edge-anchored stacks instead of one middle-right column —
        #gameControlsLeft (home/fullscreen/save) bottom-anchored at the left edge,
        #gameControlsRight (zoom/round/log/pause/continent, continent at the bottom so it sits
        right above the phase-info bar for easy reach) bottom-anchored at the right edge. Both
-       positioned via positionLandscapeControlStacks() in 06-render-game.js, which tracks
-       #gameTurnInfo's actual top edge. Portrait keeps these in the shared top band instead (see
-       #gameControlsBand in style.css) — same buttons, just laid out differently; that split is
-       landscape-only, same as the position logic. z-index above #gameLogPanel so these stay
-       clickable even while the log panel is open and overlapping. -->
+       positioned via positionPortraitControlStacks() in 06-render-game.js, which tracks
+       #gameTurnInfo's actual top edge. Landscape merges these back into one static right-edge
+       column instead (see #gameControlsBand in style.css) — same buttons, just laid out
+       differently; that split is portrait-only, same as the position logic. z-index above
+       #gameLogPanel so these stay clickable even while the log panel is open and overlapping. -->
   <div id="gameControlsBand">
     <div id="gameControlsLeft" class="game-overlay ov-section">
       <button class="ov-btn small" id="btnQuitGame" title="Về Menu (Q)">🏠</button>
