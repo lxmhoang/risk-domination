@@ -3644,10 +3644,13 @@ function evaluatePlayerPower(pid){
   // Reinforcement income (computeReinforcements(), 04-game-state.js: territory-count base +
   // any continent bonuses held) is a leading indicator of SNOWBALL potential, not just current
   // standing army — two players with identical armies/territories right now aren't equally
-  // dangerous if one is pulling in twice the income every turn. Weighted up (×4) since its raw
+  // dangerous if one is pulling in twice the income every turn. Weighted up (×6) since its raw
   // range (roughly 3-20) would otherwise barely move a power score in the tens-to-hundreds range.
+  // Armies weighted ×2 as the main immediate-threat signal; territory count only ×1 now — its
+  // significance is already mostly captured via reinforcements (which derives from it directly),
+  // so it's kept around just as a small tie-breaker rather than double-counted at full weight.
   const reinforcements = computeReinforcements(pid);
-  return armies + mine.length*2 + reinforcements*4;
+  return armies*2 + mine.length + reinforcements*6;
 }
 
 // Would owning `terrId` complete every territory of its continent for `pid`?
