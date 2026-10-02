@@ -63,14 +63,14 @@ const AI_PERSONALITIES = {
 // mechanic (game.allianceEnabled) recognizes them as "the leader" worth ganging up on — see
 // findAllianceLeader() below:
 //  - ALLIANCE_LEADER_VS_FIELD_RATIO: strong enough to threaten the WHOLE rest of the field,
-//    not just edge out the closest rival — e.g. with 5 other players, being 1.3x the #2 player
+//    not just edge out the closest rival — e.g. with 5 other players, being 1.2x the #2 player
 //    means little if the #1 is still weaker than the other 4 combined, since they wouldn't
 //    need to team up to handle him.
 //  - ALLIANCE_LEADER_MARGIN: clearly ahead of the single closest rival specifically — without
 //    this, a 1-army edge in an otherwise close 2-player-ish spread could still pass the field
 //    check above.
-const ALLIANCE_LEADER_VS_FIELD_RATIO = 0.8;
-const ALLIANCE_LEADER_MARGIN = 1.3;
+const ALLIANCE_LEADER_VS_FIELD_RATIO = 0.6;
+const ALLIANCE_LEADER_MARGIN = 1.2;
 
 // Alliance-specific "who's the leader" check — considers EVERY alive player (including
 // whoever is currently acting), unlike the plain "wary of the strongest opponent" logic in
@@ -110,7 +110,13 @@ function difficultyThreshold(diff){ return difficultyProfile(diff).baseThreshold
 function evaluatePlayerPower(pid){
   const mine = ownedTerritories(pid);
   const armies = mine.reduce((s,id)=> s+(game.armies[id]||0), 0);
-  return armies + mine.length*2;
+  // Reinforcement income (computeReinforcements(), 04-game-state.js: territory-count base +
+  // any continent bonuses held) is a leading indicator of SNOWBALL potential, not just current
+  // standing army — two players with identical armies/territories right now aren't equally
+  // dangerous if one is pulling in twice the income every turn. Weighted up (×4) since its raw
+  // range (roughly 3-20) would otherwise barely move a power score in the tens-to-hundreds range.
+  const reinforcements = computeReinforcements(pid);
+  return armies + mine.length*2 + reinforcements*4;
 }
 
 // Would owning `terrId` complete every territory of its continent for `pid`?
