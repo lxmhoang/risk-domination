@@ -600,18 +600,28 @@ function drawGameCanvas(){
       ctx.stroke();
     });
   } else {
-    // Normal view doesn't show continent fills, but a continent fully held by one player is
-    // still worth calling out at a glance — outline it in that player's color (their own
-    // territory-bonus stronghold), same stroke weight as the continent-view outline above.
+    // Normal view doesn't show continent fills, but every continent's own outline is still worth
+    // tracing in white (same idea as continent view's thick outline, just always on instead of
+    // only while that mode is toggled) — and a continent fully held by one player gets a SECOND
+    // outline in their color wrapped around the outside of the white one, calling out their
+    // stronghold at a glance. Drawn as one thick colored stroke UNDER a thinner white stroke on
+    // the same path: both are centered on the path, so the white one's inner half just repaints
+    // over the colored stroke's inner half (which would otherwise bleed into the territory fill),
+    // leaving only the colored stroke's outer half showing as a ring beyond the white line.
     Object.values(mapData.continents).forEach(cont=>{
       const contTerrs = terrs.filter(t=>t.continentId===cont.id);
       if(contTerrs.length===0) return;
-      const ownerId = game.owner[contTerrs[0].id];
-      if(ownerId===undefined || !contTerrs.every(t=>game.owner[t.id]===ownerId)) return;
       const loops = getContinentBoundaryLoops(mapData, cont.id);
       if(loops.length===0) return;
+      const ownerId = game.owner[contTerrs[0].id];
+      const heldByOnePlayer = ownerId!==undefined && contTerrs.every(t=>game.owner[t.id]===ownerId);
+      if(heldByOnePlayer){
+        pathFromLoops(ctx, loops);
+        ctx.lineWidth = 7; ctx.strokeStyle = playerOf(ownerId).color;
+        ctx.stroke();
+      }
       pathFromLoops(ctx, loops);
-      ctx.lineWidth = 3; ctx.strokeStyle = playerOf(ownerId).color;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     });
   }
