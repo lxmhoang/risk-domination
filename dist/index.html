@@ -3949,17 +3949,14 @@ function aiAttackStep(pid, intent){
     return {rounds, attLossTotal, defLossTotal, captured, lastRes};
   }
 
-  // EXPERIMENTAL RULE: every AI turn must land at least 1 card-earning action (a capture
-  // under 'on_capture'/default, a kill under 'on_kill'; 'on_turn_end' always awards one
-  // regardless so there's nothing to force). Checked fresh each step() call against the
-  // player's own capturedThisTurn/killedThisTurn flags (same ones endTurn() reads), so it
-  // stops forcing the instant the requirement is already met — normal odds-based attacking
-  // resumes right after.
+  // Disabled: this used to force a below-threshold attack once per turn so every AI was
+  // guaranteed at least 1 card-earning action (a capture under 'on_capture'/default, a kill under
+  // 'on_kill'). Turned off per request — now AI purely attacks on odds (plus the area-superiority
+  // bonus in attackScore() above), never gambles into a bad fight just to chase a card. A
+  // genuinely gridlocked board (no attacker anywhere clears the odds bar) can now go whole turns,
+  // or in the extreme a whole game, without anyone drawing a card.
   function stillNeedsCardThisTurn(){
-    const mode = RUNTIME_CONFIG.cardAwardEvent;
-    if(mode==='on_turn_end') return false;
-    if(mode==='on_kill') return !p.killedThisTurn;
-    return !p.capturedThisTurn; // 'on_capture' (default)
+    return false;
   }
 
   let guard=0;
