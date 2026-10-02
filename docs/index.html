@@ -3876,7 +3876,22 @@ function aiAttackStep(pid, intent){
   function attackScore(fromId, toId){
     const usable = Math.max(0, game.armies[fromId]-1-reserveFor(fromId,toId));
     if(usable<1) return null; // nothing safe to attack with once the reserve is set aside
-    const ratio = (usable+1)/Math.max(1,game.armies[toId]);
+    const singleRatio = (usable+1)/Math.max(1,game.armies[toId]);
+    // Area-level superiority: every OTHER territory of mine that also borders `toId` counts as
+    // backup for a coordinated campaign, not just `fromId` in isolation — a target flanked by two
+    // of my stacks is winnable in a 2-move campaign even if neither stack alone clears the odds
+    // bar on its own, the same way a human wouldn't size up a contested border by just one
+    // province. step() re-evaluates after every attack, so a weaker opening strike here naturally
+    // sets up whichever territory follows to finish off whatever's left standing.
+    // Blended with (not replacing) the single-territory ratio rather than used outright: this
+    // particular attack only actually commits `fromId`'s own army, so full credit for strength
+    // that hasn't swung yet — and might get spent elsewhere, or lost first — would be overconfident.
+    let areaUsable = usable;
+    mapData.territories[toId].neighbors.forEach(nb=>{
+      if(nb!==fromId && game.owner[nb]===pid) areaUsable += Math.max(0, game.armies[nb]-1-reserveFor(nb,toId));
+    });
+    const ratio = areaUsable>usable ?
+      (singleRatio + (areaUsable+1)/Math.max(1,game.armies[toId]))/2 : singleRatio;
     let bonus = 0;
     if(completesContinentFor(pid, toId)) bonus += 2.5*profile.continentBonusMult;
     const defenderId = game.owner[toId];
