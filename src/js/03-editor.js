@@ -167,6 +167,7 @@ function drawEditorCanvas(){
       ctx.stroke();
     });
   }
+  drawWrapSeams(ctx, mapData, 0); // world-wrap seam marks (static here — no animation loop in the editor)
   // highlight current territory selection border
   if(editorCurrentTerrId && mapData.territories[editorCurrentTerrId] && mapData.territories[editorCurrentTerrId].cells.length){
     pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, editorCurrentTerrId));

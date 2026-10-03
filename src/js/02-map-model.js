@@ -39,6 +39,14 @@ function newMap(cols, rows, name){
     continents: {},    // id -> {id,name,color,bonus}
     nextTerrId: 1,
     nextContId: 1,
+    // World wrap (cylinder, like Civilization): wrapX joins the left edge to the right edge, so a
+    // territory touching column 0 neighbors whatever touches column cols-1 on the same row.
+    // wrapY is the same along the top/bottom — only ever set by rotateMapData90CW(), which turns
+    // a horizontal wrap into a vertical one. Adjacency is the only thing that actually changes
+    // (see recomputeGraph()); territories never straddle the seam (the generator grows them
+    // without wrapping), so badges/borders/hit-testing need no seam handling of their own.
+    wrapX: false,
+    wrapY: false,
     _terrBoundaryCache: {}, // terrId -> smoothed pixel-space loops, see getTerritoryBoundaryLoops()
     _contBoundaryCache: {}, // contId -> smoothed pixel-space loops, see getContinentBoundaryLoops()
   };
@@ -54,12 +62,14 @@ function mapToPlainObject(map){
     territories: Object.values(map.territories).map(t=>({id:t.id,name:t.name,continentId:t.continentId,color:t.color})),
     continents: Object.values(map.continents).map(c=>({id:c.id,name:c.name,color:c.color,bonus:c.bonus})),
     nextTerrId: map.nextTerrId, nextContId: map.nextContId,
+    wrapX: !!map.wrapX, wrapY: !!map.wrapY,
   };
 }
 function mapFromPlainObject(obj){
   const map = newMap(obj.cols, obj.rows, obj.name);
   map.cellSize = obj.cellSize || map.cellSize;
   map.cellTerritory = new Int16Array(obj.cellTerritory);
+  map.wrapX = !!obj.wrapX; map.wrapY = !!obj.wrapY; // older saves/maps have neither -> no wrap
   (obj.territories||[]).forEach(t=>{
     map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
   });
@@ -430,6 +440,14 @@ function recomputeGraph(map){
       }
     }
   }
+  // World wrap: the last column/row also touches the first one across the seam.
+  const linkAcrossSeam = (idxA, idxB)=>{
+    const a = map.cellTerritory[idxA], b = map.cellTerritory[idxB];
+    if(a===-1 || b===-1 || a===b) return;
+    map.territories[a]?.neighbors.add(b); map.territories[b]?.neighbors.add(a);
+  };
+  if(map.wrapX && map.cols>2) for(let r=0;r<map.rows;r++) linkAcrossSeam(cellIndex(map,map.cols-1,r), cellIndex(map,0,r));
+  if(map.wrapY && map.rows>2) for(let c=0;c<map.cols;c++) linkAcrossSeam(cellIndex(map,c,map.rows-1), cellIndex(map,c,0));
   // "centroid" is the territory's anchor point — where its army badge sits and where attack/
   // fortify arrows start and end. It's the deepest cell (see territoryPoleCell), not the plain
   // average position, since the average of a concave territory can land on its edge or outside it.
@@ -456,6 +474,8 @@ function rotateMapData90CW(map){
   const newCols = oldRows, newRows = oldCols;
   const rotated = newMap(newCols, newRows, map.name);
   rotated.cellSize = map.cellSize;
+  // (c,r) -> (rows-1-r, c): old columns become new rows, so a left/right seam becomes top/bottom.
+  rotated.wrapX = !!map.wrapY; rotated.wrapY = !!map.wrapX;
   Object.values(map.territories).forEach(t=>{
     rotated.territories[t.id] = {id:t.id, name:t.name, continentId:t.continentId, color:t.color, cells:[], neighbors:new Set(), centroid:{x:0,y:0}};
   });
@@ -578,43 +598,55 @@ function bridgeComponentOut(map, compTerrIds){
 // coastline rather than following the map's rectangular bounding box. Runs before territories
 // (and before the interior lake blobs below) are generated, and independently of the
 // water-ratio slider, since it's about edge shape rather than total lake area.
-function applyCoastalBand(water, cols, rows){
+// wrapX: the left/right edges are a seam (world wrap), not a coast — no band there, and the
+// top/bottom bands are made continuous across the seam so the coastline doesn't visibly jump.
+function applyCoastalBand(water, cols, rows, wrapX){
   const minDim = Math.min(cols, rows);
   const minDepth = clamp(Math.round(minDim*0.06), 1, 3);
   const maxDepth = clamp(Math.round(minDim*0.18), minDepth+2, Math.max(minDepth+2, Math.floor(minDim/3)));
-  function walkDepths(length){
+  function walkDepths(length, circular){
     const raw = new Array(length);
     let d = minDepth + rand(maxDepth-minDepth+1);
     for(let i=0;i<length;i++){ d = clamp(d + rand(3)-1, minDepth, maxDepth); raw[i] = d; }
+    if(circular && length>1){
+      // tilt the walk so its last step lands back next to its first — continuous across the seam
+      const drift = raw[length-1]-raw[0];
+      for(let i=0;i<length;i++) raw[i] = clamp(Math.round(raw[i] - drift*i/(length-1)), minDepth, maxDepth);
+    }
     // two smoothing passes turn the per-step jitter into gentle, coastline-like curves
     let smoothed = raw;
     for(let pass=0; pass<2; pass++){
       const src = smoothed, next = new Array(length);
       for(let i=0;i<length;i++){
         let sum=0, cnt=0;
-        for(let k=-2;k<=2;k++){ const j=i+k; if(j>=0 && j<length){ sum+=src[j]; cnt++; } }
+        for(let k=-2;k<=2;k++){
+          let j=i+k;
+          if(circular) j=(j+length)%length;
+          if(j>=0 && j<length){ sum+=src[j]; cnt++; }
+        }
         next[i] = Math.round(sum/cnt);
       }
       smoothed = next;
     }
     return smoothed;
   }
-  const topDepth = walkDepths(cols), bottomDepth = walkDepths(cols);
-  const leftDepth = walkDepths(rows), rightDepth = walkDepths(rows);
+  const topDepth = walkDepths(cols, wrapX), bottomDepth = walkDepths(cols, wrapX);
   for(let c=0;c<cols;c++){
     for(let r=0;r<topDepth[c];r++) water[r*cols+c]=1;
     for(let r=0;r<bottomDepth[c];r++) water[(rows-1-r)*cols+c]=1;
   }
+  if(wrapX) return;
+  const leftDepth = walkDepths(rows), rightDepth = walkDepths(rows);
   for(let r=0;r<rows;r++){
     for(let c=0;c<leftDepth[r];c++) water[r*cols+c]=1;
     for(let c=0;c<rightDepth[r];c++) water[r*cols+(cols-1-c)]=1;
   }
 }
 
-function generateWaterMask(cols, rows, waterRatio, spread){
+function generateWaterMask(cols, rows, waterRatio, spread, wrapX){
   const total = cols*rows;
   const water = new Uint8Array(total);
-  applyCoastalBand(water, cols, rows);
+  applyCoastalBand(water, cols, rows, wrapX);
   const targetWater = Math.round(total*clamp(waterRatio,0,0.7));
   if(targetWater<=0) return water;
   // spread (0-1): how scattered the water is. At 0, few big blobs grow into large lakes/seas
@@ -656,7 +688,8 @@ function generateWaterMask(cols, rows, waterRatio, spread){
       const dirs = shuffle([[1,0],[-1,0],[0,1],[0,-1]]);
       for(const [dc,dr] of dirs){
         if(count>=targetWater) break;
-        const nc=c+dc, nr=r+dr;
+        let nc=c+dc; const nr=r+dr;
+        if(wrapX) nc=(nc+cols)%cols; // lakes/straits can flow across the seam
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const idx = nr*cols+nc;
         if(water[idx]) continue;
@@ -721,7 +754,7 @@ function computeMapGenPlan(){
 // this cleanup, generateRandomMap()'s "claim leftover unclaimed land as its own territory"
 // fallback below turns every one of those slivers into a full, separately-named 1-3 cell
 // territory, flooding the map with unplayable micro-territories.
-function submergeTinyLandIslands(water, cols, rows, minCells){
+function submergeTinyLandIslands(water, cols, rows, minCells, wrapX){
   const total = cols*rows;
   const visited = new Uint8Array(total);
   for(let start=0; start<total; start++){
@@ -731,7 +764,8 @@ function submergeTinyLandIslands(water, cols, rows, minCells){
     for(let qi=0; qi<comp.length; qi++){
       const idx = comp[qi], c = idx%cols, r = (idx/cols)|0;
       for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const nc=c+dc, nr=r+dr;
+        let nc=c+dc; const nr=r+dr;
+        if(wrapX) nc=(nc+cols)%cols; // land touching both edges is ONE landmass across the seam
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const nidx = nr*cols+nc;
         if(!water[nidx] && !visited[nidx]){ visited[nidx]=1; comp.push(nidx); }
@@ -1182,9 +1216,12 @@ function minCellsPerFitTerritory(map){
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const ratio = waterRatio===undefined ? 0.28 : waterRatio;
   const playable = Math.min(numTerr, 12);
+  // World wrap (left edge joins right edge) — on by default so no corner of the map is a
+  // naturally safe pocket to snowball from; config key mapWrapX turns it off.
+  const wrapX = !(typeof RUNTIME_CONFIG!=='undefined' && RUNTIME_CONFIG.mapWrapX===false);
   let best = null;
   for(const scale of [1, 1, 0.7, 0.4, 0]){
-    const map = generateTerritoryLayout(cols, rows, numTerr, name, ratio*scale, waterSpread);
+    const map = generateTerritoryLayout(cols, rows, numTerr, name, ratio*scale, waterSpread, wrapX);
     const count = Object.keys(map.territories).length;
     if(!best || count>Object.keys(best.territories).length) best = map;
     if(count>=playable) break;
@@ -1194,14 +1231,15 @@ function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, water
   return best;
 }
 
-function generateTerritoryLayout(cols, rows, numTerr, name, waterRatio, waterSpread){
+function generateTerritoryLayout(cols, rows, numTerr, name, waterRatio, waterSpread, wrapX){
   const map = newMap(cols, rows, name);
-  const water = generateWaterMask(cols, rows, waterRatio, waterSpread);
+  map.wrapX = !!wrapX;
+  const water = generateWaterMask(cols, rows, waterRatio, waterSpread, wrapX);
   // Stray slivers of land pinched off by the coastline are never worth a territory — see
   // submergeTinyLandIslands() above. (Anything bigger that still can't hold its badges is
   // handled per-territory by repairUnfitTerritories below.)
   const avgCellsPerTerritory = (cols*rows)/Math.max(1,numTerr);
-  submergeTinyLandIslands(water, cols, rows, Math.max(6, Math.round(avgCellsPerTerritory*0.15)));
+  submergeTinyLandIslands(water, cols, rows, Math.max(6, Math.round(avgCellsPerTerritory*0.15)), wrapX);
   map.water = water; // keep for reference/export if needed later
 
   let landIdxs = [];

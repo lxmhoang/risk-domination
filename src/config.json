@@ -1,5 +1,6 @@
 {
   "spectatorModeDelayMs": 300,
   "manualInitialPlacement": false,
-  "cardAwardEvent": "on_capture"
+  "cardAwardEvent": "on_capture",
+  "mapWrapX": true
 }

@@ -213,6 +213,10 @@ function drawAttackAnimBadges(ctx, now){
   if(!fromT || !toT){ finishAttackAnim(); return; }
   const fromPos = fromT.centroid, toPos = toT.centroid;
   const elapsed = now-a.stageStart;
+  // Across a world-wrap seam the badge flies toward the defender's wrapped image (out through the
+  // near edge) and a mirror copy is drawn coming in through the far edge — see wrapShift().
+  const seam = wrapShift(fromPos, toPos);
+  const toFly = {x:toPos.x+seam.x, y:toPos.y+seam.y};
 
   // Defender's badge: stays put throughout. game.armies[toId] already holds the final,
   // post-battle value by the time this ever runs (doBattle resolved synchronously well before
@@ -229,19 +233,20 @@ function drawAttackAnimBadges(ctx, now){
   let fx, fy, fCount;
   if(a.stage==='fly'){
     const t = Math.min(1, elapsed/ATTACK_FLY_MS);
-    const dist = Math.hypot(toPos.x-fromPos.x, toPos.y-fromPos.y);
+    const dist = Math.hypot(toFly.x-fromPos.x, toFly.y-fromPos.y);
     const frac = flyWindupFrac(t, dist);
-    fx = fromPos.x+(toPos.x-fromPos.x)*frac; fy = fromPos.y+(toPos.y-fromPos.y)*frac;
+    fx = fromPos.x+(toFly.x-fromPos.x)*frac; fy = fromPos.y+(toFly.y-fromPos.y)*frac;
     fCount = a.fromCountBefore;
   } else if(a.stage==='impact'){
-    fx = toPos.x; fy = toPos.y; fCount = a.fromCountAfter;
+    fx = toFly.x; fy = toFly.y; fCount = a.fromCountAfter;
   } else { // return — a plain ease-out read as a settling "bounce" home, no windup needed here
     const t = Math.min(1, elapsed/ATTACK_RETURN_MS);
     const eased = 1-(1-t)*(1-t);
-    fx = toPos.x+(fromPos.x-toPos.x)*eased; fy = toPos.y+(fromPos.y-toPos.y)*eased;
+    fx = toFly.x+(fromPos.x-toFly.x)*eased; fy = toFly.y+(fromPos.y-toFly.y)*eased;
     fCount = a.fromCountAfter;
   }
   drawArmyBadge(ctx, fx, fy, fCount, {strokeColor:'#ffb04a'});
+  if(seam.x || seam.y) drawArmyBadge(ctx, fx-seam.x, fy-seam.y, fCount, {strokeColor:'#ffb04a'});
 
   // Impact damage numbers — "-N" floating up and fading over the impact stage, one per side
   // showing what THAT side lost, right where the two badges collide. Sized to at least the
@@ -286,6 +291,91 @@ function rainbowColorAt(t){
 // constant, obvious indicator of direction, shared by the attack arrow (rainbow, solid) and the
 // fortify-phase indicator (white, dashed, see drawGameCanvas). `gap` insets both ends away from
 // the two badges instead of drawing straight into them.
+// ---- World wrap (map.wrapX / map.wrapY, see newMap() in 02-map-model.js) ----
+// Offset to add to `to` so it sits on the same side of the seam as `from` — zero unless the
+// direct line between them is longer than going the other way around (i.e. the pair is
+// connected across the seam). Works in map-native pixel space, same as centroids.
+function wrapShift(from, to){
+  const W = mapData.cols*mapData.cellSize, H = mapData.rows*mapData.cellSize;
+  let x=0, y=0;
+  if(mapData.wrapX){ const dx=to.x-from.x; if(dx>W/2) x=-W; else if(dx<-W/2) x=W; }
+  if(mapData.wrapY){ const dy=to.y-from.y; if(dy>H/2) y=-H; else if(dy<-H/2) y=H; }
+  return {x, y};
+}
+// The from->to connection as drawable segments: just [from,to] normally, or two halves across a
+// seam — one leaving through this edge toward `to`'s wrapped image, one arriving through the
+// opposite edge from `from`'s wrapped image. The canvas clips each half at its own edge.
+function wrapSegments(from, to){
+  const s = wrapShift(from, to);
+  if(!s.x && !s.y) return [[from, to]];
+  return [[from, {x:to.x+s.x, y:to.y+s.y}], [{x:from.x-s.x, y:from.y-s.y}, to]];
+}
+// Where a floating button for the from->to pair should sit: the midpoint of the (first)
+// segment, pulled back inside the map if that midpoint falls just past the seam.
+function wrapMidpoint(from, to){
+  const [a,b] = wrapSegments(from, to)[0];
+  const W = mapData.cols*mapData.cellSize, H = mapData.rows*mapData.cellSize;
+  return { x: clamp((a.x+b.x)/2, 12, W-12), y: clamp((a.y+b.y)/2, 12, H-12) };
+}
+// Marks every stretch of the map edge where land continues across the seam — the cue that the
+// map wraps around (left edge joins right edge) and that the territories on either side of
+// these marks are neighbors. Glowing dashed line on both edges, with a small "⇆" at each stretch.
+function drawWrapSeams(ctx, map, now){
+  const cs = map.cellSize, W = map.cols*cs, H = map.rows*cs;
+  const runs = []; // [{a,b,axis}] in native px along the edge
+  function scan(axis){
+    const len = axis==='x' ? map.rows : map.cols;
+    let start = -1;
+    for(let i=0;i<=len;i++){
+      let land = false;
+      if(i<len){
+        const a = axis==='x' ? map.cellTerritory[i*map.cols+map.cols-1] : map.cellTerritory[(map.rows-1)*map.cols+i];
+        const b = axis==='x' ? map.cellTerritory[i*map.cols] : map.cellTerritory[i];
+        land = a!==-1 && b!==-1;
+      }
+      if(land && start<0) start = i;
+      if(!land && start>=0){ runs.push({a:start*cs, b:i*cs, axis}); start = -1; }
+    }
+  }
+  if(map.wrapX) scan('x');
+  if(map.wrapY) scan('y');
+  if(!runs.length) return;
+  const pulse = 0.55+0.45*Math.sin((now||0)/450);
+  const edgeLine = (a,b,axis)=>{
+    ctx.beginPath();
+    if(axis==='x'){ ctx.moveTo(3,a); ctx.lineTo(3,b); ctx.moveTo(W-3,a); ctx.lineTo(W-3,b); }
+    else { ctx.moveTo(a,3); ctx.lineTo(b,3); ctx.moveTo(a,H-3); ctx.lineTo(b,H-3); }
+    ctx.stroke();
+  };
+  ctx.save();
+  ctx.lineCap = 'butt';
+  // dark backing so the dashes read over any territory color
+  ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(8,10,18,0.7)';
+  runs.forEach(r=> edgeLine(r.a, r.b, r.axis));
+  ctx.setLineDash([9,6]);
+  ctx.lineDashOffset = -((now||0)/60)%15; // slow crawl along the seam
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = `rgba(150,245,255,${0.75+0.25*pulse})`;
+  ctx.shadowColor = 'rgba(150,245,255,0.9)'; ctx.shadowBlur = 6;
+  runs.forEach(r=> edgeLine(r.a, r.b, r.axis));
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+  // "⇆" tag in a small dark pill at the middle of each long-enough stretch
+  ctx.font = 'bold 13px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  runs.forEach(({a,b,axis})=>{
+    if(b-a < cs*6) return;
+    const m = (a+b)/2;
+    const pts = axis==='x' ? [[14,m,'⇆'],[W-14,m,'⇆']] : [[m,14,'⇅'],[m,H-14,'⇅']];
+    pts.forEach(([x,y,g])=>{
+      ctx.fillStyle = 'rgba(8,10,18,0.78)';
+      ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#bff6ff';
+      ctx.fillText(g, x, y+0.5);
+    });
+  });
+  ctx.restore();
+}
+
 function drawFlowLine(ctx, from, to, now, opts){
   opts = opts || {};
   const gap = opts.gap!=null ? opts.gap : 16;
@@ -638,6 +728,7 @@ function drawGameCanvas(){
       ctx.stroke();
     });
   }
+  drawWrapSeams(ctx, mapData, reducedMotion ? 0 : now);
   // selection highlight — a slow pulsing glow instead of a static line, so the currently
   // selected territory/territories stay noticeable at a glance instead of blending into the
   // rest of the borders once you stop looking right at them.
@@ -662,14 +753,14 @@ function drawGameCanvas(){
     mapData.territories[game.selectedFrom] && mapData.territories[game.selectedTo] &&
     canAttack(game.selectedFrom, game.selectedTo, currentPlayerId());
   if(showArrow){
-    drawFlowLine(ctx, mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid, now,
-      {rainbow:true, cycleMs:1350, gap:16});
+    wrapSegments(mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid)
+      .forEach(([a,b])=> drawFlowLine(ctx, a, b, now, {rainbow:true, cycleMs:1350, gap:16}));
   }
   // Fortify-phase indicator: same idea, styled as a white dashed line instead of a solid
   // rainbow arrow so the two phases don't look like the same action.
   if(game.phase==='fortify' && game.selectedFrom!=null && game.selectedTo!=null && canFortifyNow(currentPlayer())){
-    drawFlowLine(ctx, mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid, now,
-      {color:'rgba(255,255,255,0.85)', dashed:true, cycleMs:1350, gap:16});
+    wrapSegments(mapData.territories[game.selectedFrom].centroid, mapData.territories[game.selectedTo].centroid)
+      .forEach(([a,b])=> drawFlowLine(ctx, a, b, now, {color:'rgba(255,255,255,0.85)', dashed:true, cycleMs:1350, gap:16}));
   }
   // army badges — selectedFrom (and selectedTo, if it's actually a legal attack target) pulse
   // bigger while chosen; skip fromId/toId here entirely while attackAnim owns them (drawn
@@ -976,8 +1067,8 @@ function positionFloatingAttackButtons(){
   if(wrap.hidden) return;
   const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
   if(!fromT || !toT){ hideFloatingAttackButtons(); return; }
-  const midX=(fromT.centroid.x+toT.centroid.x)/2, midY=(fromT.centroid.y+toT.centroid.y)/2;
-  const pt = mapPointToScreen(midX, midY);
+  const mid = wrapMidpoint(fromT.centroid, toT.centroid);
+  const pt = mapPointToScreen(mid.x, mid.y);
   // CSS transform (translate(-50%, calc(-100% - 14px))) handles centering horizontally and
   // sitting the box above this exact point — see style.css.
   wrap.style.left = pt.x+'px';
@@ -1007,8 +1098,8 @@ function positionFloatingFortifyButton(){
   if(wrap.hidden) return;
   const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
   if(!fromT || !toT){ hideFloatingFortifyButton(); return; }
-  const midX=(fromT.centroid.x+toT.centroid.x)/2, midY=(fromT.centroid.y+toT.centroid.y)/2;
-  const pt = mapPointToScreen(midX, midY);
+  const mid = wrapMidpoint(fromT.centroid, toT.centroid);
+  const pt = mapPointToScreen(mid.x, mid.y);
   wrap.style.left = pt.x+'px';
   wrap.style.top = pt.y+'px';
 }
