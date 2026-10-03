@@ -171,6 +171,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   position:absolute;inset:0;overflow:auto;display:flex;align-items:flex-start;
   background:#1CB5E0;touch-action:pan-x pan-y;
 }
+/* World-wrapping map: panning moves a camera in JS (the map repeats forever along the wrap), so
+   native touch scrolling is off here — see the drag-pan wiring in 08-wiring.js. */
 /* No visible scrollbars on the map: panning is drag/touch and the wheel zooms, so they're never
    needed — and when they took up layout space they caused a feedback loop at certain zoom levels
    (map just overflows -> scrollbar appears and narrows the wrap -> drawGameCanvas() refits the
@@ -178,6 +180,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    every frame. Hidden, they take no space, so the wrap's size no longer depends on the map's. */
 #gameCanvasWrap{scrollbar-width:none;}
 #gameCanvasWrap::-webkit-scrollbar{display:none;}
+#gameCanvasWrap.wrap-pan{touch-action:none;}
 /* margin:auto on the canvas (not justify-content/align-items on the wrap, deliberately absent
    here) centers it in BOTH axes when it fits. Auto margins collapse to 0 once zoomed past the
    wrap's size in either direction, so scrolling stays normally top/left-anchored instead of the

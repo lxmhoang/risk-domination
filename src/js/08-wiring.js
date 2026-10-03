@@ -464,14 +464,28 @@ $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
 // #gameCanvasWrap, meaning the territory-selection listener (bound specifically to #gameCanvas)
 // would never see it at all. Deferring capture to only-once-dragging avoids that for every
 // normal click, while still keeping move/up tracking the wrap once a real drag is underway.
-let dragPan = null; // {startX, startY, startScrollLeft, startScrollTop, dragged, pointerId}
+//
+// On a world-wrapping map (see wrapView in 06-render-game.js) a 1-finger touch drag is handled
+// here too — the wrap's touch-action is none there (.wrap-pan in style.css), since native
+// scrolling can't wrap around — and the drag moves the wrap camera on the wrapping axis instead
+// of scrolling. A second finger landing hands the gesture over to pinch-zoom above.
+let dragPan = null; // {startX, startY, lastX, lastY, startScrollLeft, startScrollTop, dragged, pointerId}
+let wrapPanFrameQueued = false;
+function queueWrapPanFrame(){
+  if(wrapPanFrameQueued) return;
+  wrapPanFrameQueued = true;
+  requestAnimationFrame(()=>{ wrapPanFrameQueued = false; if(game) drawGameCanvas(); });
+}
 $('gameCanvasWrap').addEventListener('pointerdown', (e)=>{
-  if(e.pointerType!=='mouse' || e.button!==0) return;
+  const touchPan = e.pointerType!=='mouse' && mapIsWrapping();
+  if(!touchPan && (e.pointerType!=='mouse' || e.button!==0)) return;
+  if(touchPan && pinchPointers.size>=2){ dragPan = null; return; }
   const wrap = $('gameCanvasWrap');
-  dragPan = { startX:e.clientX, startY:e.clientY, startScrollLeft:wrap.scrollLeft, startScrollTop:wrap.scrollTop, dragged:false, pointerId:e.pointerId };
+  dragPan = { startX:e.clientX, startY:e.clientY, lastX:e.clientX, lastY:e.clientY, startScrollLeft:wrap.scrollLeft, startScrollTop:wrap.scrollTop, dragged:false, pointerId:e.pointerId };
 });
 $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
-  if(!dragPan || e.pointerType!=='mouse') return;
+  if(!dragPan || e.pointerId!==dragPan.pointerId) return;
+  if(e.pointerType!=='mouse' && pinchPointers.size>=2){ dragPan = null; return; }
   const wrap = $('gameCanvasWrap');
   const dx = e.clientX-dragPan.startX, dy = e.clientY-dragPan.startY;
   // A real mouse always jitters a few px between press and release — too tight a threshold
@@ -483,14 +497,27 @@ $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
     wrap.setPointerCapture(dragPan.pointerId);
   }
   if(dragPan.dragged){
-    wrap.scrollLeft = dragPan.startScrollLeft-dx;
-    wrap.scrollTop = dragPan.startScrollTop-dy;
+    if(mapIsWrapping()){
+      panWrapView(e.clientX-dragPan.lastX, e.clientY-dragPan.lastY);
+      if(!mapData.wrapX) wrap.scrollLeft = dragPan.startScrollLeft-dx;
+      if(!mapData.wrapY) wrap.scrollTop = dragPan.startScrollTop-dy;
+      queueWrapPanFrame();
+    } else {
+      wrap.scrollLeft = dragPan.startScrollLeft-dx;
+      wrap.scrollTop = dragPan.startScrollTop-dy;
+    }
   }
+  dragPan.lastX = e.clientX; dragPan.lastY = e.clientY;
 });
 ['pointerup','pointercancel'].forEach(evtName=>
   $('gameCanvasWrap').addEventListener(evtName, (e)=>{
-    if(!dragPan || e.pointerType!=='mouse') return;
-    if(dragPan.dragged) suppressNextClick = true;
+    if(!dragPan || e.pointerId!==dragPan.pointerId) return;
+    if(dragPan.dragged){
+      suppressNextClick = true;
+      // Only meant to swallow the click that immediately follows this release (if the browser
+      // fires one at all — touch drags don't) — never a later, genuine tap.
+      setTimeout(()=>{ suppressNextClick = false; }, 0);
+    }
     dragPan = null;
     document.body.style.cursor = '';
   })
@@ -684,6 +711,7 @@ updateTopbarActions();
 // Debug hook (read-only introspection for QA; harmless to leave in production)
 window.__debug = {
   get game(){ return game; }, get mapData(){ return mapData; },
+  mapPointToScreen, hitTest:(x,y)=> getTerritoryFromCanvasEvent($('gameCanvas'), {clientX:x, clientY:y}),
   generateRandomMap, deriveMapGenCounts, computeMapGenPlan,
   getTerritoryBoundaryLoops, getContinentBoundaryLoops,
   clickTerritory(terrId){ if(!game) return; const t=mapData.territories[terrId]; if(!t) return null; return {x:t.centroid.x,y:t.centroid.y}; },
