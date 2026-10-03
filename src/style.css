@@ -181,6 +181,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #gameCanvasWrap{scrollbar-width:none;}
 #gameCanvasWrap::-webkit-scrollbar{display:none;}
 #gameCanvasWrap.wrap-pan{touch-action:none;}
+#gameCanvasWrap.wrap-pan #gameCanvas{border-radius:0;} /* canvas spans the whole screen there */
 /* margin:auto on the canvas (not justify-content/align-items on the wrap, deliberately absent
    here) centers it in BOTH axes when it fits. Auto margins collapse to 0 once zoomed past the
    wrap's size in either direction, so scrolling stays normally top/left-anchored instead of the

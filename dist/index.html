@@ -193,6 +193,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #gameCanvasWrap{scrollbar-width:none;}
 #gameCanvasWrap::-webkit-scrollbar{display:none;}
 #gameCanvasWrap.wrap-pan{touch-action:none;}
+#gameCanvasWrap.wrap-pan #gameCanvas{border-radius:0;} /* canvas spans the whole screen there */
 /* margin:auto on the canvas (not justify-content/align-items on the wrap, deliberately absent
    here) centers it in BOTH axes when it fits. Auto margins collapse to 0 once zoomed past the
    wrap's size in either direction, so scrolling stays normally top/left-anchored instead of the
@@ -4539,6 +4540,39 @@ function clipOutSeam(ctx, map){
   ctx.clip('evenodd');
 }
 
+// Darkens everything outside renderView's focus window (one map's worth), with a short soft
+// edge so the main window doesn't end in a hard line. Drawn in canvas CSS px.
+function dimOutsideFocusWindow(ctx, dpr, viewW, viewH){
+  const v = renderView, fade = 28, dark = 'rgba(4,7,14,0.62)', clear = 'rgba(4,7,14,0)';
+  ctx.save();
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const band = (x0,y0,x1,y1)=>{
+    if(x1<=x0 || y1<=y0) return;
+    ctx.fillStyle = dark; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+  };
+  const soft = (x0,y0,x1,y1, gx0,gy0,gx1,gy1)=>{
+    if(x1<=x0 || y1<=y0) return;
+    const g = ctx.createLinearGradient(gx0,gy0,gx1,gy1);
+    g.addColorStop(0, dark); g.addColorStop(1, clear);
+    ctx.fillStyle = g; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+  };
+  if(mapData.wrapX && v.focusW < viewW){
+    const a = v.focusX0, b = v.focusX0+v.focusW;
+    band(0,0,a,viewH);
+    band(b,0,viewW,viewH);
+    soft(a,0,a+fade,viewH, a,0,a+fade,0);
+    soft(b-fade,0,b,viewH, b,0,b-fade,0);
+  }
+  if(mapData.wrapY && v.focusH < viewH){
+    const a = v.focusY0, b = v.focusY0+v.focusH;
+    band(0,0,viewW,a);
+    band(0,b,viewW,viewH);
+    soft(0,a,viewW,a+fade, 0,a,0,a+fade);
+    soft(0,b-fade,viewW,b, 0,b,0,b-fade);
+  }
+  ctx.restore();
+}
+
 // Marks every stretch of the map edge where land continues across the seam — the cue that the
 // map wraps around (left edge joins right edge) and that the territories on either side of
 // these marks are neighbors. Glowing dashed line on both edges, with a small "⇆" at each stretch.
@@ -4655,14 +4689,16 @@ function mapPointToScreen(x, y){
   const rect = canvas.getBoundingClientRect();
   const nativeW = mapData.cols*mapData.cellSize, nativeH = mapData.rows*mapData.cellSize;
   if(!mapIsWrapping()) return { x: rect.left + x*(rect.width/nativeW), y: rect.top + y*(rect.height/nativeH) };
-  // Wrapping axis: the point is visible once per tile — use the copy nearest the canvas center.
-  const fold = (v, origin, size, span)=>{
+  // Wrapping axis: the point is visible once per tile — use the copy nearest the middle of the
+  // undimmed focus window (see dimOutsideFocusWindow()).
+  const fold = (v, origin, size, span, target)=>{
     let c = mod(v-origin, size);
-    while(c+size <= span && Math.abs(c+size-span/2) < Math.abs(c-span/2)) c += size;
+    while(c+size <= span+size && Math.abs(c+size-target) < Math.abs(c-target)) c += size;
     return c;
   };
-  const cx = mapData.wrapX ? fold(x, renderView.originX, nativeW, renderView.canvasW) : x;
-  const cy = mapData.wrapY ? fold(y, renderView.originY, nativeH, renderView.canvasH) : y;
+  const sc = renderView.scale;
+  const cx = mapData.wrapX ? fold(x, renderView.originX, nativeW, renderView.canvasW, (renderView.focusX0+renderView.focusW/2)/sc) : x-renderView.originX;
+  const cy = mapData.wrapY ? fold(y, renderView.originY, nativeH, renderView.canvasH, (renderView.focusY0+renderView.focusH/2)/sc) : y-renderView.originY;
   return { x: rect.left + cx*renderView.scale, y: rect.top + cy*renderView.scale };
 }
 
@@ -4812,14 +4848,6 @@ function drawGameCanvas(){
   const dpr = window.devicePixelRatio || 1;
   const cssW = Math.max(1, Math.round(nativeW*displayScale));
   const cssH = Math.max(1, Math.round(nativeH*displayScale));
-  // World wrap: on a wrapping axis the canvas spans the whole visible area (flush with the wrap's
-  // edges, never scrolling) and the map is tiled across it — see wrapView/renderView above.
-  const viewW = mapData.wrapX ? Math.max(1, wrap.clientWidth) : cssW;
-  const viewH = mapData.wrapY ? Math.max(1, wrap.clientHeight) : cssH;
-  canvas.width = Math.round(viewW*dpr);
-  canvas.height = Math.round(viewH*dpr);
-  canvas.style.width = viewW+'px';
-  canvas.style.height = viewH+'px';
   // Center within the SAFE AREA specifically (the box between the 4 overlays), not the wrap's
   // full box — CSS margin:auto centers in the full wrap, which only happens to clear every
   // overlay when they're all roughly the same size on their axis. The player list and the
@@ -4851,10 +4879,24 @@ function drawGameCanvas(){
   const marginTopPx = portrait ? safeTop : Math.max(safeTop, (safeTop+safeBottom)/2 - cssH/2);
   const rightReserve = wrap.clientWidth - safeRight; // = rightW+margin
   const bottomReserve = wrap.clientHeight - safeBottom; // = bottomH+margin
-  canvas.style.marginLeft = (mapData.wrapX ? 0 : marginLeftPx)+'px';
-  canvas.style.marginTop = (mapData.wrapY ? 0 : marginTopPx)+'px';
-  canvas.style.marginRight = (mapData.wrapX ? 0 : Math.max(rightReserve, wrap.clientWidth-marginLeftPx-cssW))+'px';
-  canvas.style.marginBottom = (mapData.wrapY ? 0 : Math.max(bottomReserve, wrap.clientHeight-marginTopPx-cssH))+'px';
+  const marginRightPx = Math.max(rightReserve, wrap.clientWidth-marginLeftPx-cssW);
+  const marginBottomPx = Math.max(bottomReserve, wrap.clientHeight-marginTopPx-cssH);
+  // World wrap: the canvas covers the whole scrollable area itself instead of sitting inside CSS
+  // margins — on the wrapping axis it spans exactly the visible area (never scrolls; the map is
+  // tiled across it and panned via wrapView), on the other axis it spans the same total extent
+  // the margins used to, with the map drawn offset by what the leading margin was. So the map's
+  // repeats and the dimmed side bands (dimOutsideFocusWindow) reach every edge of the screen.
+  const wrapping = mapIsWrapping();
+  const viewW = mapData.wrapX ? Math.max(1, wrap.clientWidth) : (wrapping ? marginLeftPx+cssW+marginRightPx : cssW);
+  const viewH = mapData.wrapY ? Math.max(1, wrap.clientHeight) : (wrapping ? marginTopPx+cssH+marginBottomPx : cssH);
+  canvas.width = Math.round(viewW*dpr);
+  canvas.height = Math.round(viewH*dpr);
+  canvas.style.width = viewW+'px';
+  canvas.style.height = viewH+'px';
+  canvas.style.marginLeft = (wrapping ? 0 : marginLeftPx)+'px';
+  canvas.style.marginTop = (wrapping ? 0 : marginTopPx)+'px';
+  canvas.style.marginRight = (wrapping ? 0 : marginRightPx)+'px';
+  canvas.style.marginBottom = (wrapping ? 0 : marginBottomPx)+'px';
   // A wrapping map pans with the camera instead of native scrolling, so it takes over touch
   // panning too (see the pan wiring in 08-wiring.js).
   wrap.classList.toggle('wrap-pan', mapIsWrapping());
@@ -4867,14 +4909,20 @@ function drawGameCanvas(){
   }
   renderView = {
     scale: displayScale,
-    originX: mapData.wrapX ? mod(wrapView.x, nativeW) : 0,
-    originY: mapData.wrapY ? mod(wrapView.y, nativeH) : 0,
+    // map-native coordinate at the canvas's left/top edge (negative = map starts that far in)
+    originX: mapData.wrapX ? mod(wrapView.x, nativeW) : (wrapping ? -marginLeftPx/displayScale : 0),
+    originY: mapData.wrapY ? mod(wrapView.y, nativeH) : (wrapping ? -marginTopPx/displayScale : 0),
     canvasW: viewW/displayScale, canvasH: viewH/displayScale,
+    // The "main" window — exactly one map's worth, where the map sat before wrapping existed —
+    // in canvas CSS px. Everything outside it is dimmed (see the end of this function), so each
+    // territory reads clearly exactly once; the repeats past it only hint that the map goes on.
+    focusX0: marginLeftPx, focusW: cssW,
+    focusY0: marginTopPx, focusH: cssH,
   };
   // Tile offsets (map-native px) — one tile per copy of the map that overlaps the canvas.
   const tileXs = [], tileYs = [];
-  if(mapData.wrapX){ for(let x=-renderView.originX; x<renderView.canvasW; x+=nativeW) tileXs.push(x); } else tileXs.push(0);
-  if(mapData.wrapY){ for(let y=-renderView.originY; y<renderView.canvasH; y+=nativeH) tileYs.push(y); } else tileYs.push(0);
+  if(mapData.wrapX){ for(let x=-renderView.originX; x<renderView.canvasW; x+=nativeW) tileXs.push(x); } else tileXs.push(-renderView.originX);
+  if(mapData.wrapY){ for(let y=-renderView.originY; y<renderView.canvasH; y+=nativeH) tileYs.push(y); } else tileYs.push(-renderView.originY);
   const ctx = canvas.getContext('2d');
   ctx.scale(displayScale*dpr, displayScale*dpr); // canvas.width/height assignment above already reset the transform to identity
   ctx.fillStyle=OCEAN_COLOR;
@@ -5096,6 +5144,7 @@ function drawGameCanvas(){
       ctx.save(); ctx.translate(tx, ty); layer(); ctx.restore();
     }));
   });
+  if(mapIsWrapping()) dimOutsideFocusWindow(ctx, dpr, viewW, viewH);
 
   // Keep animating next frame if anything above is still mid-transition — otherwise rendering
   // goes back to being purely event-driven (see RENDER ANIMATION STATE at the top of this file).
