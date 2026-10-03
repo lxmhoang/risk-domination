@@ -362,14 +362,13 @@ function clipOutSeam(ctx, map){
 }
 
 // Outside renderView's focus window (one map's worth) only a narrow strip of the map's repeat
-// stays visible, dimmed and fading out, as a hint that the map continues; past that strip the
+// stays visible, dimmed but see-through, as a hint that the map continues; past that strip the
 // canvas is erased outright (transparent — the wrap's own background shows through, same as
 // around a non-wrapping map). Drawn in canvas CSS px.
 const FOCUS_STRIP_PX = 64;      // width of the dimmed, see-through strip on each side
 const FOCUS_SOFT_EDGE_PX = 24;  // soft edge where the strip meets the bright window
 const FOCUS_DIM = 'rgba(4,7,14,0.62)', FOCUS_DIM_CLEAR = 'rgba(4,7,14,0)';
-// used with 'destination-out': alpha 1 erases fully, alpha 0 leaves the pixel alone
-const ERASE = 'rgba(0,0,0,1)', ERASE_NONE = 'rgba(0,0,0,0)';
+const ERASE = 'rgba(0,0,0,1)'; // used with 'destination-out' — erases fully
 function dimOutsideFocusWindow(ctx, dpr, viewW, viewH){
   const v = renderView;
   ctx.save();
@@ -393,10 +392,8 @@ function dimOutsideFocusWindow(ctx, dpr, viewW, viewH){
     // soft edge into the dim, then full dim for the rest of the strip
     ramp(...box(edge, edge+dir*E), ...grad(edge+dir*E, edge), FOCUS_DIM, FOCUS_DIM_CLEAR);
     fill(...box(edge+dir*E, stripEnd), FOCUS_DIM);
-    // the map's repeat (and the dim over it) fades to transparent across the outer part of the
-    // strip, and is erased completely past it
+    // the strip itself stays dimmed but see-through for its full width; past it, erased outright
     ctx.globalCompositeOperation = 'destination-out';
-    ramp(...box(edge+dir*E, stripEnd), ...grad(edge+dir*E, stripEnd), ERASE_NONE, ERASE);
     fill(...box(stripEnd, limit), ERASE);
     ctx.globalCompositeOperation = 'source-over';
   }
