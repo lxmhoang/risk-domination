@@ -183,6 +183,13 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   position:absolute;inset:0;overflow:auto;display:flex;align-items:flex-start;
   background:#1CB5E0;touch-action:pan-x pan-y;
 }
+/* No visible scrollbars on the map: panning is drag/touch and the wheel zooms, so they're never
+   needed — and when they took up layout space they caused a feedback loop at certain zoom levels
+   (map just overflows -> scrollbar appears and narrows the wrap -> drawGameCanvas() refits the
+   map smaller -> no overflow -> scrollbar disappears -> refit bigger...), visibly shaking the map
+   every frame. Hidden, they take no space, so the wrap's size no longer depends on the map's. */
+#gameCanvasWrap{scrollbar-width:none;}
+#gameCanvasWrap::-webkit-scrollbar{display:none;}
 /* margin:auto on the canvas (not justify-content/align-items on the wrap, deliberately absent
    here) centers it in BOTH axes when it fits. Auto margins collapse to 0 once zoomed past the
    wrap's size in either direction, so scrolling stays normally top/left-anchored instead of the
@@ -4169,9 +4176,18 @@ function lerpColor(hexA, hexB, t){
 // attack-phase pulse (bigger scale), the flying-attack badges, and the hollow placeholder they
 // leave behind (opts.hollow — no fill gradient, no number) can all reuse the exact same look
 // instead of hand-drawing 3 slightly-different versions of the same chip.
+// Badges are drawn in map-native px, so they shrink with the map — on a small screen (phone held
+// sideways especially) the number could end up ~7px tall. badgeBoost (set each frame by
+// drawGameCanvas()) scales every badge back up so its number never renders below
+// MIN_BADGE_NUMBER_CSS_PX on screen. CSS px are already defined by viewing angle (a CSS px looks
+// about the same size on a phone as on a desktop monitor at their normal viewing distances), so a
+// CSS-px floor is a floor on how big the number actually looks. Capped so a tiny map can't turn
+// badges into giant discs covering their neighbors.
+const MIN_BADGE_NUMBER_CSS_PX = 12, BADGE_NUMBER_NATIVE_PX = 12, MAX_BADGE_BOOST = 2.2;
+let badgeBoost = 1;
 function drawArmyBadge(ctx, x, y, count, opts){
   opts = opts || {};
-  const scale = opts.scale || 1;
+  const scale = (opts.scale || 1)*badgeBoost;
   const r = ARMY_BADGE_RADIUS*scale;
   ctx.save();
   ctx.shadowColor='rgba(0,0,0,0.5)'; ctx.shadowBlur=4*scale; ctx.shadowOffsetY=2*scale;
@@ -4190,7 +4206,7 @@ function drawArmyBadge(ctx, x, y, count, opts){
   ctx.lineWidth = 1.5*scale;
   ctx.stroke();
   if(count!=null){
-    ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(12*scale)+'px sans-serif';
+    ctx.fillStyle='#fff'; ctx.font='bold '+Math.round(BADGE_NUMBER_NATIVE_PX*scale)+'px sans-serif';
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(count, x, y+1);
   }
@@ -4319,9 +4335,11 @@ function drawBadgeWithLabel(ctx, x, y, count, name, opts){
   // Dark outline under white text so the name reads the same on any territory color.
   ctx.font='bold 11px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.lineJoin='round'; ctx.lineWidth=3; ctx.strokeStyle='rgba(8,10,18,0.85)';
-  ctx.strokeText(name, x, y+25);
+  // just below the badge, however big badgeBoost made it (25 = default radius 13 + 12 gap)
+  const ly = y + ARMY_BADGE_RADIUS*badgeBoost + 12;
+  ctx.strokeText(name, x, ly);
   ctx.fillStyle='#fff';
-  ctx.fillText(name, x, y+25);
+  ctx.fillText(name, x, ly);
 }
 
 function drawAttackAnimBadges(ctx, now){
@@ -4368,7 +4386,8 @@ function drawAttackAnimBadges(ctx, now){
     const p = Math.min(1, elapsed/ATTACK_IMPACT_MS);
     ctx.save();
     ctx.globalAlpha = 1-p;
-    ctx.font='800 28px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.font='800 '+Math.round(28*badgeBoost)+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    const dmgOff = ARMY_BADGE_RADIUS*badgeBoost + 11; // just above the (possibly boosted) badge
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
     const riseY = p*22;
     // "-x" (what the ATTACKER lost) rises above the attacker's own home badge, in the
@@ -4376,11 +4395,11 @@ function drawAttackAnimBadges(ctx, now){
     // defender's color — each number sits with the side it's actually about, instead of both
     // clustered at the collision point.
     ctx.fillStyle = a.attackerColor || '#ff3b3b';
-    ctx.strokeText('-'+a.attLoss, fromPos.x, fromPos.y-24-riseY);
-    ctx.fillText('-'+a.attLoss, fromPos.x, fromPos.y-24-riseY);
+    ctx.strokeText('-'+a.attLoss, fromPos.x, fromPos.y-dmgOff-riseY);
+    ctx.fillText('-'+a.attLoss, fromPos.x, fromPos.y-dmgOff-riseY);
     ctx.fillStyle = a.defenderColor || '#ff3b3b';
-    ctx.strokeText('-'+a.defLoss, toPos.x, toPos.y-24-riseY);
-    ctx.fillText('-'+a.defLoss, toPos.x, toPos.y-24-riseY);
+    ctx.strokeText('-'+a.defLoss, toPos.x, toPos.y-dmgOff-riseY);
+    ctx.fillText('-'+a.defLoss, toPos.x, toPos.y-dmgOff-riseY);
     ctx.restore();
   }
 }
@@ -4583,6 +4602,7 @@ function drawGameCanvas(){
   const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
   const fitScale = Math.min(availW/nativeW, availH/nativeH);
   const displayScale = fitScale*gameZoom;
+  badgeBoost = clamp(MIN_BADGE_NUMBER_CSS_PX/(BADGE_NUMBER_NATIVE_PX*displayScale), 1, MAX_BADGE_BOOST);
   // cssW/cssH: the map's actual on-screen (CSS pixel / layout) size — used for the style.width/
   // height below and every margin/centering calc, since those all reason in CSS-pixel layout
   // space regardless of the device's pixel density.
