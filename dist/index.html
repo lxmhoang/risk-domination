@@ -4540,35 +4540,50 @@ function clipOutSeam(ctx, map){
   ctx.clip('evenodd');
 }
 
-// Darkens everything outside renderView's focus window (one map's worth), with a short soft
-// edge so the main window doesn't end in a hard line. Drawn in canvas CSS px.
+// Outside renderView's focus window (one map's worth) only a narrow strip of the map's repeat
+// stays visible, dimmed and fading out, as a hint that the map continues; past that strip the
+// repeats are cleared to plain dark sea. Drawn in canvas CSS px.
+const FOCUS_STRIP_PX = 64;      // width of the dimmed, see-through strip on each side
+const FOCUS_SOFT_EDGE_PX = 24;  // soft edge where the strip meets the bright window
+const FOCUS_DIM = 'rgba(4,7,14,0.62)', FOCUS_DIM_CLEAR = 'rgba(4,7,14,0)';
+// OCEAN_COLOR under FOCUS_DIM, as one opaque color — what the cleared area is filled with, so it
+// reads as the same dark sea the strip's water already shows.
+const FOCUS_EMPTY = 'rgb(13,73,94)', FOCUS_EMPTY_CLEAR = 'rgba(13,73,94,0)';
 function dimOutsideFocusWindow(ctx, dpr, viewW, viewH){
-  const v = renderView, fade = 28, dark = 'rgba(4,7,14,0.62)', clear = 'rgba(4,7,14,0)';
+  const v = renderView;
   ctx.save();
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  const band = (x0,y0,x1,y1)=>{
+  const fill = (x0,y0,x1,y1, style)=>{
     if(x1<=x0 || y1<=y0) return;
-    ctx.fillStyle = dark; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+    ctx.fillStyle = style; ctx.fillRect(x0,y0,x1-x0,y1-y0);
   };
-  const soft = (x0,y0,x1,y1, gx0,gy0,gx1,gy1)=>{
+  const ramp = (x0,y0,x1,y1, gx0,gy0,gx1,gy1, from, to)=>{
     if(x1<=x0 || y1<=y0) return;
     const g = ctx.createLinearGradient(gx0,gy0,gx1,gy1);
-    g.addColorStop(0, dark); g.addColorStop(1, clear);
+    g.addColorStop(0, from); g.addColorStop(1, to);
     ctx.fillStyle = g; ctx.fillRect(x0,y0,x1-x0,y1-y0);
   };
+  // one side: `edge` = where the bright window ends, `dir` = +1 outward to larger coords, -1 to smaller
+  function side(edge, dir, limit, horizontal){
+    const S = FOCUS_STRIP_PX, E = FOCUS_SOFT_EDGE_PX;
+    const box = (a,b)=> horizontal ? [Math.min(a,b),0,Math.max(a,b),viewH] : [0,Math.min(a,b),viewW,Math.max(a,b)];
+    const grad = (a,b)=> horizontal ? [a,0,b,0] : [0,a,0,b];
+    const stripEnd = edge + dir*S;
+    // soft edge into the dim, then full dim for the rest of the strip
+    ramp(...box(edge, edge+dir*E), ...grad(edge+dir*E, edge), FOCUS_DIM, FOCUS_DIM_CLEAR);
+    fill(...box(edge+dir*E, stripEnd), FOCUS_DIM);
+    // the map's repeat fades out across the outer part of the strip...
+    ramp(...box(edge+dir*E, stripEnd), ...grad(edge+dir*E, stripEnd), FOCUS_EMPTY_CLEAR, FOCUS_EMPTY);
+    // ...and is gone past it
+    fill(...box(stripEnd, limit), FOCUS_EMPTY);
+  }
   if(mapData.wrapX && v.focusW < viewW){
-    const a = v.focusX0, b = v.focusX0+v.focusW;
-    band(0,0,a,viewH);
-    band(b,0,viewW,viewH);
-    soft(a,0,a+fade,viewH, a,0,a+fade,0);
-    soft(b-fade,0,b,viewH, b,0,b-fade,0);
+    side(v.focusX0, -1, 0, true);
+    side(v.focusX0+v.focusW, 1, viewW, true);
   }
   if(mapData.wrapY && v.focusH < viewH){
-    const a = v.focusY0, b = v.focusY0+v.focusH;
-    band(0,0,viewW,a);
-    band(0,b,viewW,viewH);
-    soft(0,a,viewW,a+fade, 0,a,0,a+fade);
-    soft(0,b-fade,viewW,b, 0,b,0,b-fade);
+    side(v.focusY0, -1, 0, false);
+    side(v.focusY0+v.focusH, 1, viewH, false);
   }
   ctx.restore();
 }
