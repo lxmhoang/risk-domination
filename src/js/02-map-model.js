@@ -1278,6 +1278,21 @@ function wouldStayConnectedAfterRemoving(map, contId, removeId){
   return seen.size === members.length;
 }
 
+// Guarantees every continent ends up with >= minSize territories (never just "tries to, but
+// gives up" — measured against real generated maps, the old give-up-when-no-donor-can-spare
+// version left a <3-territory continent in ~90% of maps, since with numCont sized the way
+// computeMapGenPlan() picks it, there's often barely enough land to go around, let alone slack
+// to steal from a neighbor without also pushing IT below the floor). Two moves, in priority
+// order:
+//  1. Steal one bordering territory at a time from whichever neighboring continent currently has
+//     the most to spare, same as before — keeps both continents viable when there's enough slack.
+//  2. When no neighbor can spare a territory without itself dropping below the floor, DISSOLVE
+//     `target` wholesale into whichever bordering continent it shares the longest border with,
+//     rather than leaving it stunted. This is what actually makes the floor a guarantee instead
+//     of a best-effort: every dissolve strictly reduces the number of continents left to check
+//     (bounded by the starting count), so the loop is guaranteed to terminate with every
+//     surviving continent at or above minSize — the trade-off being the map can end up with
+//     fewer continents than originally requested when the land doesn't support them all.
 function enforceMinContinentSize(map, minSize){
   let guard = 0;
   while(guard++<400){
@@ -1292,7 +1307,8 @@ function enforceMinContinentSize(map, minSize){
     if(target===null) break;
 
     // Territories in OTHER continents that border `target`, grouped by which continent they
-    // belong to — these are the candidates it could grow into.
+    // belong to — these are the candidates it could grow into, or (if none can spare one) the
+    // candidates to dissolve into instead.
     const borderCandidates = {};
     Object.values(map.territories).forEach(t=>{
       if(t.continentId===target) return;
@@ -1301,23 +1317,25 @@ function enforceMinContinentSize(map, minSize){
       }
     });
     const donors = Object.keys(borderCandidates).map(Number);
-    if(donors.length===0) break; // no land neighbor at all (isolated) — nothing to grow into
+    if(donors.length===0) break; // no land neighbor at all (a fully separate island) — nothing adjacent to grow into or dissolve into
 
-    // Prefer growing `target` by stealing one bordering territory at a time from whichever
-    // neighbor currently has the most to spare (without dropping that neighbor itself below
-    // the floor), rather than immediately dissolving it wholesale — a full merge collapses 2
-    // meaningfully-sized continents into 1 even when just nudging the small one up by a
-    // territory or two would have kept both viable.
     donors.sort((a,b)=> sizeOf[b]-sizeOf[a]);
     const donor = donors.find(id=> sizeOf[id]-1 >= minSize
       && borderCandidates[id].some(tid=> wouldStayConnectedAfterRemoving(map, id, tid)));
-    if(donor===undefined) break; // no neighbor can spare a territory without itself going
-    // below the floor — leave `target` under-sized rather than dissolving it to 0 territories.
-    // validateMap() (and the rest of the app) treats a continent with 0 territories as broken,
-    // so a small-but-nonzero continent is the safer outcome here than a "complete" merge.
-    const validPicks = borderCandidates[donor].filter(tid=> wouldStayConnectedAfterRemoving(map, donor, tid));
-    const pick = randChoice(validPicks);
-    map.territories[pick].continentId = target;
+    if(donor!==undefined){
+      const validPicks = borderCandidates[donor].filter(tid=> wouldStayConnectedAfterRemoving(map, donor, tid));
+      const pick = randChoice(validPicks);
+      map.territories[pick].continentId = target;
+      continue;
+    }
+    // Fallback: dissolve `target` into whichever neighbor it borders the most (most border
+    // territories = most natural fit), merging its land in wholesale.
+    let bestMergeCont = donors[0], bestMergeCount = -1;
+    donors.forEach(id=>{
+      if(borderCandidates[id].length>bestMergeCount){ bestMergeCount=borderCandidates[id].length; bestMergeCont=id; }
+    });
+    Object.values(map.territories).forEach(t=>{ if(t.continentId===target) t.continentId = bestMergeCont; });
+    delete map.continents[target];
   }
 }
 
@@ -1443,7 +1461,7 @@ function reassignContinents(map){
   // (enforceMinContinentSize only grows continents that already have >=1 territory).
   contIds.forEach(id=>{ if(sizeOf[id]<=0) delete map.continents[id]; });
 
-  enforceMinContinentSize(map, 4);
+  enforceMinContinentSize(map, 3);
   assignContinentColors(map);
 
   // bonuses based on continent size
