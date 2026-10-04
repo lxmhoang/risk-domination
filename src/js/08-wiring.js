@@ -527,7 +527,7 @@ function queueWrapPanFrame(){
   requestAnimationFrame(()=>{ wrapPanFrameQueued = false; if(game) drawGameCanvas(); });
 }
 $('gameCanvasWrap').addEventListener('pointerdown', (e)=>{
-  const touchPan = e.pointerType!=='mouse' && mapIsWrapping();
+  const touchPan = e.pointerType!=='mouse' && wrapTiled();
   if(!touchPan && (e.pointerType!=='mouse' || e.button!==0)) return;
   if(touchPan && pinchPointers.size>=2){ dragPan = null; return; }
   const wrap = $('gameCanvasWrap');
@@ -547,7 +547,7 @@ $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
     wrap.setPointerCapture(dragPan.pointerId);
   }
   if(dragPan.dragged){
-    if(mapIsWrapping()){
+    if(wrapTiled()){
       panWrapView(e.clientX-dragPan.lastX, e.clientY-dragPan.lastY);
       if(!mapData.wrapX) wrap.scrollLeft = dragPan.startScrollLeft-dx;
       if(!mapData.wrapY) wrap.scrollTop = dragPan.startScrollTop-dy;

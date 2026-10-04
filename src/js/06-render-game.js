@@ -246,6 +246,9 @@ function drawAttackAnimBadges(ctx, now){
     fCount = a.fromCountAfter;
   }
   drawArmyBadge(ctx, fx, fy, fCount, {strokeColor:'#ffb04a'});
+  // Single fixed copy (wrapDisplay 'seam'): no neighboring tile to show the badge arriving, so
+  // draw its mirror image coming in through the far edge.
+  if((seam.x || seam.y) && !wrapTiled()) drawArmyBadge(ctx, fx-seam.x, fy-seam.y, fCount, {strokeColor:'#ffb04a'});
 
   // Impact damage numbers — "-N" floating up and fading over the impact stage, one per side
   // showing what THAT side lost, right where the two badges collide. Sized to at least the
@@ -311,6 +314,11 @@ let wrapView = {x:0, y:0, map:null};
 let renderView = {scale:1, originX:0, originY:0, canvasW:0, canvasH:0}; // canvasW/H in map-native px
 function mod(a, n){ return ((a%n)+n)%n; }
 function mapIsWrapping(){ return !!(mapData && (mapData.wrapX || mapData.wrapY)); }
+// How a wrapping map is shown (config wrapDisplay): 'globe' = the scrolling, tiled view described
+// above; 'seam' = one fixed copy of the map, laid out exactly like a non-wrapping one, with glowing
+// marks on the stretches of edge that join (drawWrapSeams) and arrows leaving through one edge
+// and arriving through the other. Only the display differs — the neighbor graph is the same.
+function wrapTiled(){ return mapIsWrapping() && RUNTIME_CONFIG.wrapDisplay!=='seam'; }
 // Pans the wrap camera by (dx,dy) screen px (dragging the map right moves the view left).
 function panWrapView(dxScreen, dyScreen){
   const W = mapData.cols*mapData.cellSize, H = mapData.rows*mapData.cellSize;
@@ -321,7 +329,11 @@ function panWrapView(dxScreen, dyScreen){
 // outside the map's native range — mapPointToScreen() folds it back).
 function wrapMidpoint(from, to){
   const s = wrapShift(from, to);
-  return { x:(from.x+to.x+s.x)/2, y:(from.y+to.y+s.y)/2 };
+  const m = { x:(from.x+to.x+s.x)/2, y:(from.y+to.y+s.y)/2 };
+  if(wrapTiled()) return m;
+  // single fixed copy: nothing to fold back onto, so keep the point inside the map
+  const W = mapData.cols*mapData.cellSize, H = mapData.rows*mapData.cellSize;
+  return { x: clamp(m.x, 12, W-12), y: clamp(m.y, 12, H-12) };
 }
 
 // Continent outlines are traced as if the map edge were a coastline, so on a wrapping map they'd
@@ -570,7 +582,7 @@ function mapPointToScreen(x, y){
   const canvas = $('gameCanvas');
   const rect = canvas.getBoundingClientRect();
   const nativeW = mapData.cols*mapData.cellSize, nativeH = mapData.rows*mapData.cellSize;
-  if(!mapIsWrapping()) return { x: rect.left + x*(rect.width/nativeW), y: rect.top + y*(rect.height/nativeH) };
+  if(!wrapTiled()) return { x: rect.left + x*(rect.width/nativeW), y: rect.top + y*(rect.height/nativeH) };
   // Wrapping axis: the point is visible once per tile — use the copy nearest the middle of the
   // flat focus window, then take it through the globe warp to its screen position.
   const fold = (v, origin, size, span, target)=>{
@@ -614,7 +626,7 @@ function setGameZoom(z, anchorClientX, anchorClientY){
   const ratio = gameZoom/oldZoom;
   // Wrapping axis: no scroll position to adjust — move the camera so the map point under the
   // anchor stays put instead (the canvas sits flush with the wrap's edge on that axis).
-  if(mapIsWrapping()){
+  if(wrapTiled()){
     const canvasRect = $('gameCanvas').getBoundingClientRect();
     const oldScale = renderView.scale, newScale = oldScale*ratio;
     const cxA = (anchorClientX!=null ? anchorClientX : wrapRect.left+ax) - canvasRect.left;
@@ -786,9 +798,10 @@ function drawGameCanvas(){
   // tiled across it and panned via wrapView), on the other axis it spans the same total extent
   // the margins used to, with the map drawn offset by what the leading margin was. So the map's
   // repeats and the globe's curved edges (drawGlobeComposite) can reach every edge of the screen.
-  const wrapping = mapIsWrapping();
-  const viewW = mapData.wrapX ? Math.max(1, wrap.clientWidth) : (wrapping ? marginLeftPx+cssW+marginRightPx : cssW);
-  const viewH = mapData.wrapY ? Math.max(1, wrap.clientHeight) : (wrapping ? marginTopPx+cssH+marginBottomPx : cssH);
+  const wrapping = wrapTiled();
+  const tileX = wrapping && mapData.wrapX, tileY = wrapping && mapData.wrapY;
+  const viewW = tileX ? Math.max(1, wrap.clientWidth) : (wrapping ? marginLeftPx+cssW+marginRightPx : cssW);
+  const viewH = tileY ? Math.max(1, wrap.clientHeight) : (wrapping ? marginTopPx+cssH+marginBottomPx : cssH);
   canvas.width = Math.round(viewW*dpr);
   canvas.height = Math.round(viewH*dpr);
   canvas.style.width = viewW+'px';
@@ -799,19 +812,19 @@ function drawGameCanvas(){
   canvas.style.marginBottom = (wrapping ? 0 : marginBottomPx)+'px';
   // A wrapping map pans with the camera instead of native scrolling, so it takes over touch
   // panning too (see the pan wiring in 08-wiring.js).
-  wrap.classList.toggle('wrap-pan', mapIsWrapping());
+  wrap.classList.toggle('wrap-pan', wrapping);
   // First frame of a (new) wrapping map: start the camera where the old centered layout put the
   // map's origin, so the opening view looks the same as before — just continuing past the edges.
-  if(wrapView.map!==mapData){
-    wrapView.map = mapData;
-    wrapView.x = mapData.wrapX ? mod(-marginLeftPx/displayScale, nativeW) : 0;
-    wrapView.y = mapData.wrapY ? mod(-marginTopPx/displayScale, nativeH) : 0;
+  if(wrapView.map!==mapData || wrapView.tiled!==wrapping){
+    wrapView.map = mapData; wrapView.tiled = wrapping;
+    wrapView.x = tileX ? mod(-marginLeftPx/displayScale, nativeW) : 0;
+    wrapView.y = tileY ? mod(-marginTopPx/displayScale, nativeH) : 0;
   }
   // Globe edges: on a wrapping map the scene is drawn into an off-screen buffer that's longer than
   // the screen along the wrap axis, then pasted back through the globe warp at the end of this
   // function (see makeGlobeWarp()/drawGlobeComposite()). In the flat middle, buffer position =
   // screen position + bufShift along that axis; the other axis is 1:1.
-  const globe = wrapping ? (mapData.wrapX ? makeGlobeWarp('x', marginLeftPx, cssW, viewW) : makeGlobeWarp('y', marginTopPx, cssH, viewH)) : null;
+  const globe = wrapping ? (tileX ? makeGlobeWarp('x', marginLeftPx, cssW, viewW) : makeGlobeWarp('y', marginTopPx, cssH, viewH)) : null;
   const bufShift = globe ? globe.LsL-globe.a : 0;
   const warpW = globe && globe.axis==='x' ? globe.srcLen : viewW; // total length of the warp coordinate space
   const warpH = globe && globe.axis==='y' ? globe.srcLen : viewH;
@@ -819,8 +832,8 @@ function drawGameCanvas(){
     scale: displayScale,
     // map-native coordinate at the drawing surface's left/top edge (the buffer's, on a wrapping
     // map; negative = map starts that far in)
-    originX: mapData.wrapX ? mod(wrapView.x - bufShift/displayScale, nativeW) : (wrapping ? -marginLeftPx/displayScale : 0),
-    originY: mapData.wrapY ? mod(wrapView.y - bufShift/displayScale, nativeH) : (wrapping ? -marginTopPx/displayScale : 0),
+    originX: tileX ? mod(wrapView.x - bufShift/displayScale, nativeW) : (wrapping ? -marginLeftPx/displayScale : 0),
+    originY: tileY ? mod(wrapView.y - bufShift/displayScale, nativeH) : (wrapping ? -marginTopPx/displayScale : 0),
     canvasW: warpW/displayScale, canvasH: warpH/displayScale,
     // The "main" window — exactly one map's worth, where the map sat before wrapping existed —
     // in screen CSS px; flat, with the globe's curved edges outside it.
@@ -963,6 +976,8 @@ function drawGameCanvas(){
     });
   }
   ctx.restore();
+  // Single fixed copy of a wrapping map: mark the stretches of edge that join each other.
+  if(!wrapping && mapIsWrapping()) drawWrapSeams(ctx, mapData, reducedMotion ? 0 : now);
   };
   // selection highlight — a slow pulsing glow instead of a static line, so the currently
   // selected territory/territories stay noticeable at a glance instead of blending into the
@@ -984,6 +999,14 @@ function drawGameCanvas(){
     const to = mapData.territories[game.selectedTo].centroid, sh = wrapShift(selFromPos, to);
     return {x:to.x+sh.x, y:to.y+sh.y};
   })();
+  // The arrow/line as drawable segments: one, or — across the seam on a single fixed copy of the
+  // map (wrapDisplay 'seam') — two halves, the second arriving through the opposite edge. The
+  // canvas clips each half at its own edge; the tiled view gets the other half from the next tile.
+  const flowSegs = !selToPos ? [] : [[selFromPos, selToPos]];
+  if(selToPos && !wrapping && game.selectedTo!=null){
+    const to = mapData.territories[game.selectedTo].centroid;
+    if(to.x!==selToPos.x || to.y!==selToPos.y) flowSegs.push([{x:selFromPos.x-(selToPos.x-to.x), y:selFromPos.y-(selToPos.y-to.y)}, to]);
+  }
   // Expired particles dropped once per frame, before the per-tile drawing below.
   captureParticles = captureParticles.filter(pt=> now-pt.start<PARTICLE_MS);
   const drawOverlay = ()=>{
@@ -998,10 +1021,10 @@ function drawGameCanvas(){
       ctx.restore();
     }
   });
-  if(showArrow) drawFlowLine(ctx, selFromPos, selToPos, now, {rainbow:true, cycleMs:1350, gap:16});
+  if(showArrow) flowSegs.forEach(([a,b])=> drawFlowLine(ctx, a, b, now, {rainbow:true, cycleMs:1350, gap:16}));
   // Fortify-phase indicator: same idea, styled as a white dashed line instead of a solid
   // rainbow arrow so the two phases don't look like the same action.
-  if(showFortifyLine && selToPos) drawFlowLine(ctx, selFromPos, selToPos, now, {color:'rgba(255,255,255,0.85)', dashed:true, cycleMs:1350, gap:16});
+  if(showFortifyLine && selToPos) flowSegs.forEach(([a,b])=> drawFlowLine(ctx, a, b, now, {color:'rgba(255,255,255,0.85)', dashed:true, cycleMs:1350, gap:16}));
   // army badges — selectedFrom (and selectedTo, if it's actually a legal attack target) pulse
   // bigger while chosen; skip fromId/toId here entirely while attackAnim owns them (drawn
   // specially further down instead).
@@ -1070,8 +1093,8 @@ function drawGameCanvas(){
     ctx.fillStyle = OCEAN_COLOR;
     ctx.fillRect(0, 0, ew, eh);
     const xs = [], ys = [];
-    if(mapData.wrapX){ for(let x=-mod(ox,nativeW); x<ew; x+=nativeW) xs.push(x); } else xs.push(-ox);
-    if(mapData.wrapY){ for(let y=-mod(oy,nativeH); y<eh; y+=nativeH) ys.push(y); } else ys.push(-oy);
+    if(tileX){ for(let x=-mod(ox,nativeW); x<ew; x+=nativeW) xs.push(x); } else xs.push(-ox);
+    if(tileY){ for(let y=-mod(oy,nativeH); y<eh; y+=nativeH) ys.push(y); } else ys.push(-oy);
     [drawBase, drawOverlay].forEach(layer=> ys.forEach(ty=> xs.forEach(tx=>{
       vis = {x0:-tx, y0:-ty, x1:-tx+ew, y1:-ty+eh};
       ctx.save(); ctx.translate(tx, ty); layer(); ctx.restore();
@@ -1637,7 +1660,7 @@ function renderGame(){
 // Shared by the click handler below and the setup-place press-and-hold wiring (08-wiring.js).
 function getTerritoryFromCanvasEvent(canvas, evt){
   const rect = canvas.getBoundingClientRect();
-  if(mapIsWrapping()){
+  if(wrapTiled()){
     const cs = mapData.cellSize;
     let ox = evt.clientX-rect.left, oy = evt.clientY-rect.top; // screen CSS px
     const g = renderView.globe;
