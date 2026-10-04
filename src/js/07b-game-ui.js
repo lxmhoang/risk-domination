@@ -5,6 +5,15 @@
    file because it is part of the core (see 00-core-utils.js), which also runs on the server.
    ========================================================================= */
 
+// Every move the player makes goes through here as an action (see 04b-actions.js for the list).
+// onResult gets {ok, result} or {ok:false, error}. In an offline game it is applied by the core
+// right here, and onResult runs before dispatch() returns.
+function dispatch(action, onResult){
+  const res = applyAction(currentPlayerId(), action);
+  if(onResult) onResult(res);
+  return res;
+}
+
 // "Chơi lại" (game-over screen): rebuilds the exact starting position captured by
 // beginReinforcePhase() — same map (mapData is untouched since game-over), same players/
 // difficulty/settings, same territory-owner/army layout — then plays out fresh from there.
@@ -73,9 +82,9 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
   slider.style.flex='1';
   const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
-  // Applied LIVE (not just previewed) on every drag — appliedExtra tracks how much of the
-  // transfer is already reflected in game.armies, so each new slider position only moves the
-  // DELTA from there instead of re-applying the whole amount. The map badges are seeded into
+  // Previewed LIVE on the map on every drag — appliedExtra tracks how much of the transfer is
+  // currently shown in game.armies, so each new slider position only moves the DELTA from there.
+  // It is only a preview: confirming takes it back out and sends the real move as an action. The map badges are seeded into
   // lastDrawnArmies before renderGame() so they jump straight to the new value instead of
   // kicking off the usual ~350ms count-up/down tween on every single drag tick, which would
   // otherwise lag visibly behind wherever the slider actually is.
@@ -102,10 +111,17 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
   const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
-  // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
-  // closes the modal, nothing left to actually move.
   const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
-  confirmBtn.addEventListener('click', ()=>{ close(); renderGame(); });
+  confirmBtn.addEventListener('click', ()=>{
+    const extra = appliedExtra;
+    game.armies[fromId] += extra; game.armies[toId] -= extra; // undo the preview
+    close();
+    dispatch({type:'moveAfterCapture', count:extra}, ()=>{
+      lastDrawnArmies[fromId] = game.armies[fromId];
+      lastDrawnArmies[toId] = game.armies[toId];
+      renderGame();
+    });
+  });
   btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
   modal.appendChild(btnRow);
 

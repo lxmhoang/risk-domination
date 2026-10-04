@@ -42,7 +42,7 @@ if (jsFiles.length === 0) {
 // The rules, AI and map model: the part of the game that also runs on the server. It must not
 // depend on the browser, so the build stops if a core file mentions a browser global or a
 // function/variable that only a UI file declares (the `host` hooks are the one way out).
-const CORE_FILES = ['00-core-utils.js', '02-map-model.js', '04-game-state.js', '05-ai.js'];
+const CORE_FILES = ['00-core-utils.js', '02-map-model.js', '04-game-state.js', '04b-actions.js', '05-ai.js'];
 const BROWSER_GLOBALS = ['document', 'window', 'localStorage', 'navigator', 'requestAnimationFrame',
   'alert', 'confirm', 'Blob', 'URL', 'performance'];
 const TOP_LEVEL_DECL = /^(?:async\s+)?function\s+(\w+)|^(let|const|var)\s+(\w+)/gm;
@@ -110,6 +110,10 @@ const script = [configScript].concat(jsFiles.map(f => {
   const content = read(path.join(JS_DIR, f)).replace(/\s+$/, '');
   return `/* ---- src/js/${f} ---- */\n${content}`;
 })).join('\n\n');
+
+// A syntax error in any module would otherwise only show up as a dead page in the browser.
+try { new (require('vm').Script)('(function(){"use strict";\n' + script + '\n})', { filename: 'bundle.js' }); }
+catch (e) { console.error('Syntax error in the bundled script: ' + e.message + '\n' + String(e.stack).split('\n').slice(0, 4).join('\n')); process.exit(1); }
 
 let out = shell
   .replace('__STYLE__', () => style.replace(/\s+$/, ''))

@@ -1240,74 +1240,37 @@ function setActionHint(text){ $('actionHint').textContent = text; }
 function canAttackNow(p){
   return game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id);
 }
-function doSingleAttack(){
+function doSingleAttack(){ humanAttack(false); }
+// Keeps attacking the same target back-to-back until the source runs dry or the target is
+// captured (the rounds themselves are fought in the core — performAttack(), 04b-actions.js).
+function allOutAttack(){ humanAttack(true); }
+function humanAttack(allOut){
   const p = currentPlayer();
   if(!canAttackNow(p)) return;
   const fromId = game.selectedFrom, toId = game.selectedTo;
-  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderId = game.owner[toId];
-  const defenderName = game.players[defenderId].name;
-  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
-  const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
-  const res = doBattle(fromId, toId);
-  recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
-  const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
-  // Captured: hop the "attack from" selection onto the territory you just took, so the next
-  // click only needs to pick a new target instead of re-selecting a source every time you push
-  // forward. Otherwise, same as before — drop the selection once the source can't attack again.
-  if(res.captured){ game.selectedFrom=toId; game.selectedTo=null; }
-  else if(fromCountAfter<2){ game.selectedFrom=null; }
-  startAttackAnim({
-    fromId, toId, attLoss:res.attLoss, defLoss:res.defLoss, captured:res.captured,
-    fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
-  }, ()=>{
-    // A kill that pushes the hand to 5+ cards takes priority over the optional "move extra
-    // troops in" dialog below — the guaranteed minimum already moved via doBattle(), so skipping
-    // the optional split is a fine tradeoff for forcing the trade down immediately instead of
-    // waiting for the player to eventually click "Kết thúc tấn công".
-    if(!game.over && currentPlayer().cards.length>=5){ forceCardTradeBounce(); return; }
-    if(res.captured && res.maxMovable>res.moving) showCaptureMoveModal(fromId, toId, res.moving, res.maxMovable);
-  });
-  renderGame();
-}
-// Keeps attacking the same target back-to-back (same silent-round-then-summarize approach as
-// the AI's battleBatch() in 05-ai.js) until the source runs dry or the target is captured.
-function allOutAttack(){
-  const p = currentPlayer();
-  if(!canAttackNow(p)) return;
-  const fromId = game.selectedFrom, toId = game.selectedTo;
-  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderId = game.owner[toId];
-  const defenderName = game.players[defenderId].name;
-  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
-  const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
-  let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
-  while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
-    lastRes = doBattle(fromId, toId, {silent:true});
-    rounds++; attLossTotal += lastRes.attLoss; defLossTotal += lastRes.defLoss;
-    if(lastRes.captured){ captured=true; break; }
-  }
-  if(rounds>0){
-    const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
-    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`, [p.id, defenderId]);
-    if(lastRes) showDice(lastRes.ad, lastRes.dd, lastRes.results);
-    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [p.id, defenderId]);
-    recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
-  }
-  const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
-  // Same source-follows-capture behavior as doSingleAttack() above.
-  if(captured){ game.selectedFrom=toId; game.selectedTo=null; }
-  else if(fromCountAfter<2){ game.selectedFrom=null; }
-  if(rounds>0){
+  const attackerColor = p.color, defenderColor = game.players[game.owner[toId]].color;
+  dispatch({type:'attack', from:fromId, to:toId, allOut}, res=>{
+    if(!res.ok) return;
+    const r = res.result;
+    // Captured: hop the "attack from" selection onto the territory you just took, so the next
+    // click only needs to pick a new target instead of re-selecting a source every time you push
+    // forward. Otherwise, same as before — drop the selection once the source can't attack again.
+    if(r.captured){ game.selectedFrom=toId; game.selectedTo=null; }
+    else if(r.fromCountAfter<2){ game.selectedFrom=null; }
     startAttackAnim({
-      fromId, toId, attLoss:attLossTotal, defLoss:defLossTotal, captured,
-      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
+      fromId, toId, attLoss:r.attLoss, defLoss:r.defLoss, captured:r.captured,
+      fromCountBefore:r.fromCountBefore, toCountBefore:r.toCountBefore,
+      fromCountAfter:r.fromCountAfter, toCountAfter:r.toCountAfter, attackerColor, defenderColor,
     }, ()=>{
-      if(!game.over && currentPlayer().cards.length>=5){ forceCardTradeBounce(); return; }
-      if(captured && lastRes.maxMovable>lastRes.moving) showCaptureMoveModal(fromId, toId, lastRes.moving, lastRes.maxMovable);
+      // A kill that pushes the hand to 5+ cards takes priority over the optional "move extra
+      // troops in" dialog below — the guaranteed minimum already moved, so skipping the optional
+      // split is a fine tradeoff for forcing the trade down immediately instead of waiting for
+      // the player to eventually click "Kết thúc tấn công".
+      if(r.mustTrade && !game.over){ showForcedCardTrade(); return; }
+      if(r.extraMax>0) showCaptureMoveModal(fromId, toId, r.moved, r.moved+r.extraMax);
     });
-  }
-  renderGame();
+    renderGame();
+  });
 }
 // Shared by the fortify-phase button and its keyboard shortcut (08-wiring.js).
 function canFortifyNow(p){
@@ -1432,17 +1395,15 @@ function positionFloatingFortifyButton(){
 // keep fighting with the new troops before choosing to end attack again for real. Called right
 // after whichever kill pushed the hand to 5+ (see doSingleAttack()/allOutAttack()) — not held
 // off until the player next clicks "Kết thúc tấn công".
-function forceCardTradeBounce(){
-  game.phase='reinforce';
-  game.reinforceRemaining=0;
+// The core has already put the game in its "trade first" state (bounceToForcedTrade(),
+// 04b-actions.js) — this is just the dialog and hint for it.
+function showForcedCardTrade(){
   renderGame();
   openCardsModal(true);
   setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
 }
 function endAttackPhase(){
-  const p = currentPlayer();
-  if(p.cards.length>=5){ forceCardTradeBounce(); return; }
-  beginFortifyPhase();
+  dispatch({type:'endAttack'}, res=>{ if(res.ok && res.result.mustTrade) showForcedCardTrade(); });
 }
 
 // Phase-specific chrome: the end-of-phase button (#btnPhaseEnd, in the bottom bar), the
@@ -1452,13 +1413,14 @@ function endAttackPhase(){
 // setActionHint() call sites).
 // "Kết thúc tấn công" is shown immediately on entering attack, but stays disabled (dimmed, inert
 // — same :disabled treatment as the reinforce phase's readout below) for this long first (see
-// beginAttackPhase()'s attackPhaseEnteredAt) — gives a beat to actually look at the board before
+// beginAttackPhase()'s attackPhaseEntries, attackPhaseSeen below) — gives a beat to actually look at the board before
 // the exit is actionable, in both orientations, without the button itself popping in/out of
 // existence. Re-render is scheduled once per wait (not every renderPhaseActions() call) so it
 // doesn't stack a pile of redundant timers while the player clicks around mid-wait.
 const ATTACK_END_BUTTON_DELAY_MS = 3000;
 let attackEndRevealTimer = null;
 
+let attackPhaseSeen = {key:null, at:0}; // when this browser first saw the current attack phase
 function renderPhaseActions(){
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
@@ -1484,7 +1446,10 @@ function renderPhaseActions(){
   }
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
-    const elapsed = Date.now()-(game.attackPhaseEnteredAt||0);
+    // A fresh entry into the attack phase (the core counts them) restarts the wait.
+    const entryKey = (game.seed||'')+':'+(game.attackPhaseEntries||0);
+    if(attackPhaseSeen.key!==entryKey) attackPhaseSeen = {key:entryKey, at:Date.now()};
+    const elapsed = Date.now()-attackPhaseSeen.at;
     const ready = elapsed>=ATTACK_END_BUTTON_DELAY_MS;
     endBtn.hidden = false;
     endBtn.disabled = !ready;
@@ -1506,7 +1471,7 @@ function renderPhaseActions(){
     endBtn.hidden = false;
     endBtn.className = 'phase-end-fortify';
     endBtn.textContent = withShortcut('Kết thúc lượt','V'); endBtn.title='Phím tắt: V';
-    endBtn.onclick = ()=> endTurn();
+    endBtn.onclick = ()=> dispatch({type:'endTurn'});
   }
 }
 
@@ -1560,11 +1525,11 @@ function openFortifyModal(fromId, toId){
   const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
   confirmBtn.addEventListener('click', ()=>{
     const n = Number(slider.value);
-    game.armies[fromId] -= n; game.armies[toId] += n;
-    logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.', p.id);
     close();
-    game.selectedFrom=null; game.selectedTo=null;
-    renderGame();
+    dispatch({type:'fortify', from:fromId, to:toId, count:n}, res=>{
+      if(res.ok){ game.selectedFrom=null; game.selectedTo=null; }
+      renderGame();
+    });
   });
   btnRow.appendChild(cancelBtn); btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
   modal.appendChild(btnRow);

@@ -3493,11 +3493,10 @@ function placeReinforcement(terrId){
 function beginAttackPhase(){
   game.phase='attack';
   game.selectedFrom=null; game.selectedTo=null;
-  // "Kết thúc tấn công" only reveals itself ATTACK_END_BUTTON_DELAY_MS after landing here (see
-  // renderPhaseActions() in 06-render-game.js) — a fresh timestamp every time this phase is
-  // (re-)entered, including the forced-card-trade bounce-back in endAttackPhase() that returns
-  // here, so that always gets its own full wait too.
-  game.attackPhaseEnteredAt = Date.now();
+  // Counts entries into this phase (including the forced-card-trade bounce back into it), so
+  // the browser can tell a fresh entry apart and restart its "Kết thúc tấn công" delay — see
+  // renderPhaseActions() in 06-render-game.js.
+  game.attackPhaseEntries = (game.attackPhaseEntries||0)+1;
   host.renderGame();
   host.setActionHint('Chọn lãnh thổ của bạn (≥2 quân) rồi lãnh thổ địch liền kề để tấn công.');
 }
@@ -3634,6 +3633,167 @@ function endTurn(){
   } while(!isAlive(currentPlayerId()));
   if(game.over) return;
   startReinforce();
+}
+
+/* ---- src/js/04b-actions.js ---- */
+/* =========================================================================
+   PLAYER ACTIONS (core)
+   ---------------------------------------------------------------------
+   The one way a human player changes a game: applyAction(pid, action). It
+   checks the move against the rules — whose turn, which phase, who owns what,
+   how many armies — and only then carries it out with the functions in
+   04-game-state.js. The browser calls it for every click (dispatch() in
+   07b-game-ui.js); the server calls it for every request, so nothing a client
+   sends is trusted beyond "this player asks to do this".
+
+   Actions:
+     {type:'place', terrId}                 one army: initial placement or reinforcement
+     {type:'trade', cards:[i,j,k]}          trade in three cards (positions in the hand)
+     {type:'attack', from, to, allOut}      one dice round, or keep rolling until it ends
+     {type:'moveAfterCapture', count}       extra armies into the territory just captured
+     {type:'endAttack'}
+     {type:'fortify', from, to, count}
+     {type:'endTurn'}
+
+   Returns {ok:true, result} or {ok:false, error:<code>}.
+   ========================================================================= */
+
+// A hand this big has to be traded down before doing anything else.
+const FORCED_TRADE_HAND = 5;
+
+function isTerritoryId(id){ return Number.isInteger(id) && !!mapData.territories[id]; }
+
+// Back to the reinforce phase with nothing to place, so the only way forward is trading cards
+// (which hands out armies to place, which leads back into the attack phase).
+function bounceToForcedTrade(){
+  game.phase = 'reinforce';
+  game.reinforceRemaining = 0;
+  game.pendingCapture = null;
+}
+
+// One human attack: a single dice round, or (allOut) round after round until the target falls
+// or the source can't attack any more. Assumes the attack is legal.
+function performAttack(p, fromId, toId, allOut){
+  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
+  const defenderId = game.owner[toId];
+  const defenderName = game.players[defenderId].name;
+  const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
+  let rounds = 0, attLoss = 0, defLoss = 0, captured = false, lastRes = null;
+  if(allOut){
+    // silent rounds, then one summary — same as the AI's battleBatch() in 05-ai.js
+    while(game.armies[fromId]>=2 && canAttack(fromId, toId, p.id)){
+      lastRes = doBattle(fromId, toId, {silent:true});
+      rounds++; attLoss += lastRes.attLoss; defLoss += lastRes.defLoss;
+      if(lastRes.captured){ captured = true; break; }
+    }
+    const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
+    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLoss}, đối phương mất ${defLoss}.`, [p.id, defenderId]);
+    host.showDice(lastRes.ad, lastRes.dd, lastRes.results);
+    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [p.id, defenderId]);
+  } else {
+    lastRes = doBattle(fromId, toId);
+    rounds = 1; attLoss = lastRes.attLoss; defLoss = lastRes.defLoss; captured = lastRes.captured;
+  }
+  recordBattleStat(p.name, defenderName, fromName, toName, attLoss+defLoss);
+  // Captured with armies to spare: the player may send more in (moveAfterCapture) until their
+  // next action. The rule's minimum has already moved (see doBattle()).
+  const extraMax = captured ? lastRes.maxMovable-lastRes.moving : 0;
+  game.pendingCapture = extraMax>0 ? {from:fromId, to:toId} : null;
+  // Eliminating someone hands over their cards — a hand of 5+ has to be traded down right away.
+  const mustTrade = !game.over && p.cards.length>=FORCED_TRADE_HAND;
+  if(mustTrade) bounceToForcedTrade();
+  return {
+    fromId, toId, defenderId, rounds, attLoss, defLoss, captured,
+    fromCountBefore, toCountBefore, fromCountAfter: game.armies[fromId], toCountAfter: game.armies[toId],
+    moved: captured ? lastRes.moving : 0, extraMax: mustTrade ? 0 : extraMax, mustTrade, over: game.over,
+  };
+}
+
+function applyAction(pid, action){
+  const res = runAction(pid, action);
+  // The chance to send more armies into a captured territory lapses with the next move made
+  // (a refused action changes nothing at all, this included).
+  if(res.ok && action.type!=='attack' && action.type!=='moveAfterCapture' && game.pendingCapture) game.pendingCapture = null;
+  return res;
+}
+function runAction(pid, action){
+  const fail = error=> ({ok:false, error});
+  if(!game || game.over) return fail('game_over');
+  if(!action || typeof action.type!=='string') return fail('bad_action');
+  if(currentPlayerId()!==pid) return fail('not_your_turn');
+  const p = game.players[pid];
+  if(!p || !p.isHuman || !p.alive) return fail('not_your_turn');
+
+  switch(action.type){
+    case 'place': {
+      const terrId = action.terrId;
+      if(!isTerritoryId(terrId) || game.owner[terrId]!==pid) return fail('not_your_territory');
+      if(game.phase==='setup-place'){
+        if(game.pool[pid]<=0) return fail('nothing_to_place');
+        attemptSetupPlacement(terrId);
+        return {ok:true, result:{}};
+      }
+      if(game.phase!=='reinforce') return fail('wrong_phase');
+      if(p.cards.length>=FORCED_TRADE_HAND) return fail('must_trade_first');
+      if(game.reinforceRemaining<=0) return fail('nothing_to_place');
+      placeReinforcement(terrId);
+      return {ok:true, result:{}};
+    }
+    case 'trade': {
+      if(game.phase!=='reinforce') return fail('wrong_phase');
+      const idx = action.cards;
+      if(!Array.isArray(idx) || idx.length!==3 || new Set(idx).size!==3 ||
+         !idx.every(i=> Number.isInteger(i) && i>=0 && i<p.cards.length)) return fail('bad_cards');
+      const kinds = new Set(idx.map(i=>p.cards[i])).size;
+      if(kinds!==1 && kinds!==3) return fail('bad_cards');
+      const before = game.reinforceRemaining;
+      tradeCards(p, idx);
+      return {ok:true, result:{armies: game.reinforceRemaining-before, mustTrade: p.cards.length>=FORCED_TRADE_HAND}};
+    }
+    case 'attack': {
+      if(game.phase!=='attack') return fail('wrong_phase');
+      const {from, to} = action;
+      if(!isTerritoryId(from) || !isTerritoryId(to) || !canAttack(from, to, pid)) return fail('illegal_attack');
+      return {ok:true, result: performAttack(p, from, to, !!action.allOut)};
+    }
+    case 'moveAfterCapture': {
+      const pc = game.pendingCapture;
+      if(game.phase!=='attack' || !pc) return fail('nothing_to_move');
+      const count = action.count;
+      if(!Number.isInteger(count) || count<0 || count>game.armies[pc.from]-1) return fail('bad_count');
+      game.armies[pc.from] -= count; game.armies[pc.to] += count;
+      game.pendingCapture = null;
+      host.renderGame();
+      return {ok:true, result:{from:pc.from, to:pc.to, count}};
+    }
+    case 'endAttack': {
+      if(game.phase!=='attack') return fail('wrong_phase');
+      if(p.cards.length>=FORCED_TRADE_HAND){
+        bounceToForcedTrade();
+        host.renderGame();
+        return {ok:true, result:{mustTrade:true}};
+      }
+      beginFortifyPhase();
+      return {ok:true, result:{mustTrade:false}};
+    }
+    case 'fortify': {
+      if(game.phase!=='fortify') return fail('wrong_phase');
+      const {from, to, count} = action;
+      if(!isTerritoryId(from) || !isTerritoryId(to) || from===to ||
+         game.owner[from]!==pid || game.owner[to]!==pid || !pathExistsOwned(from, to, pid)) return fail('illegal_fortify');
+      if(!Number.isInteger(count) || count<1 || count>game.armies[from]-1) return fail('bad_count');
+      game.armies[from] -= count; game.armies[to] += count;
+      logMsg('info', p.name+' chuyển '+count+' quân từ '+mapData.territories[from].name+' sang '+mapData.territories[to].name+'.', pid);
+      host.renderGame();
+      return {ok:true, result:{from, to, count}};
+    }
+    case 'endTurn': {
+      if(game.phase!=='fortify') return fail('wrong_phase');
+      endTurn();
+      return {ok:true, result:{}};
+    }
+  }
+  return fail('bad_action');
 }
 
 /* ---- src/js/05-ai.js ---- */
@@ -5471,74 +5631,37 @@ function setActionHint(text){ $('actionHint').textContent = text; }
 function canAttackNow(p){
   return game.selectedFrom!=null && game.selectedTo!=null && canAttack(game.selectedFrom,game.selectedTo,p.id);
 }
-function doSingleAttack(){
+function doSingleAttack(){ humanAttack(false); }
+// Keeps attacking the same target back-to-back until the source runs dry or the target is
+// captured (the rounds themselves are fought in the core — performAttack(), 04b-actions.js).
+function allOutAttack(){ humanAttack(true); }
+function humanAttack(allOut){
   const p = currentPlayer();
   if(!canAttackNow(p)) return;
   const fromId = game.selectedFrom, toId = game.selectedTo;
-  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderId = game.owner[toId];
-  const defenderName = game.players[defenderId].name;
-  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
-  const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
-  const res = doBattle(fromId, toId);
-  recordBattleStat(p.name, defenderName, fromName, toName, res.attLoss+res.defLoss);
-  const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
-  // Captured: hop the "attack from" selection onto the territory you just took, so the next
-  // click only needs to pick a new target instead of re-selecting a source every time you push
-  // forward. Otherwise, same as before — drop the selection once the source can't attack again.
-  if(res.captured){ game.selectedFrom=toId; game.selectedTo=null; }
-  else if(fromCountAfter<2){ game.selectedFrom=null; }
-  startAttackAnim({
-    fromId, toId, attLoss:res.attLoss, defLoss:res.defLoss, captured:res.captured,
-    fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
-  }, ()=>{
-    // A kill that pushes the hand to 5+ cards takes priority over the optional "move extra
-    // troops in" dialog below — the guaranteed minimum already moved via doBattle(), so skipping
-    // the optional split is a fine tradeoff for forcing the trade down immediately instead of
-    // waiting for the player to eventually click "Kết thúc tấn công".
-    if(!game.over && currentPlayer().cards.length>=5){ forceCardTradeBounce(); return; }
-    if(res.captured && res.maxMovable>res.moving) showCaptureMoveModal(fromId, toId, res.moving, res.maxMovable);
-  });
-  renderGame();
-}
-// Keeps attacking the same target back-to-back (same silent-round-then-summarize approach as
-// the AI's battleBatch() in 05-ai.js) until the source runs dry or the target is captured.
-function allOutAttack(){
-  const p = currentPlayer();
-  if(!canAttackNow(p)) return;
-  const fromId = game.selectedFrom, toId = game.selectedTo;
-  const fromName = mapData.territories[fromId].name, toName = mapData.territories[toId].name;
-  const defenderId = game.owner[toId];
-  const defenderName = game.players[defenderId].name;
-  const attackerColor = p.color, defenderColor = game.players[defenderId].color;
-  const fromCountBefore = game.armies[fromId], toCountBefore = game.armies[toId];
-  let rounds=0, attLossTotal=0, defLossTotal=0, captured=false, lastRes=null;
-  while(game.armies[fromId]>=2 && canAttack(fromId,toId,p.id)){
-    lastRes = doBattle(fromId, toId, {silent:true});
-    rounds++; attLossTotal += lastRes.attLoss; defLossTotal += lastRes.defLoss;
-    if(lastRes.captured){ captured=true; break; }
-  }
-  if(rounds>0){
-    const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
-    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLossTotal}, đối phương mất ${defLossTotal}.`, [p.id, defenderId]);
-    if(lastRes) showDice(lastRes.ad, lastRes.dd, lastRes.results);
-    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [p.id, defenderId]);
-    recordBattleStat(p.name, defenderName, fromName, toName, attLossTotal+defLossTotal);
-  }
-  const fromCountAfter = game.armies[fromId], toCountAfter = game.armies[toId];
-  // Same source-follows-capture behavior as doSingleAttack() above.
-  if(captured){ game.selectedFrom=toId; game.selectedTo=null; }
-  else if(fromCountAfter<2){ game.selectedFrom=null; }
-  if(rounds>0){
+  const attackerColor = p.color, defenderColor = game.players[game.owner[toId]].color;
+  dispatch({type:'attack', from:fromId, to:toId, allOut}, res=>{
+    if(!res.ok) return;
+    const r = res.result;
+    // Captured: hop the "attack from" selection onto the territory you just took, so the next
+    // click only needs to pick a new target instead of re-selecting a source every time you push
+    // forward. Otherwise, same as before — drop the selection once the source can't attack again.
+    if(r.captured){ game.selectedFrom=toId; game.selectedTo=null; }
+    else if(r.fromCountAfter<2){ game.selectedFrom=null; }
     startAttackAnim({
-      fromId, toId, attLoss:attLossTotal, defLoss:defLossTotal, captured,
-      fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
+      fromId, toId, attLoss:r.attLoss, defLoss:r.defLoss, captured:r.captured,
+      fromCountBefore:r.fromCountBefore, toCountBefore:r.toCountBefore,
+      fromCountAfter:r.fromCountAfter, toCountAfter:r.toCountAfter, attackerColor, defenderColor,
     }, ()=>{
-      if(!game.over && currentPlayer().cards.length>=5){ forceCardTradeBounce(); return; }
-      if(captured && lastRes.maxMovable>lastRes.moving) showCaptureMoveModal(fromId, toId, lastRes.moving, lastRes.maxMovable);
+      // A kill that pushes the hand to 5+ cards takes priority over the optional "move extra
+      // troops in" dialog below — the guaranteed minimum already moved, so skipping the optional
+      // split is a fine tradeoff for forcing the trade down immediately instead of waiting for
+      // the player to eventually click "Kết thúc tấn công".
+      if(r.mustTrade && !game.over){ showForcedCardTrade(); return; }
+      if(r.extraMax>0) showCaptureMoveModal(fromId, toId, r.moved, r.moved+r.extraMax);
     });
-  }
-  renderGame();
+    renderGame();
+  });
 }
 // Shared by the fortify-phase button and its keyboard shortcut (08-wiring.js).
 function canFortifyNow(p){
@@ -5663,17 +5786,15 @@ function positionFloatingFortifyButton(){
 // keep fighting with the new troops before choosing to end attack again for real. Called right
 // after whichever kill pushed the hand to 5+ (see doSingleAttack()/allOutAttack()) — not held
 // off until the player next clicks "Kết thúc tấn công".
-function forceCardTradeBounce(){
-  game.phase='reinforce';
-  game.reinforceRemaining=0;
+// The core has already put the game in its "trade first" state (bounceToForcedTrade(),
+// 04b-actions.js) — this is just the dialog and hint for it.
+function showForcedCardTrade(){
   renderGame();
   openCardsModal(true);
   setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
 }
 function endAttackPhase(){
-  const p = currentPlayer();
-  if(p.cards.length>=5){ forceCardTradeBounce(); return; }
-  beginFortifyPhase();
+  dispatch({type:'endAttack'}, res=>{ if(res.ok && res.result.mustTrade) showForcedCardTrade(); });
 }
 
 // Phase-specific chrome: the end-of-phase button (#btnPhaseEnd, in the bottom bar), the
@@ -5683,13 +5804,14 @@ function endAttackPhase(){
 // setActionHint() call sites).
 // "Kết thúc tấn công" is shown immediately on entering attack, but stays disabled (dimmed, inert
 // — same :disabled treatment as the reinforce phase's readout below) for this long first (see
-// beginAttackPhase()'s attackPhaseEnteredAt) — gives a beat to actually look at the board before
+// beginAttackPhase()'s attackPhaseEntries, attackPhaseSeen below) — gives a beat to actually look at the board before
 // the exit is actionable, in both orientations, without the button itself popping in/out of
 // existence. Re-render is scheduled once per wait (not every renderPhaseActions() call) so it
 // doesn't stack a pile of redundant timers while the player clicks around mid-wait.
 const ATTACK_END_BUTTON_DELAY_MS = 3000;
 let attackEndRevealTimer = null;
 
+let attackPhaseSeen = {key:null, at:0}; // when this browser first saw the current attack phase
 function renderPhaseActions(){
   hideFloatingAttackButtons(); // re-shown below only for phase==='attack' with a ready pair
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
@@ -5715,7 +5837,10 @@ function renderPhaseActions(){
   }
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
-    const elapsed = Date.now()-(game.attackPhaseEnteredAt||0);
+    // A fresh entry into the attack phase (the core counts them) restarts the wait.
+    const entryKey = (game.seed||'')+':'+(game.attackPhaseEntries||0);
+    if(attackPhaseSeen.key!==entryKey) attackPhaseSeen = {key:entryKey, at:Date.now()};
+    const elapsed = Date.now()-attackPhaseSeen.at;
     const ready = elapsed>=ATTACK_END_BUTTON_DELAY_MS;
     endBtn.hidden = false;
     endBtn.disabled = !ready;
@@ -5737,7 +5862,7 @@ function renderPhaseActions(){
     endBtn.hidden = false;
     endBtn.className = 'phase-end-fortify';
     endBtn.textContent = withShortcut('Kết thúc lượt','V'); endBtn.title='Phím tắt: V';
-    endBtn.onclick = ()=> endTurn();
+    endBtn.onclick = ()=> dispatch({type:'endTurn'});
   }
 }
 
@@ -5791,11 +5916,11 @@ function openFortifyModal(fromId, toId){
   const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
   confirmBtn.addEventListener('click', ()=>{
     const n = Number(slider.value);
-    game.armies[fromId] -= n; game.armies[toId] += n;
-    logMsg('info', p.name+' chuyển '+n+' quân từ '+fromName+' sang '+toName+'.', p.id);
     close();
-    game.selectedFrom=null; game.selectedTo=null;
-    renderGame();
+    dispatch({type:'fortify', from:fromId, to:toId, count:n}, res=>{
+      if(res.ok){ game.selectedFrom=null; game.selectedTo=null; }
+      renderGame();
+    });
   });
   btnRow.appendChild(cancelBtn); btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
   modal.appendChild(btnRow);
@@ -6026,10 +6151,11 @@ function openCardsModal(forced){
     if(!canTradeThisPhase) return; // hidden, but still reachable via the 'D' shortcut below
     const idxs = comboIfValid();
     if(!idxs){ alert('Phải chọn 3 thẻ cùng loại hoặc 3 loại khác nhau.'); return; }
-    tradeCards(p, idxs);
     close();
-    if(p.cards.length>=5) openCardsModal(true);
-    else renderGame();
+    dispatch({type:'trade', cards:idxs}, ()=>{
+      if(game.players[0].cards.length>=5) openCardsModal(true);
+      else renderGame();
+    });
   });
   btnRow.appendChild(tradeBtn);
   modal.appendChild(btnRow);
@@ -6107,6 +6233,15 @@ function showGameOver(winner){
    file because it is part of the core (see 00-core-utils.js), which also runs on the server.
    ========================================================================= */
 
+// Every move the player makes goes through here as an action (see 04b-actions.js for the list).
+// onResult gets {ok, result} or {ok:false, error}. In an offline game it is applied by the core
+// right here, and onResult runs before dispatch() returns.
+function dispatch(action, onResult){
+  const res = applyAction(currentPlayerId(), action);
+  if(onResult) onResult(res);
+  return res;
+}
+
 // "Chơi lại" (game-over screen): rebuilds the exact starting position captured by
 // beginReinforcePhase() — same map (mapData is untouched since game-over), same players/
 // difficulty/settings, same territory-owner/army layout — then plays out fresh from there.
@@ -6175,9 +6310,9 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
   slider.style.flex='1';
   const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
-  // Applied LIVE (not just previewed) on every drag — appliedExtra tracks how much of the
-  // transfer is already reflected in game.armies, so each new slider position only moves the
-  // DELTA from there instead of re-applying the whole amount. The map badges are seeded into
+  // Previewed LIVE on the map on every drag — appliedExtra tracks how much of the transfer is
+  // currently shown in game.armies, so each new slider position only moves the DELTA from there.
+  // It is only a preview: confirming takes it back out and sends the real move as an action. The map badges are seeded into
   // lastDrawnArmies before renderGame() so they jump straight to the new value instead of
   // kicking off the usual ~350ms count-up/down tween on every single drag tick, which would
   // otherwise lag visibly behind wherever the slider actually is.
@@ -6204,10 +6339,17 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
   quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
   const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','D')); quickMax.title='Phím tắt: D';
   quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
-  // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
-  // closes the modal, nothing left to actually move.
   const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
-  confirmBtn.addEventListener('click', ()=>{ close(); renderGame(); });
+  confirmBtn.addEventListener('click', ()=>{
+    const extra = appliedExtra;
+    game.armies[fromId] += extra; game.armies[toId] -= extra; // undo the preview
+    close();
+    dispatch({type:'moveAfterCapture', count:extra}, ()=>{
+      lastDrawnArmies[fromId] = game.armies[fromId];
+      lastDrawnArmies[toId] = game.armies[toId];
+      renderGame();
+    });
+  });
   btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
   modal.appendChild(btnRow);
 
@@ -6675,9 +6817,8 @@ document.addEventListener('click', (e)=>{
 let setupHoldTimer = null;
 function stopSetupHold(){ clearTimeout(setupHoldTimer); clearInterval(setupHoldTimer); setupHoldTimer=null; }
 function tryHoldPlacement(terrId){
-  if(game.phase==='setup-place') return attemptSetupPlacement(terrId);
-  if(game.phase==='reinforce') return placeReinforcement(terrId);
-  return false;
+  if(game.phase!=='setup-place' && game.phase!=='reinforce') return false;
+  return dispatch({type:'place', terrId}).ok;
 }
 // Placing used to fire immediately on pointerdown, so brushing a territory with a finger/mouse
 // while actually trying to pan or pinch-zoom the map (which also starts with a pointerdown)
@@ -6705,7 +6846,7 @@ function commitPendingPlacement(startRepeat){
     setupHoldTimer = setInterval(()=>{
       if(game.phase==='setup-place'){
         if(!canKeepHoldingSetupPlacement(terrId)){ stopSetupHold(); return; }
-        attemptSetupPlacement(terrId);
+        tryHoldPlacement(terrId);
       } else if(!tryHoldPlacement(terrId)){
         stopSetupHold();
       }
@@ -6973,7 +7114,7 @@ window.addEventListener('keydown', (e)=>{
     else if(key==='v'){ e.preventDefault(); endAttackPhase(); }
   } else if(game.phase==='fortify'){
     if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
-    else if(key==='v'){ e.preventDefault(); endTurn(); }
+    else if(key==='v'){ e.preventDefault(); dispatch({type:'endTurn'}); }
   }
 });
 

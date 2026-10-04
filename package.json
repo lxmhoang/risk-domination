@@ -8,6 +8,7 @@
     "serve:mobile": "node serve-mobile.js",
     "test:ai": "node test/ai-smoke-test.js",
     "test:determinism": "node test/determinism-test.js",
-    "test": "node build.js && node test/ai-smoke-test.js && node test/determinism-test.js"
+    "test": "node build.js && node test/ai-smoke-test.js && node test/determinism-test.js && node test/actions-test.js",
+    "test:actions": "node test/actions-test.js"
   }
 }

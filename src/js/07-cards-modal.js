@@ -56,10 +56,11 @@ function openCardsModal(forced){
     if(!canTradeThisPhase) return; // hidden, but still reachable via the 'D' shortcut below
     const idxs = comboIfValid();
     if(!idxs){ alert('Phải chọn 3 thẻ cùng loại hoặc 3 loại khác nhau.'); return; }
-    tradeCards(p, idxs);
     close();
-    if(p.cards.length>=5) openCardsModal(true);
-    else renderGame();
+    dispatch({type:'trade', cards:idxs}, ()=>{
+      if(game.players[0].cards.length>=5) openCardsModal(true);
+      else renderGame();
+    });
   });
   btnRow.appendChild(tradeBtn);
   modal.appendChild(btnRow);

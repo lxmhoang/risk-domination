@@ -27,6 +27,10 @@ split at the same logical boundaries the code already had.
   territory/continent list rendering, validate/export/import.
 - **04-game-state.js** *(core)* — core game state machine: `initGame`, setup-place phase,
   reinforcement, combat resolution (`doBattle`), fortify, turn/elimination/win logic.
+- **04b-actions.js** *(core)* — `applyAction(pid, action)`: the one validated entry point for
+  everything a player does (place, trade, attack, moveAfterCapture, endAttack, fortify,
+  endTurn). The UI reaches it through `dispatch()` in `07b-game-ui.js`; the server calls it
+  directly.
 - **05-ai.js** *(core)* — AI opponent logic (reinforcement targeting, attack scoring with reserve
   keeping / continent-completion / kill-priority, fortify). Has an inline "design doc"
   comment block explaining the strategy.
@@ -41,7 +45,7 @@ split at the same logical boundaries the code already had.
 ## Core vs UI
 
 The files marked *(core)* — `00-core-utils.js`, `02-map-model.js`, `04-game-state.js`,
-`05-ai.js` (the list is `CORE_FILES` in `build.js`) — are the rules, AI and map model. They
+`04b-actions.js`, `05-ai.js` (the list is `CORE_FILES` in `build.js`) — are the rules, AI and map model. They
 run in the browser **and** in Node: `build.js` also writes them out as `dist/core.js`
 (`require('./dist/core.js')(config, hostHooks)`), which the server and `test/ai-smoke-test.js`
 use. Core files must not touch the DOM, `window`, `localStorage`, or anything a UI file

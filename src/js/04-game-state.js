@@ -265,11 +265,10 @@ function placeReinforcement(terrId){
 function beginAttackPhase(){
   game.phase='attack';
   game.selectedFrom=null; game.selectedTo=null;
-  // "Kết thúc tấn công" only reveals itself ATTACK_END_BUTTON_DELAY_MS after landing here (see
-  // renderPhaseActions() in 06-render-game.js) — a fresh timestamp every time this phase is
-  // (re-)entered, including the forced-card-trade bounce-back in endAttackPhase() that returns
-  // here, so that always gets its own full wait too.
-  game.attackPhaseEnteredAt = Date.now();
+  // Counts entries into this phase (including the forced-card-trade bounce back into it), so
+  // the browser can tell a fresh entry apart and restart its "Kết thúc tấn công" delay — see
+  // renderPhaseActions() in 06-render-game.js.
+  game.attackPhaseEntries = (game.attackPhaseEntries||0)+1;
   host.renderGame();
   host.setActionHint('Chọn lãnh thổ của bạn (≥2 quân) rồi lãnh thổ địch liền kề để tấn công.');
 }

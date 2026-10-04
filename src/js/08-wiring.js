@@ -389,9 +389,8 @@ document.addEventListener('click', (e)=>{
 let setupHoldTimer = null;
 function stopSetupHold(){ clearTimeout(setupHoldTimer); clearInterval(setupHoldTimer); setupHoldTimer=null; }
 function tryHoldPlacement(terrId){
-  if(game.phase==='setup-place') return attemptSetupPlacement(terrId);
-  if(game.phase==='reinforce') return placeReinforcement(terrId);
-  return false;
+  if(game.phase!=='setup-place' && game.phase!=='reinforce') return false;
+  return dispatch({type:'place', terrId}).ok;
 }
 // Placing used to fire immediately on pointerdown, so brushing a territory with a finger/mouse
 // while actually trying to pan or pinch-zoom the map (which also starts with a pointerdown)
@@ -419,7 +418,7 @@ function commitPendingPlacement(startRepeat){
     setupHoldTimer = setInterval(()=>{
       if(game.phase==='setup-place'){
         if(!canKeepHoldingSetupPlacement(terrId)){ stopSetupHold(); return; }
-        attemptSetupPlacement(terrId);
+        tryHoldPlacement(terrId);
       } else if(!tryHoldPlacement(terrId)){
         stopSetupHold();
       }
@@ -687,7 +686,7 @@ window.addEventListener('keydown', (e)=>{
     else if(key==='v'){ e.preventDefault(); endAttackPhase(); }
   } else if(game.phase==='fortify'){
     if(key==='c'){ e.preventDefault(); if(canFortifyNow(p)) openFortifyModal(game.selectedFrom, game.selectedTo); }
-    else if(key==='v'){ e.preventDefault(); endTurn(); }
+    else if(key==='v'){ e.preventDefault(); dispatch({type:'endTurn'}); }
   }
 });
 
