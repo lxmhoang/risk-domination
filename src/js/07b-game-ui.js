@@ -7,8 +7,10 @@
 
 // Every move the player makes goes through here as an action (see 04b-actions.js for the list).
 // onResult gets {ok, result} or {ok:false, error}. In an offline game it is applied by the core
-// right here, and onResult runs before dispatch() returns.
+// right here, and onResult runs before dispatch() returns. In an online game it goes to the
+// server (09-online.js) and onResult runs when the answer has been shown.
 function dispatch(action, onResult){
+  if(isOnlineGame()) return dispatchOnline(action, onResult);
   const res = applyAction(currentPlayerId(), action);
   if(onResult) onResult(res);
   return res;
@@ -169,6 +171,7 @@ function exportGameJSON(){
 
 function importGameJSON(obj){
   if(!obj || !obj.mapData || !obj.game) throw new Error('File không đúng định dạng ván chơi đã lưu.');
+  leaveOnlineGame();
   mapData = mapFromPlainObject(obj.mapData);
   game = obj.game;
   spectatorMode = !!obj.spectatorMode;

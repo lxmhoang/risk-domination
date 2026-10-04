@@ -1426,6 +1426,7 @@ function renderPhaseActions(){
   hideFloatingFortifyButton(); // re-shown below only for phase==='fortify' with a ready pair
   const endBtn = $('btnPhaseEnd');
   endBtn.hidden = true; endBtn.disabled = false; endBtn.onclick = null;
+  $('btnSaveGame').hidden = isOnlineGame(); // an online game lives on the server, nothing to save to a file
   // The cards button always shows/opens the VIEWER's own hand (game.players[0]) — it stays
   // clickable during other players' turns too (only hidden once the game is over, in spectator
   // mode where slot 0 isn't a real human viewer, or simply once there's nothing in hand to show).
@@ -1447,7 +1448,7 @@ function renderPhaseActions(){
   if(game.phase==='attack'){
     if(canAttackNow(p)) showFloatingAttackButtons();
     // A fresh entry into the attack phase (the core counts them) restarts the wait.
-    const entryKey = (game.seed||'')+':'+(game.attackPhaseEntries||0);
+    const entryKey = (game.id||game.seed||'')+':'+(game.attackPhaseEntries||0);
     if(attackPhaseSeen.key!==entryKey) attackPhaseSeen = {key:entryKey, at:Date.now()};
     const elapsed = Date.now()-attackPhaseSeen.at;
     const ready = elapsed>=ATTACK_END_BUTTON_DELAY_MS;

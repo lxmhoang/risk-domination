@@ -42,6 +42,10 @@ split at the same logical boundaries the code already had.
 - **08-wiring.js** — DOM event listeners, screen navigation, app entry point, and the
   `window.__debug` testing hooks.
 
+- **09-online.js** — online games: talks to the game server (`server/`), plays back the events
+  it returns through the same UI functions an offline game uses. `dispatch()` routes here when
+  the game on screen is an online one.
+
 ## Core vs UI
 
 The files marked *(core)* — `00-core-utils.js`, `02-map-model.js`, `04-game-state.js`,

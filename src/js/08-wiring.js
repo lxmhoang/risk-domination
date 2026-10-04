@@ -6,7 +6,7 @@
 Object.assign(host, {
   renderGame, renderCombatLog, setActionHint, showDice, showTurnIntro, openCardsModal,
   showGameOver, startAttackAnim,
-  onGameInit(){ gameZoom = 1; resetRenderAnimState(); },
+  onGameInit(){ leaveOnlineGame(); gameZoom = 1; resetRenderAnimState(); },
 });
 
 // A clicked <button> keeps keyboard focus afterward (standard browser behavior) — left alone,
@@ -25,6 +25,14 @@ $('btnQuickPlay').addEventListener('click', ()=>{
   mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
   mapData._quickPlay = true; // regenerated (not just re-flagged) if the global toggle changes in setup
   goToSetup();
+});
+// Online: same setup screen, but the game (and its map) is made by the server.
+$('btnPlayOnline').addEventListener('click', async ()=>{
+  if(await resumeOnlineGame()) return;
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan(RUNTIME_CONFIG.mapWrapX!==false);
+  mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28); // only to size the setup screen's defaults
+  mapData._quickPlay = true;
+  goToSetup(true);
 });
 $('btnOpenEditor').addEventListener('click', ()=>{
   initEditorMap();
@@ -140,6 +148,8 @@ const AI_NAME_POOL = ['Bạch Khởi','Hàn Tín','Nhạc Phi','Napoleon','Caesa
 let aiNamePool = [];
 
 function renderSetupMapInfo(){
+  $('toggleMapWrap').checked = !!mapData.wrapX;
+  if(setupForOnline){ $('setupMapInfo').textContent = '🌐 Ván online: bản đồ do máy chủ tạo khi bắt đầu.'; return; }
   $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục${mapData.wrapX ? ', global' : ''}.`;
   $('toggleMapWrap').checked = !!mapData.wrapX;
 }
@@ -164,7 +174,11 @@ $('editorMapWrap').addEventListener('change', (e)=>{
   setMapWrap(e.target.checked);
   renderEditorLists(); drawEditorCanvas();
 });
-function goToSetup(){
+function goToSetup(online){
+  setupForOnline = !!online;
+  // watching AIs play each other is an offline-only mode
+  $('toggleSpectatorMode').checked = false;
+  $('toggleSpectatorMode').closest('.setup-row').hidden = setupForOnline;
   renderSetupMapInfo();
   aiNamePool = shuffle(AI_NAME_POOL);
   renderPlayerConfigList();
@@ -341,6 +355,7 @@ $('btnStartGame').addEventListener('click', ()=>{
   const alliance = $('toggleAlliance').checked;
   const tradeRule = $('tradeRuleSelect').value;
   const playerConfigs = readPlayerConfigs();
+  if(setupForOnline){ startOnlineGame(playerConfigs, diff, alliance, tradeRule, $('toggleMapWrap').checked); return; }
   initGame(playerConfigs, diff, spectator, alliance, tradeRule);
   showScreen('screen-game');
   maybeRotateMapForPortrait();
@@ -390,7 +405,9 @@ let setupHoldTimer = null;
 function stopSetupHold(){ clearTimeout(setupHoldTimer); clearInterval(setupHoldTimer); setupHoldTimer=null; }
 function tryHoldPlacement(terrId){
   if(game.phase!=='setup-place' && game.phase!=='reinforce') return false;
-  return dispatch({type:'place', terrId}).ok;
+  const res = dispatch({type:'place', terrId});
+  // online, a tick that lands while the last one is still on its way is skipped, not the end of the hold
+  return res.ok || res.error==='busy';
 }
 // Placing used to fire immediately on pointerdown, so brushing a territory with a finger/mouse
 // while actually trying to pan or pinch-zoom the map (which also starts with a pointerdown)
@@ -446,7 +463,7 @@ $('gameCanvas').addEventListener('pointerup', (e)=>{
   $('gameCanvas').addEventListener(evtName, ()=>{ cancelPendingPlacement(); stopSetupHold(); })
 );
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
-$('btnSaveGame').addEventListener('click', ()=> exportGameJSON());
+$('btnSaveGame').addEventListener('click', ()=>{ if(!isOnlineGame()) exportGameJSON(); }); // an online game is saved on the server
 
 // Dragging/pinching to pan moves #gameCanvasWrap's scroll position directly (see below) without
 // going through renderGame(), so the floating attack buttons (positioned in screen space off
@@ -767,6 +784,7 @@ updateTopbarActions();
 // Debug hook (read-only introspection for QA; harmless to leave in production)
 window.__debug = {
   get game(){ return game; }, get mapData(){ return mapData; },
+  get onlineGame(){ return onlineGame; }, get onlineAvailable(){ return onlineAvailable; },
   mapPointToScreen, evaluatePlayerPower, hitTest:(x,y)=> getTerritoryFromCanvasEvent($('gameCanvas'), {clientX:x, clientY:y}),
   generateRandomMap, deriveMapGenCounts, computeMapGenPlan,
   getTerritoryBoundaryLoops, getContinentBoundaryLoops,
@@ -799,3 +817,5 @@ window.__debug = {
   setGameZoom, get gameZoom(){ return gameZoom; },
   get editorCurrentTerrId(){ return editorCurrentTerrId; }
 };
+
+detectOnlineServer();
