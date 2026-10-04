@@ -140,24 +140,25 @@
     <h2>Thiết lập ván chơi</h2>
     <p style="color:var(--muted);font-size:13px;margin-bottom:20px;" id="setupMapInfo"></p>
 
-    <div class="setup-row">
-      <label>Số đối thủ AI</label>
-      <select id="aiCountSelect">
-        <option value="1">1 AI (2 người chơi)</option>
-        <option value="2">2 AI (3 người chơi)</option>
-        <option value="3">3 AI (4 người chơi)</option>
-        <option value="4" selected>4 AI (5 người chơi)</option>
-        <option value="5">5 AI (6 người chơi)</option>
-      </select>
-    </div>
-
-    <div class="setup-row">
-      <label>Độ khó AI</label>
-      <select id="aiDifficultySelect">
-        <option value="easy">Dễ</option>
-        <option value="normal">Thường</option>
-        <option value="hard" selected>Khó</option>
-      </select>
+    <div class="setup-row setup-pair">
+      <div>
+        <label>Số đối thủ AI</label>
+        <select id="aiCountSelect">
+          <option value="1">1 AI (2 người chơi)</option>
+          <option value="2">2 AI (3 người chơi)</option>
+          <option value="3">3 AI (4 người chơi)</option>
+          <option value="4" selected>4 AI (5 người chơi)</option>
+          <option value="5">5 AI (6 người chơi)</option>
+        </select>
+      </div>
+      <div>
+        <label>Độ khó AI</label>
+        <select id="aiDifficultySelect">
+          <option value="easy">Dễ</option>
+          <option value="normal">Thường</option>
+          <option value="hard" selected>Khó</option>
+        </select>
+      </div>
     </div>
 
     <div class="setup-row">

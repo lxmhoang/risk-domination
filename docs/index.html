@@ -179,6 +179,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .cfg-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
 
 /* ---------- Setup screen ---------- */
+.setup-pair{display:flex;gap:12px;flex-wrap:wrap;}
+.setup-pair>div{flex:1 1 180px;min-width:0;}
+.setup-pair select{width:100%;}
 /* align-items:center (horizontal) is fine, but justify-content:center (vertical) on a
    scrolling flex container clips the START of overflowing content — the browser centers it
    by pushing the top above scrollTop:0, and that part can't be scrolled back into view. Center
@@ -793,24 +796,25 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <h2>Thiết lập ván chơi</h2>
     <p style="color:var(--muted);font-size:13px;margin-bottom:20px;" id="setupMapInfo"></p>
 
-    <div class="setup-row">
-      <label>Số đối thủ AI</label>
-      <select id="aiCountSelect">
-        <option value="1">1 AI (2 người chơi)</option>
-        <option value="2">2 AI (3 người chơi)</option>
-        <option value="3">3 AI (4 người chơi)</option>
-        <option value="4" selected>4 AI (5 người chơi)</option>
-        <option value="5">5 AI (6 người chơi)</option>
-      </select>
-    </div>
-
-    <div class="setup-row">
-      <label>Độ khó AI</label>
-      <select id="aiDifficultySelect">
-        <option value="easy">Dễ</option>
-        <option value="normal">Thường</option>
-        <option value="hard" selected>Khó</option>
-      </select>
+    <div class="setup-row setup-pair">
+      <div>
+        <label>Số đối thủ AI</label>
+        <select id="aiCountSelect">
+          <option value="1">1 AI (2 người chơi)</option>
+          <option value="2">2 AI (3 người chơi)</option>
+          <option value="3">3 AI (4 người chơi)</option>
+          <option value="4" selected>4 AI (5 người chơi)</option>
+          <option value="5">5 AI (6 người chơi)</option>
+        </select>
+      </div>
+      <div>
+        <label>Độ khó AI</label>
+        <select id="aiDifficultySelect">
+          <option value="easy">Dễ</option>
+          <option value="normal">Thường</option>
+          <option value="hard" selected>Khó</option>
+        </select>
+      </div>
     </div>
 
     <div class="setup-row">
@@ -2024,12 +2028,19 @@ function deriveMapGenCounts(cols, rows){
 // generated map still comes out with about the same number of territories.
 const MAP_GEN_SIDE = Math.round(Math.sqrt(MIN_GRID_DIM*MIN_GRID_DIM*3/2)); // 184
 
-function computeMapGenPlan(){
+// A global map is square; a flat one keeps the old 3:2 landscape grid.
+function computeMapGenPlan(wrap){
+  if(!wrap) return { ...landscapeGenPlan() };
   const rows = MAP_GEN_SIDE, cols = MAP_GEN_SIDE;
   // Territory/continent counts as for the old 3:2 grid of the same area, so switching to the
   // square shape didn't change how many territories a game has (deriveMapGenCounts() scales with
   // rows/cols, so the square grid on its own would ask for ~50% more).
   const { numTerr, numCont } = deriveMapGenCounts(Math.round(MIN_GRID_DIM*3/2), MIN_GRID_DIM);
+  return { cols, rows, numTerr, numCont };
+}
+function landscapeGenPlan(){
+  const rows = MIN_GRID_DIM, cols = Math.round(MIN_GRID_DIM*3/2);
+  const { numTerr, numCont } = deriveMapGenCounts(cols, rows);
   return { cols, rows, numTerr, numCont };
 }
 
@@ -2869,7 +2880,7 @@ function getWaterSpread(){
 }
 
 function initEditorMap(){
-  const {cols, rows, numTerr, numCont} = computeMapGenPlan();
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan(RUNTIME_CONFIG.mapWrapX!==false);
   mapData = generateRandomMap(cols, rows, numTerr, numCont, "Bản đồ của tôi", getWaterRatio(), getWaterSpread());
   $('mapNameInput').value = mapData.name;
   $('gridCols').value = mapData.cols;
@@ -6170,7 +6181,7 @@ document.addEventListener('click', (e)=>{
   if(btn) btn.blur();
 });
 $('btnQuickPlay').addEventListener('click', ()=>{
-  const {cols, rows, numTerr, numCont} = computeMapGenPlan();
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan(RUNTIME_CONFIG.mapWrapX!==false);
   mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
   mapData._quickPlay = true; // regenerated (not just re-flagged) if the global toggle changes in setup
   goToSetup();
@@ -6300,7 +6311,7 @@ function renderSetupMapInfo(){
 function setMapWrap(on){
   setConfigValue('mapWrapX', on);
   if(mapData._quickPlay){
-    const {cols, rows, numTerr, numCont} = computeMapGenPlan();
+    const {cols, rows, numTerr, numCont} = computeMapGenPlan(on);
     mapData = generateRandomMap(cols, rows, numTerr, numCont, mapData.name, 0.28);
     mapData._quickPlay = true;
   } else {

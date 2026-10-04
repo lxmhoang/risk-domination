@@ -167,6 +167,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .cfg-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
 
 /* ---------- Setup screen ---------- */
+.setup-pair{display:flex;gap:12px;flex-wrap:wrap;}
+.setup-pair>div{flex:1 1 180px;min-width:0;}
+.setup-pair select{width:100%;}
 /* align-items:center (horizontal) is fine, but justify-content:center (vertical) on a
    scrolling flex container clips the START of overflowing content — the browser centers it
    by pushing the top above scrollTop:0, and that part can't be scrolled back into view. Center

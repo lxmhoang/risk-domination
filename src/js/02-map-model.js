@@ -746,12 +746,19 @@ function deriveMapGenCounts(cols, rows){
 // generated map still comes out with about the same number of territories.
 const MAP_GEN_SIDE = Math.round(Math.sqrt(MIN_GRID_DIM*MIN_GRID_DIM*3/2)); // 184
 
-function computeMapGenPlan(){
+// A global map is square; a flat one keeps the old 3:2 landscape grid.
+function computeMapGenPlan(wrap){
+  if(!wrap) return { ...landscapeGenPlan() };
   const rows = MAP_GEN_SIDE, cols = MAP_GEN_SIDE;
   // Territory/continent counts as for the old 3:2 grid of the same area, so switching to the
   // square shape didn't change how many territories a game has (deriveMapGenCounts() scales with
   // rows/cols, so the square grid on its own would ask for ~50% more).
   const { numTerr, numCont } = deriveMapGenCounts(Math.round(MIN_GRID_DIM*3/2), MIN_GRID_DIM);
+  return { cols, rows, numTerr, numCont };
+}
+function landscapeGenPlan(){
+  const rows = MIN_GRID_DIM, cols = Math.round(MIN_GRID_DIM*3/2);
+  const { numTerr, numCont } = deriveMapGenCounts(cols, rows);
   return { cols, rows, numTerr, numCont };
 }
 

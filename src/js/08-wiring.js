@@ -13,7 +13,7 @@ document.addEventListener('click', (e)=>{
   if(btn) btn.blur();
 });
 $('btnQuickPlay').addEventListener('click', ()=>{
-  const {cols, rows, numTerr, numCont} = computeMapGenPlan();
+  const {cols, rows, numTerr, numCont} = computeMapGenPlan(RUNTIME_CONFIG.mapWrapX!==false);
   mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
   mapData._quickPlay = true; // regenerated (not just re-flagged) if the global toggle changes in setup
   goToSetup();
@@ -143,7 +143,7 @@ function renderSetupMapInfo(){
 function setMapWrap(on){
   setConfigValue('mapWrapX', on);
   if(mapData._quickPlay){
-    const {cols, rows, numTerr, numCont} = computeMapGenPlan();
+    const {cols, rows, numTerr, numCont} = computeMapGenPlan(on);
     mapData = generateRandomMap(cols, rows, numTerr, numCont, mapData.name, 0.28);
     mapData._quickPlay = true;
   } else {
