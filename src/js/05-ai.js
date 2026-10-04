@@ -52,25 +52,36 @@
       rivals the same. The leader itself is exempt and just plays normally.
    ========================================================================= */
 
+// Labels only — the numbers behind each personality (threshold shift, reserve multiplier, kill/
+// continent bonus multipliers) live in the config (src/config.json, keys pers<Name>…, editable on
+// the Cấu hình screen) and are read by personalityTraits() below. `cfgKey` is the <Name> part.
 const AI_PERSONALITIES = {
-  balanced:    { label:'Cân bằng',              thresholdAdj: 0,     reserveMult:1.0, killBonusMult:1.0, continentBonusMult:1.0 },
-  turtle:      { label:'Rùa (thủ chắc)',         thresholdAdj: 0.4,   reserveMult:1.6, killBonusMult:0.7, continentBonusMult:1.2 },
-  rusher:      { label:'Xông pha (háo chiến)',   thresholdAdj:-0.35,  reserveMult:0.4, killBonusMult:1.0, continentBonusMult:0.8 },
-  opportunist: { label:'Cơ hội (săn con mồi yếu)', thresholdAdj:-0.1, reserveMult:0.9, killBonusMult:1.8, continentBonusMult:0.9 },
+  balanced:    { label:'Cân bằng',                cfgKey:'Balanced' },
+  turtle:      { label:'Rùa (thủ chắc)',           cfgKey:'Turtle' },
+  rusher:      { label:'Xông pha (háo chiến)',     cfgKey:'Rusher' },
+  opportunist: { label:'Cơ hội (săn con mồi yếu)', cfgKey:'Opportunist' },
 };
+function personalityTraits(personality){
+  const k = (AI_PERSONALITIES[personality] || AI_PERSONALITIES.balanced).cfgKey;
+  return {
+    thresholdAdj: RUNTIME_CONFIG['pers'+k+'ThresholdAdj'],
+    reserveMult: RUNTIME_CONFIG['pers'+k+'ReserveMult'],
+    killBonusMult: RUNTIME_CONFIG['pers'+k+'KillBonus'],
+    continentBonusMult: RUNTIME_CONFIG['pers'+k+'ContinentBonus'],
+  };
+}
 
 // Two gates the #1 player (by evaluatePlayerPower) must BOTH clear before the alliance
 // mechanic (game.allianceEnabled) recognizes them as "the leader" worth ganging up on — see
 // findAllianceLeader() below:
-//  - ALLIANCE_LEADER_VS_FIELD_RATIO: strong enough to threaten the WHOLE rest of the field,
+// (Both from the config — allianceLeaderVsField / allianceLeaderMargin.)
+//  - allianceLeaderVsField: strong enough to threaten the WHOLE rest of the field,
 //    not just edge out the closest rival — e.g. with 5 other players, being 1.2x the #2 player
 //    means little if the #1 is still weaker than the other 4 combined, since they wouldn't
 //    need to team up to handle him.
-//  - ALLIANCE_LEADER_MARGIN: clearly ahead of the single closest rival specifically — without
+//  - allianceLeaderMargin: clearly ahead of the single closest rival specifically — without
 //    this, a 1-army edge in an otherwise close 2-player-ish spread could still pass the field
 //    check above.
-const ALLIANCE_LEADER_VS_FIELD_RATIO = 0.6;
-const ALLIANCE_LEADER_MARGIN = 1.2;
 
 // Alliance-specific "who's the leader" check — considers EVERY alive player (including
 // whoever is currently acting), unlike the plain "wary of the strongest opponent" logic in
@@ -85,8 +96,8 @@ function findAllianceLeader(){
   if(powers.length<2) return null;
   const top = powers[0], rest = powers.slice(1);
   const restTotal = rest.reduce((s,x)=>s+x.power, 0);
-  if(top.power < restTotal*ALLIANCE_LEADER_VS_FIELD_RATIO) return null;
-  if(top.power < rest[0].power*ALLIANCE_LEADER_MARGIN) return null;
+  if(top.power < restTotal*RUNTIME_CONFIG.allianceLeaderVsField) return null;
+  if(top.power < rest[0].power*RUNTIME_CONFIG.allianceLeaderMargin) return null;
   return top.id;
 }
 
@@ -94,10 +105,10 @@ function difficultyProfile(diff, personality){
   // baseThreshold: minimum armies-vs-armies ratio required to attack at all.
   // reserveFactor: how much of a bordering third-party threat to keep in
   //   reserve rather than throw into an attack (higher = more cautious).
-  const base = diff==='easy' ? {baseThreshold:2.0, reserveFactor:1.0}
-             : diff==='hard' ? {baseThreshold:1.15, reserveFactor:0.3}
-             : {baseThreshold:1.5, reserveFactor:0.6};
-  const trait = AI_PERSONALITIES[personality] || AI_PERSONALITIES.balanced;
+  // Both per difficulty, from the config (aiEasy…/aiNormal…/aiHard…).
+  const d = diff==='easy' ? 'Easy' : diff==='hard' ? 'Hard' : 'Normal';
+  const base = {baseThreshold: RUNTIME_CONFIG['ai'+d+'Threshold'], reserveFactor: RUNTIME_CONFIG['ai'+d+'Reserve']};
+  const trait = personalityTraits(personality);
   return {
     baseThreshold: Math.max(1.05, base.baseThreshold + trait.thresholdAdj),
     reserveFactor: Math.max(0, base.reserveFactor * trait.reserveMult),
@@ -118,8 +129,10 @@ function evaluatePlayerPower(pid){
   // Armies weighted ×2 as the main immediate-threat signal; territory count only ×1 now — its
   // significance is already mostly captured via reinforcements (which derives from it directly),
   // so it's kept around just as a small tie-breaker rather than double-counted at full weight.
+  // (Weights from the config — powerWeightArmies / …Territories / …Reinforcements.)
   const reinforcements = computeReinforcements(pid);
-  return armies*2 + mine.length + reinforcements*6;
+  const C = RUNTIME_CONFIG;
+  return armies*C.powerWeightArmies + mine.length*C.powerWeightTerritories + reinforcements*C.powerWeightReinforcements;
 }
 
 // Would owning `terrId` complete every territory of its continent for `pid`?

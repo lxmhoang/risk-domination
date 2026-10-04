@@ -8,7 +8,7 @@
    screen can also export the current values back out as a config.json file to
    promote them into the real source-of-truth default for the next build.
    ========================================================================= */
-const CONFIG_KEYS = ['spectatorModeDelayMs','manualInitialPlacement','cardAwardEvent'];
+const CONFIG_KEYS = Object.keys(GAME_CONFIG); // every key in src/config.json is a setting
 const SETTINGS_STORAGE_KEY = 'riskDominationSettings';
 function pickConfig(obj){ const out={}; CONFIG_KEYS.forEach(k=> out[k]=obj[k]); return out; }
 function loadRuntimeConfig(){

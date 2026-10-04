@@ -33,7 +33,10 @@ function newMap(cols, rows, name){
   return {
     name: name || "Bản đồ mới",
     cols, rows,
-    cellSize: Math.floor(Math.min(960/cols, 600/rows)),
+    // Native px per grid cell. Territories need enough cells to hold their badges (which are a
+    // fixed native size), so a smaller cell means fewer territories fit. The 960x760 box keeps
+    // the default square grid (184x184) at 4px like the old 3:2 one (225x150) had.
+    cellSize: Math.floor(Math.min(960/cols, 760/rows)),
     cellTerritory: new Int16Array(cols*rows).fill(-1),
     territories: {},   // id -> {id,name,continentId,color,cells:[[c,r]],neighbors:Set,centroid:{x,y}}
     continents: {},    // id -> {id,name,color,bonus}
@@ -737,14 +740,18 @@ function deriveMapGenCounts(cols, rows){
 // numTerr/numCont are derived from that grid via deriveMapGenCounts(). Only used at generation
 // time — an already-generated/saved map keeps its own grid regardless of what device later
 // opens it.
-// Grid shape is always a fixed 3:2 (width:height) ratio, regardless of the viewport's actual
-// aspect ratio — a consistent, predictable map shape rather than one that changes with whatever
-// window the map happens to be generated in.
-const MAP_GEN_ASPECT = 3/2;
+// Grid shape is always square, regardless of the viewport's actual aspect ratio — a consistent,
+// predictable map shape rather than one that changes with whatever window the map happens to be
+// generated in. The side is picked to keep the same area as the old 3:2 grid (225x150), so a
+// generated map still comes out with about the same number of territories.
+const MAP_GEN_SIDE = Math.round(Math.sqrt(MIN_GRID_DIM*MIN_GRID_DIM*3/2)); // 184
 
 function computeMapGenPlan(){
-  const rows = MIN_GRID_DIM, cols = Math.round(MIN_GRID_DIM*MAP_GEN_ASPECT);
-  const { numTerr, numCont } = deriveMapGenCounts(cols, rows);
+  const rows = MAP_GEN_SIDE, cols = MAP_GEN_SIDE;
+  // Territory/continent counts as for the old 3:2 grid of the same area, so switching to the
+  // square shape didn't change how many territories a game has (deriveMapGenCounts() scales with
+  // rows/cols, so the square grid on its own would ask for ~50% more).
+  const { numTerr, numCont } = deriveMapGenCounts(Math.round(MIN_GRID_DIM*3/2), MIN_GRID_DIM);
   return { cols, rows, numTerr, numCont };
 }
 

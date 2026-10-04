@@ -26,6 +26,10 @@
         <h3><span class="emoji">💾</span> Tải ván chơi đã lưu</h3>
         <p>Chơi tiếp 1 ván dở dang đã lưu ra file trước đó — đúng lượt, đúng quân số.</p>
       </div>
+      <div class="menu-card" id="btnOpenConfig">
+        <h3><span class="emoji">⚙️</span> Cấu hình</h3>
+        <p>Chỉnh thông số AI, liên minh, thẻ bài, tăng viện và các tuỳ chọn khác.</p>
+      </div>
       <div class="menu-card" id="btnHowTo">
         <h3><span class="emoji">📖</span> Luật chơi</h3>
         <p>Nhắc lại nhanh luật Risk cổ điển: tăng viện, tấn công, thẻ bài, châu lục.</p>
@@ -50,6 +54,7 @@
           </span>
         </div>
         <button class="small ghost" id="btnApplyGrid" style="width:100%;margin-bottom:8px;">Áp dụng lưới mới</button>
+        <label class="switch-row" style="margin-bottom:8px;" title="Mép trái nối với mép phải: lãnh thổ chạm mép trái là láng giềng của lãnh thổ cùng hàng chạm mép phải. Bản đồ ngẫu nhiên tạo ra khi bật sẽ không có dải biển ở 2 mép này."><input type="checkbox" id="editorMapWrap"> 🌐 Map global (nối mép trái–phải)</label>
         <div class="field-row"><span>Tỷ lệ mặt nước</span>
           <span style="display:flex;align-items:center;gap:6px;">
             <input type="range" id="waterRatioInput" min="0" max="55" value="28" style="width:100px;">
@@ -170,47 +175,88 @@
     </div>
 
     <div class="setup-row">
+      <label class="switch-row"><input type="checkbox" id="toggleMapWrap"> 🌐 Map global (mép trái nối với mép phải, như quả địa cầu)</label>
+    </div>
+
+    <div class="setup-row">
       <label class="switch-row"><input type="checkbox" id="toggleAlliance" checked> 🤝 Liên minh chống người dẫn đầu (AI yếu tạm ngừng đánh nhau, dồn lực vào kẻ mạnh nhất)</label>
     </div>
 
-    <div class="setup-row">
-      <label class="switch-row"><input type="checkbox" id="settingManualPlacement"> Đặt quân thủ công lúc bắt đầu ván (tắt = rải quân ngẫu nhiên, mặc định)</label>
-    </div>
 
-    <div class="setup-row">
-      <label>Sự kiện phát thẻ bài</label>
-      <select id="settingCardAwardEvent">
-        <option value="on_capture">Khi chiếm được 1 lãnh thổ (mặc định)</option>
-        <option value="on_kill">Khi đánh hạ được ít nhất 1 đơn vị địch</option>
-        <option value="on_turn_end">Hết lượt là được phát, không cần điều kiện</option>
-      </select>
-    </div>
 
     <div class="setup-row">
       <label class="switch-row"><input type="checkbox" id="toggleSpectatorMode"> 👀 Chế độ xem AI đấu với nhau (bạn không điều khiển, mỗi hành động cách nhau 1 giây)</label>
     </div>
 
-    <div class="setup-row">
-      <label>Độ trễ khi xem AI đấu AI (ms)</label>
-      <input type="number" id="settingSpectatorDelay" min="0" max="10000" step="50" style="width:110px;">
-    </div>
-
-    <div class="setup-row">
-      <label>Cấu hình nâng cao (ghi nhớ trong trình duyệt này)</label>
-      <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">
-        "Xuất config.json" lưu các lựa chọn ở trên (trừ những mục riêng cho ván này như số AI/độ khó)
-        thành mặc định gốc cho lần build sau (thay file src/config.json rồi chạy node build.js).
-      </p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="ghost small" id="btnSettingsReset">↺ Khôi phục mặc định</button>
-        <button class="ghost small" id="btnSettingsExport">⬇ Xuất config.json</button>
-        <button class="ghost small" id="btnSettingsImport">⬆ Nhập config.json</button>
-        <input type="file" id="settingsImportInput" accept=".json" class="hidden">
-      </div>
-    </div>
 
     <button class="primary" id="btnStartGame" style="width:100%;padding:14px;font-size:15px;margin-top:10px;">Bắt đầu chơi</button>
     <button class="ghost" id="btnBackFromSetup" style="width:100%;margin-top:8px;">← Quay lại</button>
+  </div>
+</div>
+
+<!-- ============ CONFIG ============ -->
+<!-- Every input with data-cfg="<key>" is bound to RUNTIME_CONFIG[<key>] (src/config.json holds the
+     defaults) by the generic wiring in 08-wiring.js — adding a setting is: a key in config.json, a
+     data-cfg input here, and code that reads RUNTIME_CONFIG.<key>. -->
+<div class="screen" id="screen-config">
+  <div class="cfg-wrap">
+    <div class="cfg-head">
+      <h2>⚙️ Cấu hình</h2>
+      <span class="cfg-note">Tự lưu trong trình duyệt này. Ô viền vàng = khác mặc định. Rê chuột vào ô để xem giải thích.</span>
+    </div>
+    <div class="cfg-grid">
+      <section class="cfg-card">
+        <h3>🤖 AI theo độ khó</h3>
+        <table class="cfg-table">
+          <tr><th></th><th title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công">Ngưỡng đánh</th><th title="Phần quân giữ lại phòng thủ">Giữ quân</th></tr>
+          <tr><th>Dễ</th><td><input type="number" data-cfg="aiEasyThreshold" step="0.05" min="1" max="5" title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công"></td><td><input type="number" data-cfg="aiEasyReserve" step="0.05" min="0" max="3" title="Phần quân giữ lại để phòng các địch kề bên khác (× quân địch mạnh nhất kề bên)"></td></tr>
+          <tr><th>Thường</th><td><input type="number" data-cfg="aiNormalThreshold" step="0.05" min="1" max="5" title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công"></td><td><input type="number" data-cfg="aiNormalReserve" step="0.05" min="0" max="3" title="Phần quân giữ lại để phòng các địch kề bên khác (× quân địch mạnh nhất kề bên)"></td></tr>
+          <tr><th>Khó</th><td><input type="number" data-cfg="aiHardThreshold" step="0.05" min="1" max="5" title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công"></td><td><input type="number" data-cfg="aiHardReserve" step="0.05" min="0" max="3" title="Phần quân giữ lại để phòng các địch kề bên khác (× quân địch mạnh nhất kề bên)"></td></tr>
+        </table>
+      </section>
+      <section class="cfg-card cfg-wide">
+        <h3>🎭 Tính cách AI <span class="cfg-sub">(chỉnh thêm lên trên độ khó)</span></h3>
+        <table class="cfg-table">
+          <tr><th></th><th title="Cộng vào ngưỡng tấn công">Ngưỡng ±</th><th title="Nhân với mức giữ quân">Giữ quân ×</th><th title="Nhân với điểm thưởng khi diệt được người chơi yếu">Diệt ×</th><th title="Nhân với điểm thưởng khi chiếm trọn châu lục">Châu lục ×</th></tr>
+          <tr><th>Cân bằng</th><td><input type="number" data-cfg="persBalancedThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persBalancedReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persBalancedKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persBalancedContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
+          <tr><th>Rùa</th><td><input type="number" data-cfg="persTurtleThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persTurtleReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persTurtleKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persTurtleContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
+          <tr><th>Xông pha</th><td><input type="number" data-cfg="persRusherThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persRusherReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persRusherKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persRusherContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
+          <tr><th>Cơ hội</th><td><input type="number" data-cfg="persOpportunistThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persOpportunistReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persOpportunistKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persOpportunistContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
+        </table>
+      </section>
+      <section class="cfg-card">
+        <h3>🤝 Liên minh &amp; sức mạnh</h3>
+        <div class="cfg-line">Thành leader khi sức mạnh ≥ <input type="number" data-cfg="allianceLeaderVsField" step="0.05" min="0" max="5" title="Tối thiểu bao nhiêu lần tổng sức mạnh của tất cả người còn lại"> × tổng những người còn lại</div>
+        <div class="cfg-line">và ≥ <input type="number" data-cfg="allianceLeaderMargin" step="0.05" min="1" max="5" title="Tối thiểu bao nhiêu lần sức mạnh của người đứng thứ 2"> × người thứ 2</div>
+        <div class="cfg-line">Sức mạnh = quân × <input type="number" data-cfg="powerWeightArmies" step="0.5" min="0" max="20" title="Trọng số tổng số quân"> + lãnh thổ × <input type="number" data-cfg="powerWeightTerritories" step="0.5" min="0" max="20" title="Trọng số số lãnh thổ"> + tăng viện/lượt × <input type="number" data-cfg="powerWeightReinforcements" step="0.5" min="0" max="50" title="Trọng số số quân tăng viện mỗi lượt"></div>
+      </section>
+      <section class="cfg-card">
+        <h3>🃏 Thẻ bài &amp; tăng viện</h3>
+        <div class="cfg-line">Phát thẻ:
+          <select data-cfg="cardAwardEvent">
+            <option value="on_capture">khi chiếm được lãnh thổ</option>
+            <option value="on_kill">khi diệt được ít nhất 1 quân địch</option>
+            <option value="on_turn_end">hết lượt là có</option>
+          </select>
+        </div>
+        <div class="cfg-line">Bảng đổi thẻ: <input type="text" data-cfg="tradeValues" data-kind="list" class="cfg-list" title="Số quân nhận được ở lần đổi thứ 1, 2, 3… (cách nhau bởi dấu phẩy)"></div>
+        <div class="cfg-line">Luỹ tiến: hết bảng thì +<input type="number" data-cfg="tradeProgressiveStep" step="1" min="0" max="50" title="Mỗi lần đổi sau khi hết bảng được cộng thêm bao nhiêu"> mỗi lần</div>
+        <div class="cfg-line">Theo cá nhân: <input type="number" data-cfg="tradeExpBase" step="1" min="1" max="50" title="Số quân ở lần đổi đầu tiên"> × <input type="number" data-cfg="tradeExpGrowth" step="0.05" min="1" max="3" title="Hệ số nhân mỗi lần đổi"><sup>n</sup></div>
+        <div class="cfg-line">Tăng viện = max(<input type="number" data-cfg="reinforceMin" step="1" min="0" max="20" title="Số quân tăng viện tối thiểu mỗi lượt">, lãnh thổ ÷ <input type="number" data-cfg="reinforceDivisor" step="1" min="1" max="10" title="Chia số lãnh thổ cho bao nhiêu">) + thưởng châu lục</div>
+      </section>
+      <section class="cfg-card">
+        <h3>🎮 Khác</h3>
+        <div class="cfg-line"><label class="switch-row"><input type="checkbox" data-cfg="manualInitialPlacement"> Đặt quân thủ công lúc đầu ván</label></div>
+        <div class="cfg-line">Độ trễ khi xem AI đấu: <input type="number" data-cfg="spectatorModeDelayMs" step="50" min="0" max="10000" title="Mili-giây giữa mỗi hành động khi xem AI đấu với nhau"> ms</div>
+      </section>
+    </div>
+    <div class="cfg-foot">
+      <button class="ghost small" id="btnConfigBack">← Quay lại</button>
+      <button class="ghost small" id="btnSettingsReset">↺ Khôi phục mặc định</button>
+      <button class="ghost small" id="btnSettingsExport" title="Lưu cấu hình hiện tại thành file. Thay src/config.json bằng file này rồi chạy node build.js để biến nó thành mặc định.">⬇ Xuất config.json</button>
+      <button class="ghost small" id="btnSettingsImport">⬆ Nhập config.json</button>
+      <input type="file" id="settingsImportInput" accept=".json" class="hidden">
+    </div>
   </div>
 </div>
 

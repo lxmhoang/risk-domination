@@ -143,6 +143,29 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .switch-row{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text);cursor:pointer;user-select:none;}
 .switch-row input{cursor:pointer;width:15px;height:15px;}
 
+/* ---------- Config screen ----------
+   Dense on purpose: as many values on screen at once as possible (cards flow into as many
+   columns as fit; small inputs inline with the sentence they belong to) so changing settings
+   doesn't mean scrolling through a long form. Explanations live in each input's title tooltip. */
+#screen-config{padding:16px;overflow-y:auto;}
+.cfg-wrap{max-width:1180px;width:100%;margin:0 auto;}
+.cfg-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+.cfg-head h2{margin:0;}
+.cfg-note{color:var(--muted);font-size:12px;}
+.cfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px;align-items:start;}
+.cfg-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+.cfg-card h3{font-size:13.5px;margin:0 0 6px 0;}
+.cfg-sub{color:var(--muted);font-weight:400;font-size:11.5px;}
+.cfg-table{border-collapse:collapse;font-size:12.5px;}
+.cfg-table th{font-weight:600;color:var(--muted);text-align:left;padding:2px 6px 2px 0;font-size:11.5px;white-space:nowrap;}
+.cfg-table td{padding:2px 6px 2px 0;}
+.cfg-line{font-size:12.5px;line-height:1.5;margin:4px 0;}
+.cfg-card input[type=number]{width:62px;padding:3px 5px;font-size:12.5px;border-radius:6px;}
+.cfg-card input.cfg-list{width:170px;padding:3px 6px;font-size:12.5px;border-radius:6px;}
+.cfg-card select{padding:3px 6px;font-size:12.5px;border-radius:6px;}
+.cfg-card [data-cfg].changed{border-color:var(--warn);box-shadow:0 0 0 1px var(--warn);}
+.cfg-foot{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+
 /* ---------- Setup screen ---------- */
 /* align-items:center (horizontal) is fine, but justify-content:center (vertical) on a
    scrolling flex container clips the START of overflowing content — the browser centers it

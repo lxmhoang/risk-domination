@@ -42,6 +42,7 @@ function initEditorMap(){
 }
 
 function renderEditorLists(){
+  $('editorMapWrap').checked = !!mapData.wrapX;
   $('terrCount').textContent = Object.keys(mapData.territories).length;
   $('contCount').textContent = Object.keys(mapData.continents).length;
 

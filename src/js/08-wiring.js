@@ -15,6 +15,7 @@ document.addEventListener('click', (e)=>{
 $('btnQuickPlay').addEventListener('click', ()=>{
   const {cols, rows, numTerr, numCont} = computeMapGenPlan();
   mapData = generateRandomMap(cols, rows, numTerr, numCont, 'Bản đồ ngẫu nhiên', 0.28);
+  mapData._quickPlay = true; // regenerated (not just re-flagged) if the global toggle changes in setup
   goToSetup();
 });
 $('btnOpenEditor').addEventListener('click', ()=>{
@@ -43,28 +44,50 @@ $('loadGameInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
-// The config knobs that used to live on a separate Settings screen now live directly in the
-// setup screen (see goToSetup() -> renderConfigControls()) so everything for starting a game
-// is in one place. They still persist to RUNTIME_CONFIG/localStorage exactly as before.
-function renderConfigControls(){
-  $('settingSpectatorDelay').value = RUNTIME_CONFIG.spectatorModeDelayMs;
-  $('settingManualPlacement').checked = !!RUNTIME_CONFIG.manualInitialPlacement;
-  $('settingCardAwardEvent').value = RUNTIME_CONFIG.cardAwardEvent;
+// ---------------- Cấu hình (config) screen ----------------
+// Every element with data-cfg="<key>" in #screen-config is bound to RUNTIME_CONFIG[<key>]:
+// checkboxes hold a boolean, selects a string, data-kind="list" text inputs an array of numbers
+// ("4, 6, 8"), and number inputs a number clamped to their own min/max. Changes save at once
+// (localStorage via setConfigValue). An input whose value differs from the shipped default
+// (src/config.json) gets the .changed outline.
+function configInputs(){ return [...document.querySelectorAll('#screen-config [data-cfg]')]; }
+function readConfigInput(inp){
+  if(inp.type==='checkbox') return inp.checked;
+  if(inp.dataset.kind==='list'){
+    const nums = inp.value.split(/[,\s]+/).map(Number).filter(n=> isFinite(n) && n>0);
+    return nums.length ? nums : null;
+  }
+  if(inp.type==='number'){
+    let v = Number(inp.value);
+    if(inp.value.trim()==='' || !isFinite(v)) return null;
+    if(inp.min!=='') v = Math.max(Number(inp.min), v);
+    if(inp.max!=='') v = Math.min(Number(inp.max), v);
+    return v;
+  }
+  return inp.value;
 }
-$('settingSpectatorDelay').addEventListener('change', (e)=>{
-  const v = clamp(Number(e.target.value)||0, 0, 10000);
-  e.target.value = v;
-  setConfigValue('spectatorModeDelayMs', v);
+function renderConfigScreen(){
+  configInputs().forEach(inp=>{
+    const k = inp.dataset.cfg, v = RUNTIME_CONFIG[k];
+    if(inp.type==='checkbox') inp.checked = !!v;
+    else if(inp.dataset.kind==='list') inp.value = (v||[]).join(', ');
+    else inp.value = v;
+    inp.classList.toggle('changed', JSON.stringify(v)!==JSON.stringify(GAME_CONFIG[k]));
+  });
+}
+configInputs().forEach(inp=>{
+  inp.addEventListener('change', ()=>{
+    const v = readConfigInput(inp);
+    if(v!==null) setConfigValue(inp.dataset.cfg, v);
+    renderConfigScreen(); // shows the clamped/parsed value, or puts back the old one if invalid
+  });
 });
-$('settingManualPlacement').addEventListener('change', (e)=>{
-  setConfigValue('manualInitialPlacement', e.target.checked);
-});
-$('settingCardAwardEvent').addEventListener('change', (e)=>{
-  setConfigValue('cardAwardEvent', e.target.value);
-});
+$('btnOpenConfig').addEventListener('click', ()=>{ renderConfigScreen(); showScreen('screen-config'); });
+$('btnConfigBack').addEventListener('click', ()=> showScreen('screen-menu'));
 $('btnSettingsReset').addEventListener('click', ()=>{
+  if(!confirm('Đưa toàn bộ cấu hình về mặc định?')) return;
   resetRuntimeConfig();
-  renderConfigControls();
+  renderConfigScreen();
 });
 $('btnSettingsExport').addEventListener('click', ()=>{
   const blob = new Blob([JSON.stringify(pickConfig(RUNTIME_CONFIG), null, 2)], {type:'application/json'});
@@ -82,12 +105,13 @@ $('settingsImportInput').addEventListener('change', (e)=>{
       const obj = JSON.parse(reader.result);
       CONFIG_KEYS.forEach(k=>{ if(obj[k]!==undefined) RUNTIME_CONFIG[k]=obj[k]; });
       saveRuntimeConfig();
-      renderConfigControls();
+      renderConfigScreen();
     }catch(err){ alert('Không đọc được file config: '+err.message); }
   };
   reader.readAsText(file);
   e.target.value='';
 });
+
 
 $('btnHowTo').addEventListener('click', ()=>{
   alert(
@@ -108,11 +132,35 @@ $('btnHowTo').addEventListener('click', ()=>{
 const AI_NAME_POOL = ['Bạch Khởi','Hàn Tín','Nhạc Phi','Napoleon','Caesar','Quang Trung'];
 let aiNamePool = [];
 
+function renderSetupMapInfo(){
+  $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục${mapData.wrapX ? ', global' : ''}.`;
+  $('toggleMapWrap').checked = !!mapData.wrapX;
+}
+// Switches the map about to be played between global and flat. A quick-play map is generated
+// afresh (a global map has no sea band on its left/right edges, a flat one does — just flipping
+// the flag would leave the coastline wrong); any other map (from the editor or a file) keeps its
+// land and only has its left/right edges joined or split. Also becomes the default for new maps.
+function setMapWrap(on){
+  setConfigValue('mapWrapX', on);
+  if(mapData._quickPlay){
+    const {cols, rows, numTerr, numCont} = computeMapGenPlan();
+    mapData = generateRandomMap(cols, rows, numTerr, numCont, mapData.name, 0.28);
+    mapData._quickPlay = true;
+  } else {
+    mapData.wrapX = on; mapData.wrapY = false;
+    delete mapData._seamMask;
+    recomputeGraph(mapData);
+  }
+}
+$('toggleMapWrap').addEventListener('change', (e)=>{ setMapWrap(e.target.checked); renderSetupMapInfo(); });
+$('editorMapWrap').addEventListener('change', (e)=>{
+  setMapWrap(e.target.checked);
+  renderEditorLists(); drawEditorCanvas();
+});
 function goToSetup(){
-  $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục.`;
+  renderSetupMapInfo();
   aiNamePool = shuffle(AI_NAME_POOL);
   renderPlayerConfigList();
-  renderConfigControls();
   showScreen('screen-setup');
 }
 // Remembers name/color/personality edits across re-renders (changing aiCountSelect or
@@ -244,6 +292,7 @@ $('btnClearMap').addEventListener('click', ()=>{
   if(!confirm('Xoá toàn bộ lãnh thổ trên bản đồ?')) return;
   const cols=mapData.cols, rows=mapData.rows;
   mapData = newMap(cols,rows,$('mapNameInput').value);
+  mapData.wrapX = RUNTIME_CONFIG.mapWrapX!==false;
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('btnApplyGrid').addEventListener('click', ()=>{
@@ -251,6 +300,7 @@ $('btnApplyGrid').addEventListener('click', ()=>{
   const rows = clamp(Number($('gridRows').value)||100,10,500);
   if(!confirm('Đổi kích thước lưới sẽ xoá bản đồ hiện tại. Tiếp tục?')) return;
   mapData = newMap(cols,rows,$('mapNameInput').value);
+  mapData.wrapX = RUNTIME_CONFIG.mapWrapX!==false;
   editorCurrentTerrId=null; renderEditorLists(); drawEditorCanvas();
 });
 $('mapNameInput').addEventListener('change', (e)=>{ mapData.name = e.target.value || mapData.name; });

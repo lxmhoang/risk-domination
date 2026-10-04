@@ -650,9 +650,12 @@ function isPortraitLayout(){
 // (the device/window actually turning, not just any resize) can be detected and re-trigger this —
 // see handleGameOrientationResize() below, wired to the resize listener in 08-wiring.js.
 let lastAdaptedPortraitLayout = null;
+// Global (wrapping) maps are never rotated: their seam always stays on the left/right edges of
+// the screen, whatever the screen's orientation — a wide global map on a portrait phone (or a
+// tall one on a landscape screen) just plays at whatever size fits.
 function maybeRotateMapForPortrait(){
   mapData = unrotateMapData(mapData);
-  if(isPortraitLayout() && mapData.cols > mapData.rows){
+  if(isPortraitLayout() && !mapData.wrapX && !mapData.wrapY && mapData.cols > mapData.rows){
     mapData = rotateMapData90CW(mapData);
     mapData._rotatedFor90 = true;
   }

@@ -16,12 +16,12 @@ function standardStartingArmies(numPlayers){
 
 const CARD_TYPES = ['infantry','cavalry','artillery'];
 const CARD_ICON = {infantry:'🪖', cavalry:'🐎', artillery:'💣'};
-const TRADE_VALUES = [4,6,8,10,12,15,20];
 
 // Three trade-bonus rules a game can be started with (see game.tradeRule, chosen in setup):
 //  - fixed:       classic escalating table, but it PLATEAUS at the last table value forever
 //                 once reached — no reason to ever hold cards, every trade from then on pays
 //                 exactly the same.
+// The table (tradeValues), the progressive step and the exponential base/growth are from the config.
 //  - progressive: the table keeps climbing forever (+5 per trade) based on a count SHARED by
 //                 all players — trading later (after opponents have also traded) pays more, so
 //                 holding cards is a real (if risky) strategy. This is the game's original/
@@ -31,11 +31,12 @@ const TRADE_VALUES = [4,6,8,10,12,15,20];
 //                 matters, so the earlier and more often YOU personally trade, the faster your
 //                 own trades ramp up.
 function tradeInValue(rule, tradeCount, personalTradeCount){
-  if(rule==='exponential') return Math.round(4*Math.pow(1.3, personalTradeCount));
-  if(rule==='fixed') return TRADE_VALUES[Math.min(tradeCount, TRADE_VALUES.length-1)];
+  const C = RUNTIME_CONFIG, table = C.tradeValues;
+  if(rule==='exponential') return Math.round(C.tradeExpBase*Math.pow(C.tradeExpGrowth, personalTradeCount));
+  if(rule==='fixed') return table[Math.min(tradeCount, table.length-1)];
   // progressive (default)
-  if(tradeCount < TRADE_VALUES.length) return TRADE_VALUES[tradeCount];
-  return TRADE_VALUES[TRADE_VALUES.length-1] + (tradeCount-TRADE_VALUES.length+1)*5;
+  if(tradeCount < table.length) return table[tradeCount];
+  return table[table.length-1] + (tradeCount-table.length+1)*C.tradeProgressiveStep;
 }
 
 // playerConfigs: [{name, color, personality, isHuman}, ...] — index 0 is "you" (a real human
@@ -217,7 +218,7 @@ function replaySameGame(){
 // can show WHERE the number came from instead of just the final total.
 function reinforcementBreakdown(pid){
   const mine = ownedTerritories(pid);
-  const base = Math.max(3, Math.floor(mine.length/3));
+  const base = Math.max(RUNTIME_CONFIG.reinforceMin, Math.floor(mine.length/RUNTIME_CONFIG.reinforceDivisor));
   const continentBonuses = [];
   Object.values(mapData.continents).forEach(cont=>{
     const contTerrs = Object.values(mapData.territories).filter(t=>t.continentId===cont.id).map(t=>t.id);
