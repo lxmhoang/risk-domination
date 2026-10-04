@@ -1178,11 +1178,13 @@ function renderPlayerList(){
       crown.title = 'Đang dẫn đầu — các AI khác đang liên minh chống lại';
       line1.appendChild(crown);
     }
-    // Territory-share bar: quick "how much of the map do they hold" read at a glance, without
-    // having to compare raw counts across cards yourself. Width is a plain CSS transition off
-    // a changed inline style, so it animates smoothly on its own — no JS tweening needed here.
-    const totalTerrs = Object.keys(mapData.territories).length;
-    const pct = totalTerrs>0 ? Math.round(mine.length/totalTerrs*100) : 0;
+    // Power-share bar: this player's share of the whole table's power (the same evaluatePlayerPower()
+    // the AI uses — armies, territories and reinforcements, weighted from the config), so the bar
+    // reads as "how strong they are relative to everyone" at a glance. Width is a plain CSS
+    // transition off a changed inline style, so it animates smoothly on its own.
+    const powerOf = pl=> pl.alive ? evaluatePlayerPower(pl.id) : 0;
+    const totalPower = game.players.reduce((s,pl)=> s+powerOf(pl), 0);
+    const pct = totalPower>0 ? Math.round(powerOf(p)/totalPower*100) : 0;
     const bar = el('div','pcard-bar');
     const fill = el('div','pcard-bar-fill');
     fill.style.width = pct+'%';

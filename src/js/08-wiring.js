@@ -761,7 +761,7 @@ updateTopbarActions();
 // Debug hook (read-only introspection for QA; harmless to leave in production)
 window.__debug = {
   get game(){ return game; }, get mapData(){ return mapData; },
-  mapPointToScreen, hitTest:(x,y)=> getTerritoryFromCanvasEvent($('gameCanvas'), {clientX:x, clientY:y}),
+  mapPointToScreen, evaluatePlayerPower, hitTest:(x,y)=> getTerritoryFromCanvasEvent($('gameCanvas'), {clientX:x, clientY:y}),
   generateRandomMap, deriveMapGenCounts, computeMapGenPlan,
   getTerritoryBoundaryLoops, getContinentBoundaryLoops,
   clickTerritory(terrId){ if(!game) return; const t=mapData.territories[terrId]; if(!t) return null; return {x:t.centroid.x,y:t.centroid.y}; },
