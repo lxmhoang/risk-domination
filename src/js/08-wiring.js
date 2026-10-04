@@ -83,7 +83,6 @@ configInputs().forEach(inp=>{
   });
 });
 $('btnOpenConfig').addEventListener('click', ()=>{ renderConfigScreen(); showScreen('screen-config'); });
-$('btnConfigBack').addEventListener('click', ()=> showScreen('screen-menu'));
 $('btnSettingsReset').addEventListener('click', ()=>{
   if(!confirm('Đưa toàn bộ cấu hình về mặc định?')) return;
   resetRuntimeConfig();
@@ -327,7 +326,6 @@ window.addEventListener('pointerup', editorPointerUp);
 window.addEventListener('pointercancel', editorPointerUp);
 
 // Setup wiring
-$('btnBackFromSetup').addEventListener('click', ()=> showScreen('screen-menu'));
 $('aiCountSelect').addEventListener('change', renderPlayerConfigList);
 $('btnStartGame').addEventListener('click', ()=>{
   const diff = $('aiDifficultySelect').value;
@@ -745,7 +743,8 @@ window.addEventListener('keydown', (e)=>{
 function updateTopbarActions(){
   const wrap = $('topbarActions'); wrap.innerHTML='';
   const activeScreen = document.querySelector('.screen.active').id;
-  if(activeScreen==='screen-editor'){
+  // Screens with a "← Menu" back button in the top bar (instead of at the bottom of the page)
+  if(activeScreen==='screen-editor' || activeScreen==='screen-setup' || activeScreen==='screen-config'){
     const b = el('button','ghost small','← Menu'); b.addEventListener('click',()=>showScreen('screen-menu')); wrap.appendChild(b);
   }
   if(fullscreenSupported()){

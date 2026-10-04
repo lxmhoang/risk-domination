@@ -847,7 +847,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 
     <button class="primary" id="btnStartGame" style="width:100%;padding:14px;font-size:15px;margin-top:10px;">Bắt đầu chơi</button>
-    <button class="ghost" id="btnBackFromSetup" style="width:100%;margin-top:8px;">← Quay lại</button>
   </div>
 </div>
 
@@ -914,7 +913,6 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
       </section>
     </div>
     <div class="cfg-foot">
-      <button class="ghost small" id="btnConfigBack">← Quay lại</button>
       <button class="ghost small" id="btnSettingsReset">↺ Khôi phục mặc định</button>
       <button class="ghost small" id="btnSettingsExport" title="Lưu cấu hình hiện tại thành file. Thay src/config.json bằng file này rồi chạy node build.js để biến nó thành mặc định.">⬇ Xuất config.json</button>
       <button class="ghost small" id="btnSettingsImport">⬆ Nhập config.json</button>
@@ -6283,7 +6281,6 @@ configInputs().forEach(inp=>{
   });
 });
 $('btnOpenConfig').addEventListener('click', ()=>{ renderConfigScreen(); showScreen('screen-config'); });
-$('btnConfigBack').addEventListener('click', ()=> showScreen('screen-menu'));
 $('btnSettingsReset').addEventListener('click', ()=>{
   if(!confirm('Đưa toàn bộ cấu hình về mặc định?')) return;
   resetRuntimeConfig();
@@ -6527,7 +6524,6 @@ window.addEventListener('pointerup', editorPointerUp);
 window.addEventListener('pointercancel', editorPointerUp);
 
 // Setup wiring
-$('btnBackFromSetup').addEventListener('click', ()=> showScreen('screen-menu'));
 $('aiCountSelect').addEventListener('change', renderPlayerConfigList);
 $('btnStartGame').addEventListener('click', ()=>{
   const diff = $('aiDifficultySelect').value;
@@ -6945,7 +6941,8 @@ window.addEventListener('keydown', (e)=>{
 function updateTopbarActions(){
   const wrap = $('topbarActions'); wrap.innerHTML='';
   const activeScreen = document.querySelector('.screen.active').id;
-  if(activeScreen==='screen-editor'){
+  // Screens with a "← Menu" back button in the top bar (instead of at the bottom of the page)
+  if(activeScreen==='screen-editor' || activeScreen==='screen-setup' || activeScreen==='screen-config'){
     const b = el('button','ghost small','← Menu'); b.addEventListener('click',()=>showScreen('screen-menu')); wrap.appendChild(b);
   }
   if(fullscreenSupported()){
