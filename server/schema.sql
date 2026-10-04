@@ -29,3 +29,11 @@ CREATE TABLE IF NOT EXISTS game_actions (
   created_at  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (game_id, seq)
 );
+
+-- Server-wide settings changed from the admin page. One row per setting group
+-- ('game_config' = overrides on top of src/config.json for games created from now on).
+CREATE TABLE IF NOT EXISTS settings (
+  key         text PRIMARY KEY,
+  value       jsonb NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);

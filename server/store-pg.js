@@ -61,6 +61,15 @@ function makePgStore(connectionString){
       }catch(e){ await client.query('ROLLBACK').catch(()=>{}); throw e; }
       finally{ client.release(); }
     },
+    async getSetting(key){
+      const r = await pool.query('SELECT value FROM settings WHERE key = $1', [key]);
+      return r.rows[0] ? r.rows[0].value : null;
+    },
+    async setSetting(key, value){
+      await pool.query(
+        `INSERT INTO settings (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, [key, JSON.stringify(value)]);
+    },
     async listActions(id){
       const r = await pool.query('SELECT seq, action FROM game_actions WHERE game_id = $1 ORDER BY seq', [id]);
       return r.rows;

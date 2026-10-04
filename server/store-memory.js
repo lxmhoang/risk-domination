@@ -7,6 +7,7 @@ function makeMemoryStore(){
   const guests = new Map();   // id -> {id, tokenHash}
   const games = new Map();    // id -> row
   const actions = new Map();  // gameId -> [{seq, action}]
+  const settings = new Map(); // key -> JSON string
   let clock = 0;              // strictly increasing, so "oldest"/"newest" is well defined in tests
   const copy = row=> row && { ...row };
 
@@ -47,6 +48,8 @@ function makeMemoryStore(){
       actions.get(id).push({seq:g.version, action});
       return true;
     },
+    async getSetting(key){ return settings.has(key) ? JSON.parse(settings.get(key)) : null; },
+    async setSetting(key, value){ settings.set(key, JSON.stringify(value)); },
     async listActions(id){ return actions.get(id) ? actions.get(id).map(a=> ({...a})) : []; },
   };
 }

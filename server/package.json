@@ -7,7 +7,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node index.js",
-    "test": "node test/engine-test.js && node test/api-test.js"
+    "test": "node test/engine-test.js && node test/api-test.js && node test/admin-test.js"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.0",

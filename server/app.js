@@ -8,13 +8,20 @@
      GET  /api/games/:id                -> map + current view (to resume)
      POST /api/games/:id/actions        -> {version, action} => what happened + the new view
 
+   Admin (only when an admin password is configured; page at /admin):
+     POST /api/admin/login              -> {token}          valid for a few hours
+     GET  /api/admin/config             -> editable game settings: fields, defaults, current values
+     PUT  /api/admin/config             -> {values} replaces the overrides (new games only)
+
    All but /api/guest need `Authorization: Bearer <token>`. The client never
    sends game state — only "I ask to do this" — and only ever receives the
    view of its own games.
    ========================================================================= */
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');
 const Fastify = require('fastify');
+const adminConfig = require('./admin-config.js');
 
 const MAX_ACTIVE_GAMES = 5;   // per guest; starting another abandons the least recently played
 const GAME_LIST_LIMIT = 20;
@@ -42,7 +49,7 @@ const createSchema = {
   },
 };
 
-// options: {store, engine, config, staticDir?, corsOrigins?, rateLimit?, logger?}
+// options: {store, engine, config, adminPassword?, staticDir?, corsOrigins?, rateLimit?, logger?}
 async function buildApp(options){
   const { store, engine, config } = options;
   const app = Fastify({
@@ -95,10 +102,11 @@ async function buildApp(options){
   });
 
   app.post('/api/games', { preHandler:requireGuest, schema:{body:createSchema}, config:{ rateLimit:{ max:20, timeWindow:'1 minute' } } }, async (req, reply)=>{
-    const made = engine.createGame(req.body, config);
+    const gameConfig = await currentConfig(); // kept with the game: later admin changes don't touch it
+    const made = engine.createGame(req.body, gameConfig);
     if(made.error) return reply.code(422).send({error:made.error});
     const id = await store.createGame({
-      guestId:req.guest.id, status:'active', options:req.body, config, mapSeed:made.mapSeed, map:made.map, state:made.state,
+      guestId:req.guest.id, status:'active', options:req.body, config:gameConfig, mapSeed:made.mapSeed, map:made.map, state:made.state,
     });
     await store.abandonOldActiveGames(req.guest.id, MAX_ACTIVE_GAMES);
     return reply.code(201).send({ id, version:0, map:made.map, state:{...made.view, id}, events:made.events });
@@ -138,6 +146,66 @@ async function buildApp(options){
     }
     return { version:game.version+1, status, result:res.result, events:res.events, state:{...res.view, id:game.id} };
   });
+
+  // ---- admin ----
+  // The shipped defaults (src/config.json) with the admin's overrides on top.
+  async function currentConfig(){
+    const overrides = await store.getSetting('game_config');
+    return Object.assign({}, config, overrides||{});
+  }
+  if(options.adminPassword){
+    const SESSION_MS = 8*60*60*1000;
+    const sessions = new Map(); // sha256(token) -> expiry time. In memory: a restart signs admins out.
+    const passwordHash = crypto.createHash('sha256').update(options.adminPassword).digest();
+    async function requireAdmin(req, reply){
+      const m = /^Bearer ([A-Za-z0-9_-]{20,100})$/.exec(req.headers.authorization||'');
+      const key = m && sha256(m[1]);
+      const expiry = key && sessions.get(key);
+      if(!expiry || expiry<Date.now()){ if(key) sessions.delete(key); return reply.code(401).send({error:'unauthorized'}); }
+    }
+    app.post('/api/admin/login', {
+      config:{ rateLimit:{ max:5, timeWindow:'1 minute' } },
+      schema:{ body:{ type:'object', required:['password'], additionalProperties:false, properties:{password:{type:'string', maxLength:200}} } },
+    }, async (req, reply)=>{
+      const given = crypto.createHash('sha256').update(req.body.password).digest();
+      if(!crypto.timingSafeEqual(given, passwordHash)) return reply.code(401).send({error:'unauthorized'});
+      for(const [k, exp] of sessions) if(exp<Date.now()) sessions.delete(k);
+      const token = crypto.randomBytes(32).toString('base64url');
+      sessions.set(sha256(token), Date.now()+SESSION_MS);
+      return {token};
+    });
+    app.post('/api/admin/logout', { preHandler:requireAdmin }, async (req)=>{
+      sessions.delete(sha256(req.headers.authorization.slice(7)));
+      return {ok:true};
+    });
+    const configPayload = async ()=> ({
+      groups: adminConfig.GROUPS,
+      defaults: adminConfig.pickEditable(config),
+      values: adminConfig.pickEditable(await currentConfig()),
+    });
+    app.get('/api/admin/config', { preHandler:requireAdmin }, configPayload);
+    // Replaces the whole set of overrides: {values:{}} puts everything back to the defaults.
+    app.put('/api/admin/config', {
+      preHandler:requireAdmin,
+      schema:{ body:{ type:'object', required:['values'], additionalProperties:false, properties:{values:{type:'object'}} } },
+    }, async (req, reply)=>{
+      const checked = adminConfig.validateSettings(req.body.values);
+      if(checked.error) return reply.code(422).send({error:checked.error, key:checked.key});
+      // store only what differs from the defaults, so a later change to a default still comes through
+      const overrides = {};
+      for(const k of Object.keys(checked.values)) if(JSON.stringify(checked.values[k])!==JSON.stringify(config[k])) overrides[k] = checked.values[k];
+      await store.setSetting('game_config', overrides);
+      req.log.info({changed:Object.keys(overrides)}, 'admin changed game settings');
+      return configPayload();
+    });
+    // The page itself: two static files, no inline script, not embeddable in another site.
+    const page = name=> fs.readFileSync(path.join(__dirname, 'admin', name), 'utf8');
+    const pageHeaders = reply=> reply
+      .header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+      .header('X-Frame-Options', 'DENY').header('Cache-Control', 'no-store');
+    app.get('/admin', async (req, reply)=> pageHeaders(reply).type('text/html; charset=utf-8').send(page('index.html')));
+    app.get('/admin/admin.js', async (req, reply)=> pageHeaders(reply).type('text/javascript; charset=utf-8').send(page('admin.js')));
+  }
 
   app.get('/api/health', async ()=> ({ok:true}));
   return app;

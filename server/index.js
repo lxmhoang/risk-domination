@@ -3,6 +3,7 @@
 //   PORT, HOST            where to listen (default 127.0.0.1:8787)
 //   DATABASE_URL          Postgres connection string; without it games live in memory only
 //   GAME_SECRET           secret the dice are derived from — required in production
+//   ADMIN_PASSWORD        enables the admin page (/admin); without it there is no admin access at all
 //   CORS_ORIGINS          comma-separated origins allowed to call the API from another site
 //   TRUST_PROXY=1         when behind a reverse proxy (so rate limits see the real client IP)
 const path = require('path');
@@ -28,8 +29,11 @@ async function main(){
     store = require('./store-memory.js').makeMemoryStore();
   }
   await store.init();
+  if(process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD.length<12) console.warn('ADMIN_PASSWORD is short — use at least 12 characters.');
+  if(!process.env.ADMIN_PASSWORD) console.warn('ADMIN_PASSWORD not set — the admin page is disabled.');
   const app = await buildApp({
     store, engine: makeEngine(config, secret), config,
+    adminPassword: process.env.ADMIN_PASSWORD || null,
     staticDir: path.join(__dirname, '..', 'dist'),
     corsOrigins: (process.env.CORS_ORIGINS||'').split(',').map(s=>s.trim()).filter(Boolean),
     trustProxy: process.env.TRUST_PROXY==='1',
