@@ -1,251 +1,255 @@
 # Cơ chế AI (bot)
 
 Toàn bộ logic AI nằm trong 1 file: [`src/js/05-ai.js`](src/js/05-ai.js). Không có
-lookahead/minimax/ML gì cả — AI chỉ chấm điểm (scoring heuristic) các lựa chọn ở mỗi
-bước rồi chọn cái điểm cao nhất. File đó có sẵn 1 comment "design doc" ở đầu, file này
-là bản diễn giải tiếng Việt + trỏ tới từng hàm cụ thể.
+lookahead/minimax/ML — AI chỉ chấm điểm (scoring heuristic) các lựa chọn ở mỗi bước rồi
+chọn cái điểm cao nhất. Mọi yếu tố ngẫu nhiên đi qua `random()` có seed, nên cùng seed
+thì AI chơi y hệt.
+
+Các con số trong tài liệu này là **giá trị mặc định** trong
+[`src/config.json`](src/config.json); chúng chỉnh được ở màn Cấu hình, nên một ván cụ thể
+có thể chạy với số khác.
 
 ## 1. Cấu trúc 1 lượt AI
 
-Mỗi lượt AI chạy tuần tự: **chọn 1 ý định tổng thể cho cả lượt** (mục 3), rồi 4 bước
-thực thi ý định đó, mỗi bước cách nhau 1 khoảng delay rồi tự gọi bước kế tiếp bằng
-`setTimeout` (không chặn UI, để người xem thấy diễn biến):
-
 ```
 aiRunFullTurn(pid)
-  → pickAITurnIntent(pid)  (chọn 1 ý định duy nhất, xem mục 3 — chạy 1 lần, không lặp)
-  → aiReinforceStep         (đặt quân tăng viện + đổi bài, ưu tiên theo ý định)
-  → aiAttackStep            (tấn công, lặp lại tới khi hết mục tiêu ngon, ưu tiên theo ý định)
-  → aiFortifyStep           (dồn quân từ hậu phương ra biên giới của ý định)
-  → endTurn()               (phát thẻ bài nếu có chiếm đất, chuyển lượt)
+  → pickAITurnIntent(pid)  (chọn 1 ý định cho cả lượt, mục 4 — chạy đúng 1 lần)
+  → aiReinforceStep         (đổi bài, rồi đặt quân tăng viện)
+  → aiAttackStep            (tấn công, lặp tới khi hết mục tiêu đủ ngưỡng)
+  → aiFortifyStep           (dồn quân từ hậu phương ra biên)
+  → endTurn()               (phát thẻ bài nếu đủ điều kiện, chuyển lượt)
 ```
 
-`intent` (kết quả của `pickAITurnIntent`) được truyền xuyên suốt qua tham số của cả 3
-hàm `aiReinforceStep`/`aiAttackStep`/`aiFortifyStep` — chúng không tự quyết định lại từ
-đầu, mà đọc chung 1 ý định đã chốt. Trường hợp resume 1 ván đã lưu giữa chừng lượt AI
-(`importGameJSON`), không có `intent` cũ để truyền lại nên mỗi hàm tự tính lại
-(`intent || pickAITurnIntent(pid)`) — chấp nhận được vì `pickAITurnIntent` không có tác
-dụng phụ, tính lại lúc nào cũng ra kết quả nhất quán với trạng thái bàn cờ hiện tại.
+`intent` được truyền qua tham số cho cả 3 bước reinforce/attack/fortify. Khi resume 1 ván
+lưu giữa chừng lượt AI thì không có `intent` cũ, mỗi bước tự tính lại
+(`intent || pickAITurnIntent(pid)`); hàm này không có tác dụng phụ nên tính lại được.
 
-Độ trễ giữa các bước dùng hàm `aiDelay(base)` ở [`src/js/02-map-model.js:7`](src/js/02-map-model.js#L7):
-- Chơi bình thường (có người): delay = `base` (300/350/260/400ms tuỳ bước) — gần như
-  tức thời, chỉ đủ để UI kịp vẽ lại.
-- **Chế độ xem AI đấu AI (spectator mode)**: delay = `GAME_CONFIG.spectatorModeDelayMs`
-  (đọc từ [`src/config.json`](src/config.json), mặc định 1000ms) — bỏ qua `base`, dùng
-  chung 1 giá trị cho mọi bước để dễ xem.
-- Riêng giai đoạn đặt quân ban đầu (`setup-place`, đặt từng quân 1 trước khi vào game
-  chính) **không** dùng `aiDelay` — luôn cố định 120ms/quân dù có đang ở spectator mode
-  hay không, vì đặt quân từng viên một không có gì đáng xem chậm
-  ([`src/js/04-game-state.js:81`](src/js/04-game-state.js#L81)). Giai đoạn này cũng
-  không có khái niệm "ý định lượt" — nó chỉ dùng lại công thức chấm điểm biên giới của
-  `pickAIReinforceTarget` (mục 4) mà không truyền `intent`.
+Các bước nối nhau bằng `aiSchedule()` ([02-map-model.js:18](src/js/02-map-model.js#L18))
+chứ không gọi `setTimeout` trực tiếp, để nút tạm dừng dừng được chuỗi này và để server
+chạy không cần chờ thật. Độ trễ lấy từ `aiDelay(base)`
+([02-map-model.js:7](src/js/02-map-model.js#L7)):
+
+- Chơi bình thường: delay = `base` (300 / 350 / 260 / 400ms tuỳ bước).
+- Chế độ xem AI đấu AI: delay = `spectatorModeDelayMs` (300ms), bỏ qua `base`.
+- Giữa 2 trận đánh liên tiếp: cố định 80ms, không qua `aiDelay`, vì hoạt ảnh tấn công đã
+  đủ cho người xem.
+- Lượt AI chỉ bắt đầu sau khi banner "lượt của X" tắt (`TURN_INTRO_TOTAL_MS`).
+
+### Đặt quân ban đầu
+
+Mặc định (`manualInitialPlacement: false`) quân ban đầu của **mọi** người chơi được rải
+ngẫu nhiên lên đất của họ (`autoPlaceInitialArmies`,
+[04-game-state.js:169](src/js/04-game-state.js#L169)) — AI không quyết định gì ở đây.
+
+Khi bật đặt quân thủ công, AI đặt từng quân một bằng `pickAIReinforceTarget` không có
+`intent` ([04-game-state.js:107](src/js/04-game-state.js#L107)), cố định 120ms/quân kể cả
+ở chế độ xem.
 
 ## 2. Độ khó (difficulty)
 
-`difficultyProfile(diff)` ([05-ai.js:61](src/js/05-ai.js#L61)) trả về 2 con số dùng
-xuyên suốt:
+`difficultyProfile(diff, personality)` ([05-ai.js:104](src/js/05-ai.js#L104)):
 
-| Độ khó | `baseThreshold` (tỉ lệ quân tối thiểu để dám tấn công) | `reserveFactor` (dè chừng bao nhiêu) |
+| Độ khó | `baseThreshold` (tỉ lệ quân tối thiểu để dám tấn công) | `reserveFactor` (giữ lại bao nhiêu quân phòng thủ) |
 |---|---|---|
 | Easy   | 2.0  | 1.0 |
 | Normal | 1.5  | 0.6 |
 | Hard   | 1.15 | 0.3 |
 
-- `baseThreshold` càng cao → AI càng cần áp đảo quân số mới dám đánh (Easy hiền, Hard liều).
-- `reserveFactor` càng cao → AI càng để dành nhiều quân phòng thủ thay vì dồn hết đi đánh.
+- `baseThreshold` càng cao → AI càng cần áp đảo quân số mới đánh.
+- `reserveFactor` càng cao → AI càng giữ nhiều quân lại thay vì đem đi đánh.
 
-## 3. Chiến lược tổng thể của lượt — `pickAITurnIntent`
+## 3. Tính cách (personality)
 
-([05-ai.js:117](src/js/05-ai.js#L117)) Đây là phần trả lời câu hỏi "nếu là người chơi
-thật, trước lượt này tôi định làm gì?" — chạy **đúng 1 lần** ở đầu lượt (trong
-`aiRunFullTurn`), nhìn toàn bộ bàn cờ, rồi chốt **1 chiến dịch duy nhất** cho cả lượt.
-3 bước reinforce/attack/fortify sau đó không tự chấm điểm độc lập nữa mà đều cộng thêm
-điểm ưu tiên cho lựa chọn nào phục vụ đúng chiến dịch đã chốt — giống cách 1 người chơi
-quyết định "lượt này tôi dồn lực làm gì" trước khi động vào quân, thay vì đặt quân/đánh
-đấm/dồn quân theo 3 tính toán rời rạc không nhìn nhau.
+Mỗi AI có 1 trong 4 tính cách, chọn ở màn setup. Tính cách chỉnh 4 con số trên nền độ khó
+(`personalityTraits`, [05-ai.js:64](src/js/05-ai.js#L64)):
 
-Chọn theo thứ tự ưu tiên, khớp cái đầu tiên dừng lại (chỉ theo đuổi 1 chiến dịch/lượt,
-không ôm đồm nhiều mục tiêu cùng lúc):
+| Tính cách | Cộng vào ngưỡng | Nhân quân dự phòng | Nhân bonus kết liễu | Nhân bonus châu lục |
+|---|---|---|---|---|
+| Cân bằng (`balanced`)       | 0     | ×1.0 | ×1.0 | ×1.0 |
+| Rùa (`turtle`)              | +0.4  | ×1.6 | ×0.7 | ×1.2 |
+| Xông pha (`rusher`)         | −0.35 | ×0.4 | ×1.0 | ×0.8 |
+| Cơ hội (`opportunist`)      | −0.1  | ×0.9 | ×1.8 | ×0.9 |
 
-1. **`finish_continent`** — còn thiếu đúng 1 lãnh thổ để chiếm trọn 1 châu lục mình
-   đang có, và lãnh thổ đó đã giáp biên với đất của mình (tức đánh được ngay lượt này,
-   không phải "gần" trên bản đồ mà không tới được).
-2. **`kill_weak`** — có 1 đối thủ còn sống chỉ còn ≤2 lãnh thổ và giáp biên với mình
-   (kết liễu được thì cướp trọn bộ bài của họ, xem `checkElimination`).
-3. **`defend`** — biên giới yếu nhất của mình đang bị 1 láng giềng địch áp đảo rõ rệt
-   (chênh lệch quân ≥2), và bản thân chưa phải người mạnh nhất bàn — không đủ sức đi
-   gây sự chỗ khác trong khi nhà đang cháy.
-4. **`expand`** — không có chiến dịch cấp bách nào: mặc định đẩy vào đúng mặt trận yếu
-   nhất của mình (cùng lãnh thổ mà `defend` sẽ chọn, chỉ khác là không có yếu tố "nguy
-   hiểm" đi kèm).
+Ngưỡng sau khi cộng không bao giờ thấp hơn 1.05. Tính cách **không** ảnh hưởng tới việc
+chọn ý định lượt (mục 4), đặt quân, đổi bài hay fortify — chỉ tới bước tấn công.
 
-Kết quả trả về là 1 object nhỏ, ví dụ `{type:'kill_weak', targetPlayerId:3}` hay
-`{type:'finish_continent', continentId:2, focusTerrId:17}` — các bước sau chỉ cần đọc
-`intent.type` và field liên quan để biết có nên cộng điểm ưu tiên hay không.
+## 4. Ý định của lượt — `pickAITurnIntent`
 
-## 4. Đặt quân tăng viện — `pickAIReinforceTarget`
+([05-ai.js:171](src/js/05-ai.js#L171)) Chạy 1 lần đầu lượt, chọn **1 chiến dịch duy
+nhất**. Xét theo thứ tự cố định, khớp cái đầu tiên thì dừng:
 
-([05-ai.js:158](src/js/05-ai.js#L158)) Với mỗi lãnh thổ của mình có giáp biên địch, chấm điểm:
+1. **`finish_continent`** — có 1 châu lục mình chỉ còn thiếu đúng 1 lãnh thổ, và lãnh
+   thổ đó giáp đất mình. Không xét ô đó đang có bao nhiêu quân.
+2. **`kill_weak`** — có đối thủ còn ≤2 lãnh thổ và giáp đất mình. Nếu nhiều người thoả,
+   chọn người ít lãnh thổ nhất. Không xét họ có bao nhiêu quân.
+3. **`defend`** — biên bị áp đảo nặng nhất của mình thua láng giềng địch mạnh nhất ≥2
+   quân, **và** mình yếu hơn đối thủ mạnh nhất (theo `evaluatePlayerPower`).
+4. **`expand`** — mặc định. Tiêu điểm (`focusTerrId`) vẫn là biên bị áp đảo nặng nhất,
+   tức cùng ô mà `defend` sẽ chọn.
 
-```
-score = (quân địch mạnh nhất giáp biên) − (quân mình đang có ở đó)
-score += 1.5   nếu lãnh thổ này thuộc 1 châu lục mình đã chiếm TRỌN (ưu tiên giữ)
-score += 0.8   nếu chỉ còn thiếu 1 lãnh thổ nữa là chiếm trọn châu lục đó
-score += 1.2   nếu lãnh thổ này khớp với ý định `finish_continent`/`kill_weak` của lượt
-score += 1.0   nếu lãnh thổ này chính là tiêu điểm (`focusTerrId`) của ý định `defend`/`expand`
-```
+Ý định được tính lại từ đầu mỗi lượt; AI không nhớ lượt trước mình định làm gì.
 
-Chọn lãnh thổ điểm cao nhất, đặt 1 quân, lặp lại cho tới khi hết quân tăng viện
-(`aiReinforceStep`, vòng lặp có guard 200 lần đề phòng vô hạn). 2 dòng bonus cuối là
-phần mới: chúng đảm bảo quân tăng viện đổ vào đúng mặt trận mà lượt này định đánh/định
-giữ, thay vì chỉ đổ vào chỗ "hở nhất cục bộ" bất kể có liên quan tới kế hoạch hay không.
+### Sức mạnh người chơi — `evaluatePlayerPower`
 
-Trước khi đặt quân, AI còn thử đổi bài (`aiTryTradeCards`, xem mục 5).
-
-## 5. Đổi bài (card trade-in) — `aiTryTradeCards` / `findTradeCombo`
-
-- Bắt buộc đổi nếu có ≥5 lá bài (đúng luật Risk).
-- Nếu có tổ hợp 3 lá hợp lệ (3 lá cùng loại, hoặc 3 loại khác nhau) nhưng chưa bị bắt
-  buộc, AI có 60% cơ hội đổi ngay, 40% giữ lại chờ combo tốt hơn hoặc lượt sau
-  (`Math.random()<0.4` thì bỏ qua).
-- Giá trị quân thưởng tăng dần theo `TRADE_VALUES` dùng chung với người chơi
-  ([`src/js/04-game-state.js:14`](src/js/04-game-state.js#L14)).
-
-## 6. Tấn công — `aiAttackStep`
-
-Đây là phần phức tạp nhất, gồm 3 lớp cộng vào 1 điểm số duy nhất (`attackScore`,
-[05-ai.js:265](src/js/05-ai.js#L265)), cộng thêm phần ưu tiên theo ý định của lượt (mục 3).
-
-### a) Giữ quân dự phòng — `reserveFor(fromId, excludeTo)`
-Trước khi tính có nên tấn công từ 1 lãnh thổ hay không, AI nhìn các *lãnh thổ địch khác*
-giáp biên lãnh thổ đó (trừ mục tiêu đang xét) và để dành lại:
+([05-ai.js:121](src/js/05-ai.js#L121))
 
 ```
-reserve = ceil(quân của láng giềng địch mạnh nhất khác × reserveFactor)
-usable  = (quân hiện có − 1 − reserve)   // −1 vì luôn phải chừa lại ≥1 quân trấn giữ
+power = tổng quân × 2 + số lãnh thổ × 1 + quân tăng viện mỗi lượt × 6
 ```
 
-→ Nếu 1 lãnh thổ có 2 hướng địch đe doạ, AI không dồn hết quân đánh 1 hướng mà bỏ mặc
-hướng kia. `usable < 1` thì lãnh thổ đó bị loại khỏi danh sách có thể tấn công.
+Quân tăng viện được nhân nặng vì nó cho biết ai đang lớn nhanh, không chỉ ai đang đông.
 
-### b) Ưu tiên châu lục
-`ratio = (usable+1) / quân địch tại ô đích`. Nếu chiếm ô đó xong sẽ chiếm TRỌN 1 châu
-lục (`completesContinentFor`), cộng thẳng `+2.5` điểm bonus — đủ lớn để AI chấp nhận tỉ
-lệ thắng thấp hơn bình thường miễn là hoàn tất châu lục.
+## 5. Đặt quân tăng viện — `pickAIReinforceTarget`
 
-### c) Ưu tiên "kết liễu" đối thủ yếu
-Nếu đối thủ đang giữ ô đó chỉ còn ≤2 lãnh thổ trên bản đồ (sắp bị loại):
+([05-ai.js:212](src/js/05-ai.js#L212)) Chỉ xét lãnh thổ có giáp địch. Chấm điểm:
 
 ```
-bonus += 1.5 + (số thẻ bài đối thủ đang có) × 0.4
+score = (quân địch mạnh nhất giáp biên) − (quân mình ở đó)
+score += 1.5   nếu ô này thuộc châu lục mình đã chiếm trọn
+score += 0.8   nếu châu lục đó chỉ còn thiếu 1 ô
+score += 1.2   nếu ô thuộc châu lục của ý định finish_continent
+score += 1.2   nếu ô giáp đối thủ của ý định kill_weak
+score += 1.0   nếu ô chính là focusTerrId của ý định defend / expand
 ```
 
-→ Đối thủ càng nhiều bài càng đáng bị "làm thịt" trước, vì loại được họ thì cướp luôn
-toàn bộ bài của họ (`checkElimination`, [04-game-state.js:265](src/js/04-game-state.js#L265)).
+Đặt 1 quân vào ô điểm cao nhất, tính lại, lặp tới khi hết quân. Vì điểm gốc giảm 1 mỗi
+khi thêm 1 quân, quân có xu hướng được **rải cho các biên ngang nhau** chứ không dồn vào
+một chỗ.
 
-Ngược lại, nếu ô đó thuộc về người chơi đang dẫn đầu (`evaluatePlayerPower` cao nhất —
-tính bằng tổng quân + 2×số lãnh thổ) và bản thân AI chưa mạnh hơn họ ít nhất 10%, AI bị
-trừ `−0.6` điểm — dè chừng gây sự với kẻ mạnh nhất bàn.
+Ngoại lệ — khi lượt có 1 "mục tiêu duy nhất" thì biên giáp mục tiêu đó thắng tuyệt đối,
+bất kể điểm, nên toàn bộ quân dồn vào đó:
 
-### c.5) Liên minh chống người dẫn đầu (tuỳ chọn, `game.allianceEnabled`)
-Chỉ bật khi tick "🤝 Liên minh chống người dẫn đầu" lúc setup ván. `findAllianceLeader()`
-([05-ai.js:77](src/js/05-ai.js#L77)) quét TẤT CẢ người chơi còn sống (kể cả chính AI đang
-xét — khác với mục c ở trên, vốn chỉ so với đối thủ), sắp theo `evaluatePlayerPower`, và
-chỉ công nhận có "leader" nếu người mạnh nhất vượt qua CẢ HAI ngưỡng:
+- Ý định là `kill_weak` → mục tiêu là đối thủ đang bị nhắm.
+- Liên minh đang kích hoạt (mục 7c) → mục tiêu là người dẫn đầu; lúc này quân địch
+  không phải của người dẫn đầu cũng không được tính là mối đe doạ.
 
-```
-sức mạnh top-1 ≥ tổng sức mạnh TẤT CẢ người còn lại × ALLIANCE_LEADER_VS_FIELD_RATIO (0.8)
-sức mạnh top-1 ≥ sức mạnh người thứ nhì               × ALLIANCE_LEADER_MARGIN        (1.3)
-```
+## 6. Đổi bài — `aiTryTradeCards`
 
-Ngưỡng đầu đảm bảo leader thực sự đe doạ được CẢ BÀN gộp lại (không chỉ nhỉnh hơn 1 người),
-ngưỡng sau đảm bảo leader rõ ràng vượt trội người bám sát nhất — thiếu 1 trong 2 thì không
-có ai được công nhận là "đang dẫn đầu" lượt đó, cơ chế liên minh coi như tắt.
+([05-ai.js:281](src/js/05-ai.js#L281)) Chạy đầu bước reinforce.
 
-Nếu có leader thật sự và bản thân AI không phải leader đó:
-```
-+1.2  nếu ô địch thuộc về chính leader   → dồn lực đánh kẻ mạnh nhất
-−0.8  nếu ô địch thuộc về đối thủ khác   → miễn cưỡng đánh "đồng cảnh ngộ"
-```
-Chính leader thì được miễn hoàn toàn (chơi bình thường, không bị cộng/trừ gì ở đây).
+- Có ≥5 lá: bắt buộc đổi.
+- Có bộ 3 hợp lệ (3 lá giống nhau hoặc 3 lá khác nhau) mà chưa bị bắt buộc: AI giữ lại
+  với xác suất tuỳ luật đổi bài của ván:
+  - `progressive`: giữ 70% — lần đổi sau luôn được nhiều quân hơn nên chờ có lợi.
+  - `fixed` và `exponential`: giữ 10% — chờ không được thêm gì.
 
-### d) Ưu tiên theo ý định của lượt
-Cộng thêm dựa trên `intent` đã chốt ở mục 3, để việc tấn công không "lạc đề" khỏi chiến
-dịch đã chọn dù có 1 cặp lãnh thổ khác lỡ chấm điểm nhỉnh hơn ở vòng lặp này:
+Giá trị quân nhận được tính bằng `tradeInValue`
+([04-game-state.js:33](src/js/04-game-state.js#L33)), dùng chung với người chơi.
+
+## 7. Tấn công — `aiAttackStep`
+
+([05-ai.js:328](src/js/05-ai.js#L328))
+
+### a) Quân dự phòng — `reserveFor(fromId, excludeTo)`
 
 ```
-+0.8  nếu ô đích thuộc châu lục đang theo đuổi (intent.type === 'finish_continent')
-+1.0  nếu chủ ô đích chính là đối thủ đang bị nhắm kết liễu (intent.type === 'kill_weak')
-−0.3  nếu ý định lượt này là 'defend' — dè dặt hơn, ưu tiên củng cố thay vì phiêu lưu chỗ khác
+reserve = ceil(quân của láng giềng địch mạnh nhất, không tính ô đang định đánh × reserveFactor)
+usable  = quân hiện có − 1 − reserve
 ```
 
-### e) Chọn mục tiêu & ngưỡng quyết định tấn công
-Mỗi vòng lặp (`step()`), AI duyệt **mọi cặp** (lãnh thổ mình có ≥2 quân) × (láng giềng
-địch), tính điểm theo công thức trên, chọn cặp điểm cao nhất. Có tấn công hay không còn
-tuỳ ngưỡng động:
+`usable < 1` thì ô đó không được dùng để tấn công.
+
+### b) Tỉ lệ lực lượng
 
 ```
-effectiveThreshold = max(1.05, baseThreshold − bonus×0.3)
+tỉ lệ đơn  = (usable + 1) / quân địch ở ô đích
 ```
 
-Bonus càng lớn (sắp ăn trọn châu lục / sắp kết liễu đối thủ) → ngưỡng càng hạ, AI chấp
-nhận đánh dù tỉ lệ quân không áp đảo. Nếu `ratio < effectiveThreshold` (hoặc không còn
-mục tiêu nào), AI dừng tấn công và chuyển sang fortify.
+Nếu mình còn ô khác cũng giáp ô đích, cộng `usable` của các ô đó lại thành "tỉ lệ vùng",
+rồi lấy **trung bình** của tỉ lệ đơn và tỉ lệ vùng. Nhờ vậy một ô bị kẹp giữa 2 đạo quân
+của mình được coi là đánh được dù từng đạo riêng lẻ chưa đủ ngưỡng.
 
-AI cứ đánh xong 1 trận (`doBattle`) lại tính lại từ đầu (tối đa 60 vòng lặp phòng vô
-hạn) — nghĩa là 1 lượt có thể đánh liên tiếp nhiều trận nếu vẫn còn mục tiêu ngon.
-`intent` không đổi giữa các vòng lặp này — chỉ tính 1 lần đầu lượt.
+Đây là tỉ lệ quân số, không phải xác suất thắng tính theo xúc xắc.
 
-### Cơ chế đổ xúc xắc (dùng chung cho cả người lẫn AI)
-`doBattle(fromId, toId)` ở [04-game-state.js:162](src/js/04-game-state.js#L162):
-tấn công tối đa 3 xúc xắc (= quân−1, tối đa 3), phòng thủ tối đa 2 xúc xắc (= quân, tối
-đa 2). So từng cặp xúc xắc cao nhất với cao nhất — **hoà thì phòng thủ thắng**. Nếu
-chiếm được ô (quân địch về 0), số quân tối thiểu phải chuyển sang = số xúc xắc tấn công
-đã dùng ở lượt thắng đó; AI chuyển đúng mức tối thiểu này (không dồn thêm), giữ phần còn
-lại ở ô xuất phát để phòng thủ.
+### c) Điểm cộng/trừ (`bonus`)
 
-## 7. Tăng cường (fortify) — `aiFortifyStep`
+| Điều kiện | Điểm |
+|---|---|
+| Chiếm ô này là trọn 1 châu lục | +2.5 × hệ số châu lục của tính cách |
+| Chủ ô đích còn ≤2 lãnh thổ | +(1.5 + số bài của họ × 0.4) × hệ số kết liễu |
+| Chủ ô đích là đối thủ mạnh nhất, và mình chưa mạnh hơn họ 10% | −0.6 |
+| Liên minh đang kích hoạt, ô đích của người dẫn đầu | +1.2 |
+| Ý định `finish_continent`, ô đích thuộc châu lục đó | +0.8 |
+| Ý định `kill_weak`, ô đích của đối thủ đang bị nhắm | +1.0 |
+| Ý định `defend` (áp cho mọi đòn tấn công) | −0.3 |
 
-([05-ai.js:373](src/js/05-ai.js#L373)) Tìm lãnh thổ "hậu phương" (toàn bộ láng giềng
-đều là quân mình, và có >1 quân) đang giữ **nhiều quân nhất**, dồn gần hết (chừa lại 1)
-sang 1 lãnh thổ biên giới (có láng giềng địch) có đường nối (`pathExistsOwned`). Chỉ
-chuyển 1 lần duy nhất mỗi lượt, không lặp tối ưu nhiều bước.
+**Liên minh chống người dẫn đầu** (tuỳ chọn `game.allianceEnabled`).
+`findAllianceLeader()` ([05-ai.js:92](src/js/05-ai.js#L92)) xét mọi người còn sống, kể cả
+chính AI đang đi, và chỉ công nhận người mạnh nhất là "leader" khi đạt cả 2 ngưỡng:
 
-Khác với trước đây (chọn đại biên giới đầu tiên tìm thấy có đường nối), giờ danh sách
-biên giới được **sắp xếp ưu tiên** theo `intent` của lượt trước khi tìm đường
-(`isIntentFront`): biên giới nào thuộc đúng châu lục đang theo đuổi, giáp đúng đối thủ
-đang bị nhắm kết liễu, hoặc chính là `focusTerrId` của ý định `defend`/`expand`, được
-thử trước. Nhờ vậy quân tăng cường đổ đúng vào mặt trận sẽ dùng ở lượt sau (tiếp nối
-đúng chiến dịch), thay vì đổ vào 1 biên giới bất kỳ chỉ vì nó là cái đầu tiên có đường
-nối tới.
+```
+power top-1 ≥ tổng power của tất cả người còn lại × 0.6
+power top-1 ≥ power người thứ nhì               × 1.2
+```
 
-## 8. Kết thúc lượt & phát thẻ bài
+Khi có leader, mọi AI khác bị **khoá cứng**: lượt đó chỉ được tấn công đất của leader.
+Nếu không có ô nào giáp leader thì không tấn công gì. Quân dự phòng cũng chỉ tính trước
+đất của leader. Leader thì chơi bình thường.
 
-`endTurn()` ([04-game-state.js:321](src/js/04-game-state.js#L321)) quyết định có phát
-thẻ bài hay không dựa theo `RUNTIME_CONFIG.cardAwardEvent` (chọn ở màn Cài đặt, xem
-[config.md](#) / màn Settings), áp dụng như nhau cho cả người chơi lẫn AI vì dùng chung
-1 hàm:
+### d) Chọn mục tiêu và ngưỡng
 
-- `on_capture` (mặc định) — chiếm được ≥1 lãnh thổ trong lượt (`p.capturedThisTurn`,
-  set trong `doBattle` khi chiếm xong 1 ô).
-- `on_kill` — chỉ cần hạ được ≥1 quân địch trong lượt, không cần chiếm trọn ô
-  (`p.killedThisTurn`, set trong `doBattle` khi `defLoss>0`, tức thắng ≥1 lượt xúc xắc).
-- `on_turn_end` — luôn được phát, không cần điều kiện gì.
+Mỗi vòng, AI duyệt mọi cặp (ô mình có ≥2 quân) × (láng giềng địch), chọn cặp có
+`score = tỉ lệ + bonus` cao nhất. Chỉ đánh nếu:
 
-Nếu đủ điều kiện: random 1 loại thẻ bài, cộng vào tay bài, rồi chuyển sang người chơi
-còn sống kế tiếp trong `turnOrder`. AI không có logic riêng cho việc này — nó tự động
-nhận thẻ theo đúng chế độ đang chọn vì đi qua cùng `endTurn()`; ý định `kill_weak` (mục
-3) và bonus "kết liễu đối thủ yếu" (mục 6c) không đổi theo chế độ này, vì chúng nhắm tới
-việc **cướp trọn bộ bài đã tích luỹ** của đối thủ khi loại họ (`checkElimination`),
-không phụ thuộc vào việc thẻ được phát ra sao.
+```
+tỉ lệ ≥ max(1.05, baseThreshold − bonus × 0.3)
+```
 
-## Tóm tắt độ "thông minh"
+Không đạt thì AI dừng tấn công, chuyển sang fortify. Tối đa 60 vòng mỗi lượt.
 
-AI **không** nhìn trước nhiều nước đi, không mô phỏng phản ứng của đối thủ. Nhưng khác
-với 1 AI thuần "3 bước tính điểm độc lập", lượt của nó bắt đầu bằng **1 quyết định chiến
-lược duy nhất** (`pickAITurnIntent`, mục 3) rồi để 3 bước còn lại phục vụ đúng quyết
-định đó — gần với cách 1 người chơi thật lên kế hoạch trước khi chạm vào quân, thay vì
-tối ưu cục bộ từng bước rồi hy vọng chúng tự nhất quán với nhau. Cộng thêm vào đó là 3
-lớp cộng điểm ở bước tấn công (mục 6): giữ quân dự phòng trước mối đe doạ thứ 2, ham
-hoàn tất châu lục, và săn đối thủ sắp chết để cướp bài — cùng với việc so sánh sức mạnh
-tổng thể để né gây sự với người đang dẫn đầu khi mình chưa đủ mạnh.
+AI không còn "liều đánh để kiếm bài": đoạn ép 1 đòn dưới ngưỡng mỗi lượt đã bị tắt
+(`stillNeedsCardThisTurn()` luôn trả `false`). Bàn cờ bế tắc thì AI có thể đi nhiều lượt
+không đánh.
+
+### e) Đánh một trận — `battleBatch`
+
+Với cặp đã chọn, AI đánh liên tiếp nhiều hiệp vào cùng ô đích, kiểm tra lại quân dự
+phòng và ngưỡng trước **mỗi hiệp**, dừng khi chiếm được hoặc hết lợi thế. Chỉ xúc xắc của
+hiệp cuối được hiển thị, log gộp thành 1 dòng.
+
+Luật xúc xắc (`doBattle`, [04-game-state.js:283](src/js/04-game-state.js#L283)) dùng
+chung với người chơi: tấn công tối đa 3 xúc xắc, phòng thủ tối đa 2, hoà thì phòng thủ
+thắng.
+
+Khi chiếm được ô, AI chỉ chuyển sang **mức tối thiểu** (bằng số xúc xắc vừa dùng, 1–3
+quân). Phần còn lại ở nguyên ô xuất phát. Người chơi thì được chọn chuyển thêm.
+
+## 8. Fortify — `aiFortifyStep`
+
+([05-ai.js:529](src/js/05-ai.js#L529))
+
+- Nguồn: **mọi** ô hậu phương (toàn bộ láng giềng là đất mình) có >1 quân. Mỗi ô chuyển
+  hết, chừa lại 1.
+- Đích: các ô biên, xếp ô thuộc mặt trận của ý định lên trước, rồi lấy ô **đầu tiên** có
+  đường nối qua đất mình (`pathExistsOwned`).
+- Mặt trận của ý định: châu lục đang theo đuổi (`finish_continent`), ô giáp đối thủ đang
+  bị nhắm (`kill_weak`), hoặc `focusTerrId` (`defend` / `expand`). Khi liên minh kích
+  hoạt thì là mọi ô giáp leader, thay cho ý định.
+
+AI không chuyển quân giữa 2 ô biên với nhau, và không chia quân theo mức độ bị đe doạ.
+
+## 9. Kết thúc lượt và thẻ bài
+
+`endTurn()` ([04-game-state.js:385](src/js/04-game-state.js#L385)) phát 1 thẻ theo
+`cardAwardEvent`, áp dụng như nhau cho người và AI:
+
+- `on_capture` (mặc định) — chiếm được ≥1 ô trong lượt.
+- `on_kill` — hạ được ≥1 quân địch trong lượt.
+- `on_turn_end` — luôn được phát.
+
+AI không điều chỉnh hành vi theo chế độ này. Loại được một người chơi thì lấy toàn bộ
+bài của họ (`checkElimination`, [04-game-state.js:341](src/js/04-game-state.js#L341)) —
+đó là lý do của bonus kết liễu ở mục 7c.
+
+## 10. Giới hạn đã biết
+
+- Không nhìn trước nước đi, không mô phỏng phản ứng của đối thủ.
+- Không có trí nhớ giữa các lượt: ý định, mục tiêu, ai vừa đánh mình đều không được lưu.
+- Thứ tự ưu tiên ý định cố định, không có yếu tố ngẫu nhiên. Ngẫu nhiên duy nhất trong
+  quyết định của AI là việc giữ hay đổi bài.
+- Quân tăng viện bị rải đều các biên (mục 5), và đạo quân chính không tiến theo sau khi
+  chiếm ô (mục 7e), nên AI hiếm khi đánh xuyên nhiều ô trong 1 lượt.
+- Ở độ khó Easy/Normal, AI có thể đứng yên rất nhiều lượt: trong
+  `test/ai-smoke-test.js`, ván 4 người Easy không kết thúc sau 3000 vòng.
+
+Hướng nâng cấp đang thảo luận: [`ai-strategy-discussion.md`](ai-strategy-discussion.md).

@@ -1,7 +1,8 @@
 /* =========================================================================
    AI LOGIC
    ---------------------------------------------------------------------
-   No external file/spec — this comment block IS the AI's "design doc".
+   This comment block is the AI's "design doc"; ai.md at the repo root walks
+   through the same logic step by step, with the numbers.
    Every decision is a simple weighted-scoring heuristic, not lookahead/
    minimax or ML. But the turn isn't just four independently-scored steps
    run back to back — it starts with ONE overall campaign decision that the

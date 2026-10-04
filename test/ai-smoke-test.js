@@ -19,10 +19,11 @@
      - the AI never throws mid-turn across a spread of player counts/
        difficulties/alliance/trade-rule combos (a crash here would freeze a
        real match for anyone watching AI-vs-AI)
-     - the "must land >=1 card-earning action per turn" rule (05-ai.js,
-       stillNeedsCardThisTurn()/forcedForCard) actually fires under every
-       cardAwardEvent mode, and never fires when it shouldn't
-       (on_turn_end awards a card unconditionally, so nothing to force)
+     - how often an AI ends a turn without earning a card (the tally's
+       noCardDespiteOptions/noCardNoOptions) under each cardAwardEvent mode —
+       a rough measure of how passive the AI is. The "must land >=1
+       card-earning action per turn" rule (05-ai.js, stillNeedsCardThisTurn()/
+       forcedForCard) is switched off, so forcedLogs is expected to stay 0
 
    Run: node test/ai-smoke-test.js   (or `npm run test:ai`)
    Exits non-zero if anything throws. Non-convergence (a game that never
