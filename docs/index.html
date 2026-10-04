@@ -4682,7 +4682,7 @@ function clipOutSeam(ctx, map){
 // the window = R*sin(θ) for a surface arc R*θ). The bands are then shaded — darker toward the
 // limb, fading into the sea color, with a thin bright "atmosphere" rim — and nothing is drawn past
 // the limb, so the game screen's own sea-colored background shows there.
-const GLOBE_BAND_PX = 120;     // on-screen width of each curved band (less if there isn't room)
+const GLOBE_BAND_PX = 64;      // on-screen width of each curved band (less if there isn't room)
 const GLOBE_THETA_MAX = 1.31;  // how far round the globe the band reaches (~75°) — 90° would squash the last slice to nothing
 let globeBuf = null;           // off-screen buffer canvas, reused between frames
 const GLOBE_BAND_DPR_MAX = 0.75;  // band buffer resolution cap (device px per CSS px)
@@ -4760,7 +4760,7 @@ function drawGlobeComposite(octx, buf, g, dpr, bufDpr, viewW, viewH){
     // ...and dissolves into the sea, reaching the plain sea color right at the limb
     band(edge, limb, [[0,'rgba(28,181,224,0)'], [0.4,'rgba(28,181,224,0)'], [0.75,'rgba(28,181,224,0.55)'], [1,'rgba(28,181,224,1)']]);
     // thin bright atmosphere rim straddling the limb
-    const rim = 12;
+    const rim = 7;
     band(limb-dir*rim, limb+dir*rim, [[0,'rgba(225,250,255,0)'], [0.5,'rgba(225,250,255,0.5)'], [1,'rgba(225,250,255,0)']]);
   });
   octx.restore();
