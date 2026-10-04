@@ -1,6 +1,14 @@
 /* =========================================================================
    NAVIGATION / WIRING
    ========================================================================= */
+// The browser's side of the core's `host` (00-core-utils.js): the rules and AI call these to
+// show what just happened.
+Object.assign(host, {
+  renderGame, renderCombatLog, setActionHint, showDice, showTurnIntro, openCardsModal,
+  showGameOver, startAttackAnim,
+  onGameInit(){ gameZoom = 1; resetRenderAnimState(); },
+});
+
 // A clicked <button> keeps keyboard focus afterward (standard browser behavior) — left alone,
 // that means the NEXT Space or Enter press activates THAT button again instead of whatever
 // global shortcut the key is supposed to mean (e.g. click "📜 Nhật ký trận đấu" once, then press

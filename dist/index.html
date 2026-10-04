@@ -1065,6 +1065,125 @@ const GAME_CONFIG = {
   "reinforceMin": 3
 };
 
+/* ---- src/js/00-core-utils.js ---- */
+/* =========================================================================
+   CORE BASE — shared by the browser build and the server (dist/core.js)
+   ---------------------------------------------------------------------
+   Files listed in CORE_FILES (build.js) are the game's rules, AI and map model. They run both
+   in the browser and in Node, so they must never touch the DOM, window or localStorage — the
+   build fails if they do. Everything the core needs from its surroundings goes through `host`.
+   ========================================================================= */
+
+// What the core asks of whoever is running it. The browser fills these in with the real UI
+// functions (see the Object.assign(host, …) in 08-wiring.js); the server records them as events;
+// left alone they do nothing, which is all a headless run needs.
+const host = {
+  renderGame(){}, renderCombatLog(){}, setActionHint(){}, showDice(){}, showTurnIntro(){},
+  openCardsModal(){}, showGameOver(){},
+  // plays the attack animation, then calls onDone — with nothing to show, straight away
+  startAttackAnim(info, onDone){ if(onDone) onDone(); },
+  onGameInit(){},      // a new game object was just created (reset view state)
+  beforeEndTurn(){},   // called with the player whose turn is ending, before anything changes
+  schedule: null,      // (fn, delayMs) — replaces the default pausable setTimeout in aiSchedule()
+};
+
+/* ---- Config ---- */
+// GAME_CONFIG (inlined from src/config.json at build time, or passed to createCore() on the
+// server) is the shipped default. RUNTIME_CONFIG is what the game actually reads — the browser
+// overlays the player's saved settings onto it (01-utils.js).
+const CONFIG_KEYS = Object.keys(GAME_CONFIG); // every key in src/config.json is a setting
+function pickConfig(obj){ const out={}; CONFIG_KEYS.forEach(k=> out[k]=obj[k]); return out; }
+let RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG);
+
+/* ---- Utilities ---- */
+function rand(n){ return Math.floor(Math.random()*n); }
+function randChoice(arr){ return arr[rand(arr.length)]; }
+function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=rand(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+// Rough perceptual distance between 2 hex colors (Euclidean over RGB — good enough for picking
+// visually-distinct continent colors, no need for a proper color space here).
+function colorDistance(hexA, hexB){
+  const a = parseInt(hexA.slice(1),16), b = parseInt(hexB.slice(1),16);
+  const dr = ((a>>16)&255)-((b>>16)&255), dg = ((a>>8)&255)-((b>>8)&255), db = (a&255)-(b&255);
+  return Math.sqrt(dr*dr+dg*dg+db*db);
+}
+function rollDie(){ return 1+rand(6); }
+// Real-world grounding for how big a freshly random-generated map's territories should be:
+// mobile touch-target guidelines (iOS Human Interface Guidelines, Android Material Design)
+// call for a minimum ~44px tappable area. Territories — not individual grid cells — are what
+// the player actually taps, so the target below is the AVERAGE territory footprint. It's set
+// equal to that 44px minimum (no headroom multiplier) — a smaller target means more, smaller
+// territories per map, which was chosen deliberately over guaranteeing every single
+// below-average territory clears the touch target too.
+const TOUCH_TARGET_PX = 44;
+const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*1.5;
+
+// Rough estimate of the canvas's usable width share of the viewport, leaving room for the
+// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Used by
+// computeCellsPerTerritory() in 02-map-model.js.
+// A generated map's grid/territory count is baked into its data — it doesn't get re-partitioned
+// when later opened on a different device. So this is deliberately NOT the current device's
+// actual window.innerWidth: sizing off whatever screen happens to generate the map would make a
+// map generated on desktop (more territories, calibrated to desktop's wider canvas) unplayably
+// cramped if later opened on mobile, even though the reverse (mobile-generated map opened on
+// desktop — same content, just rendered bigger on the larger canvas) is always fine. Fixed at a
+// conservative mobile-landscape width instead, so every map is comfortable on the smallest
+// supported device by construction and only ever looks BIGGER, never smaller, elsewhere.
+const MOBILE_BASELINE_WIDTH = 700;
+function estimateCanvasWidth(){
+  return Math.max(320, MOBILE_BASELINE_WIDTH*0.72);
+}
+// A few entries here used to be bright/pale blues or teals ("#98c1d9","#00bbf9","#00f5d4",
+// "#2ec4b6","#1982c4") close enough to the bright ocean color (see OCEAN_COLOR in
+// 06-render-game.js/03-editor.js) that a territory/continent using one could visually blend
+// into the surrounding water — swapped for warm/jewel tones with no such collision instead.
+const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#e8998d","#c9a0dc","#f4a261","#e76f51",
+  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#ffb703","#c9184a",
+  "#fee440","#ff9f1c","#7209b7","#e71d36","#8ac926","#fb8500","#6a4c93","#ff595e"];
+const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#f72585","#ff9f5b","#7bd389"];
+// Turn-intro banner timing (see showTurnIntro() in 06-render-game.js) — kept here rather than
+// in that file so 04-game-state.js's startReinforce() can reference TURN_INTRO_TOTAL_MS without
+// depending on the DOM-only render module (also the module the AI smoke-test harness loads
+// alongside 04, since it deliberately skips 06-08).
+const TURN_INTRO_SHOW_MS = 1000;
+const TURN_INTRO_FADE_MS = 400;
+const TURN_INTRO_TOTAL_MS = TURN_INTRO_SHOW_MS + TURN_INTRO_FADE_MS;
+
+// Radius (canvas-space units, same as map.cellSize) of the fixed-size army badge drawn on each
+// territory (drawArmyBadge, 06-render-game.js). The random map generator sizes territories so
+// 3 of these fit in each one (territoryFitsBadges, 02-map-model.js).
+const ARMY_BADGE_RADIUS = 13;
+/* ---------- Naming rules: territory names always lowercase, continent names always
+   uppercase, no digits or special characters in either. ---------- */
+const TERR_PREFIXES = ["đông","tây","nam","bắc","trung","thượng","hạ","tân","cổ","đại"];
+const TERR_BASES = ["sơn","hà","giang","hải","phong","lâm","thảo","sa","đồng","hồ","vịnh","đảo",
+  "làng","phố","thôn","đèo","gò","bãi","cồn","thung","cao","mộc","thủy","vân","yên","bình","an","khê","trại","doi"];
+const CONT_WORDS = ["úc","phi","âu","á","mỹ","cực bắc","cực nam","hoang mạc","bình nguyên",
+  "cao nguyên","quần đảo","thảo nguyên","đại dương","hải đảo","sơn nguyên"];
+
+function stripInvalidNameChars(str){
+  // Keep unicode letters and spaces only; strip digits, punctuation, symbols.
+  return String(str||'').replace(/[^\p{L}\s]/gu,'').replace(/\s+/g,' ');
+}
+function finalizeTerrName(str){
+  const s = stripInvalidNameChars(str).trim();
+  return s ? s.toLocaleLowerCase('vi') : '';
+}
+function finalizeContName(str){
+  const s = stripInvalidNameChars(str).trim();
+  return s ? s.toLocaleUpperCase('vi') : '';
+}
+function defaultTerrName(id){
+  const idx = id-1;
+  const p = TERR_PREFIXES[idx % TERR_PREFIXES.length];
+  const b = TERR_BASES[Math.floor(idx/TERR_PREFIXES.length) % TERR_BASES.length];
+  return finalizeTerrName(p+' '+b);
+}
+function defaultContName(id){
+  const idx = id-1;
+  return finalizeContName(CONT_WORDS[idx % CONT_WORDS.length]);
+}
+
 /* ---- src/js/01-utils.js ---- */
 /* =========================================================================
    RUNTIME CONFIG (Settings screen)
@@ -1076,15 +1195,13 @@ const GAME_CONFIG = {
    screen can also export the current values back out as a config.json file to
    promote them into the real source-of-truth default for the next build.
    ========================================================================= */
-const CONFIG_KEYS = Object.keys(GAME_CONFIG); // every key in src/config.json is a setting
 const SETTINGS_STORAGE_KEY = 'riskDominationSettings';
-function pickConfig(obj){ const out={}; CONFIG_KEYS.forEach(k=> out[k]=obj[k]); return out; }
 function loadRuntimeConfig(){
   let stored = {};
   try{ stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}'); }catch(e){ stored = {}; }
   return Object.assign({}, GAME_CONFIG, stored);
 }
-let RUNTIME_CONFIG = loadRuntimeConfig();
+RUNTIME_CONFIG = loadRuntimeConfig();
 function saveRuntimeConfig(){ localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(pickConfig(RUNTIME_CONFIG))); }
 function setConfigValue(key, value){ RUNTIME_CONFIG[key] = value; saveRuntimeConfig(); }
 function resetRuntimeConfig(){ RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG); localStorage.removeItem(SETTINGS_STORAGE_KEY); }
@@ -1113,10 +1230,6 @@ function withShortcut(label, key){ return hasKeyboardDetected ? `${label} (${key
    ========================================================================= */
 const $ = (id)=>document.getElementById(id);
 function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!==undefined) e.innerHTML=html; return e; }
-function rand(n){ return Math.floor(Math.random()*n); }
-function randChoice(arr){ return arr[rand(arr.length)]; }
-function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=rand(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
-function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
 function shadeColor(hex, percent){
   // percent negative = darker/richer, positive = lighter/washed out
   const num = parseInt(hex.slice(1),16);
@@ -1125,13 +1238,6 @@ function shadeColor(hex, percent){
   let b = (num&0xff) + Math.round(2.55*percent);
   r=clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
   return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1).toUpperCase();
-}
-// Rough perceptual distance between 2 hex colors (Euclidean over RGB — good enough for picking
-// visually-distinct continent colors, no need for a proper color space here).
-function colorDistance(hexA, hexB){
-  const a = parseInt(hexA.slice(1),16), b = parseInt(hexB.slice(1),16);
-  const dr = ((a>>16)&255)-((b>>16)&255), dg = ((a>>8)&255)-((b>>8)&255), db = (a&255)-(b&255);
-  return Math.sqrt(dr*dr+dg*dg+db*db);
 }
 let _stripeTileCanvas = null;
 function getStripeTile(){
@@ -1173,7 +1279,6 @@ function getNoiseTile(){
   return c;
 }
 function getNoisePattern(ctx){ return ctx.createPattern(getNoiseTile(), 'repeat'); }
-function rollDie(){ return 1+rand(6); }
 // Draws text centered at (x,y) — assumes ctx.textAlign='center', ctx.textBaseline='middle' —
 // on a translucent dark rounded-rect background. Continent labels sit directly on top of
 // whatever territory colors happen to be underneath (unlike army badges, which always sit on a
@@ -1193,31 +1298,6 @@ function fillTextWithBackground(ctx, text, x, y){
   ctx.fillStyle = '#fff';
   ctx.fillText(text, x, y);
 }
-// Real-world grounding for how big a freshly random-generated map's territories should be:
-// mobile touch-target guidelines (iOS Human Interface Guidelines, Android Material Design)
-// call for a minimum ~44px tappable area. Territories — not individual grid cells — are what
-// the player actually taps, so the target below is the AVERAGE territory footprint. It's set
-// equal to that 44px minimum (no headroom multiplier) — a smaller target means more, smaller
-// territories per map, which was chosen deliberately over guaranteeing every single
-// below-average territory clears the touch target too.
-const TOUCH_TARGET_PX = 44;
-const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*1.5;
-
-// Rough estimate of the canvas's usable width share of the viewport, leaving room for the
-// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Used by
-// computeCellsPerTerritory() in 02-map-model.js.
-// A generated map's grid/territory count is baked into its data — it doesn't get re-partitioned
-// when later opened on a different device. So this is deliberately NOT the current device's
-// actual window.innerWidth: sizing off whatever screen happens to generate the map would make a
-// map generated on desktop (more territories, calibrated to desktop's wider canvas) unplayably
-// cramped if later opened on mobile, even though the reverse (mobile-generated map opened on
-// desktop — same content, just rendered bigger on the larger canvas) is always fine. Fixed at a
-// conservative mobile-landscape width instead, so every map is comfortable on the smallest
-// supported device by construction and only ever looks BIGGER, never smaller, elsewhere.
-const MOBILE_BASELINE_WIDTH = 700;
-function estimateCanvasWidth(){
-  return Math.max(320, MOBILE_BASELINE_WIDTH*0.72);
-}
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
@@ -1225,65 +1305,14 @@ function showScreen(id){
   document.body.classList.toggle('in-game-screen', id==='screen-game');
 }
 
-// A few entries here used to be bright/pale blues or teals ("#98c1d9","#00bbf9","#00f5d4",
-// "#2ec4b6","#1982c4") close enough to the bright ocean color (see OCEAN_COLOR in
-// 06-render-game.js/03-editor.js) that a territory/continent using one could visually blend
-// into the surrounding water — swapped for warm/jewel tones with no such collision instead.
-const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#e8998d","#c9a0dc","#f4a261","#e76f51",
-  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#ffb703","#c9184a",
-  "#fee440","#ff9f1c","#7209b7","#e71d36","#8ac926","#fb8500","#6a4c93","#ff595e"];
-const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#f72585","#ff9f5b","#7bd389"];
 // Bright ocean blue used for water fill on both canvases and for the space around the map,
 // so zooming out reads as one continuous ocean surrounding the continents.
-// Turn-intro banner timing (see showTurnIntro() in 06-render-game.js) — kept here rather than
-// in that file so 04-game-state.js's startReinforce() can reference TURN_INTRO_TOTAL_MS without
-// depending on the DOM-only render module (also the module the AI smoke-test harness loads
-// alongside 04, since it deliberately skips 06-08).
-const TURN_INTRO_SHOW_MS = 1000;
-const TURN_INTRO_FADE_MS = 400;
-const TURN_INTRO_TOTAL_MS = TURN_INTRO_SHOW_MS + TURN_INTRO_FADE_MS;
-
-// Radius (canvas-space units, same as map.cellSize) of the fixed-size army badge drawn on each
-// territory (drawArmyBadge, 06-render-game.js). The random map generator sizes territories so
-// 3 of these fit in each one (territoryFitsBadges, 02-map-model.js).
-const ARMY_BADGE_RADIUS = 13;
 
 const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
   {name:"Vàng", hex:"#f2c94c"}, {name:"Tím", hex:"#9b5de5"}, {name:"Cam", hex:"#f2994a"}
 ];
-
-/* ---------- Naming rules: territory names always lowercase, continent names always
-   uppercase, no digits or special characters in either. ---------- */
-const TERR_PREFIXES = ["đông","tây","nam","bắc","trung","thượng","hạ","tân","cổ","đại"];
-const TERR_BASES = ["sơn","hà","giang","hải","phong","lâm","thảo","sa","đồng","hồ","vịnh","đảo",
-  "làng","phố","thôn","đèo","gò","bãi","cồn","thung","cao","mộc","thủy","vân","yên","bình","an","khê","trại","doi"];
-const CONT_WORDS = ["úc","phi","âu","á","mỹ","cực bắc","cực nam","hoang mạc","bình nguyên",
-  "cao nguyên","quần đảo","thảo nguyên","đại dương","hải đảo","sơn nguyên"];
-
-function stripInvalidNameChars(str){
-  // Keep unicode letters and spaces only; strip digits, punctuation, symbols.
-  return String(str||'').replace(/[^\p{L}\s]/gu,'').replace(/\s+/g,' ');
-}
-function finalizeTerrName(str){
-  const s = stripInvalidNameChars(str).trim();
-  return s ? s.toLocaleLowerCase('vi') : '';
-}
-function finalizeContName(str){
-  const s = stripInvalidNameChars(str).trim();
-  return s ? s.toLocaleUpperCase('vi') : '';
-}
-function defaultTerrName(id){
-  const idx = id-1;
-  const p = TERR_PREFIXES[idx % TERR_PREFIXES.length];
-  const b = TERR_BASES[Math.floor(idx/TERR_PREFIXES.length) % TERR_BASES.length];
-  return finalizeTerrName(p+' '+b);
-}
-function defaultContName(id){
-  const idx = id-1;
-  return finalizeContName(CONT_WORDS[idx % CONT_WORDS.length]);
-}
 
 /* ---- src/js/02-map-model.js ---- */
 /* =========================================================================
@@ -1304,6 +1333,7 @@ function aiDelay(base){ return spectatorMode ? RUNTIME_CONFIG.spectatorModeDelay
 let aiPaused = false;
 let pendingAIResume = null;
 function aiSchedule(fn, delay){
+  if(host.schedule){ host.schedule(fn, delay); return; } // e.g. the server: no real waiting
   setTimeout(()=>{
     if(aiPaused){ pendingAIResume = fn; return; }
     fn();
@@ -3199,8 +3229,7 @@ function tradeInValue(rule, tradeCount, personalTradeCount){
 function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule){
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
-  gameZoom = 1;
-  resetRenderAnimState(); // no leftover fades/tweens from whatever was drawn before this game
+  host.onGameInit(); // the browser resets zoom and leftover fades/tweens from the last game
   const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
   // the per-turn capturedThisTurn/killedThisTurn flags which reset every endTurn().
@@ -3248,7 +3277,7 @@ function isAlive(pid){ return game.players[pid].alive; }
 function logMsg(type,msg,playerIds){
   const ids = playerIds==null ? null : (Array.isArray(playerIds) ? playerIds : [playerIds]);
   game.log.push({type,msg,playerIds:ids});
-  renderCombatLog();
+  host.renderCombatLog();
 }
 
 /* ---------------- Setup placement (initial armies) ---------------- */
@@ -3276,12 +3305,12 @@ function setupPlaceNext(){
       const target = pickAIReinforceTarget(p.id, mine);
       game.armies[target]++;
       game.pool[p.id]--;
-      renderGame();
+      host.renderGame();
       advanceSetupTurn();
     }, 120);
   } else {
-    renderGame();
-    setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.pool[p.id]);
+    host.renderGame();
+    host.setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.pool[p.id]);
   }
 }
 function advanceSetupTurn(){
@@ -3296,9 +3325,9 @@ function attemptSetupPlacement(terrId){
   const p = currentPlayer();
   if(!p.isHuman || terrId===-1 || game.owner[terrId]!==p.id || game.pool[p.id]<=0) return false;
   game.armies[terrId]++; game.pool[p.id]--;
-  renderGame();
+  host.renderGame();
   if(allPoolsEmpty()){ beginReinforcePhase(); }
-  else { setActionHint('Còn lại: '+game.pool[p.id]+' quân để đặt.'); advanceSetupTurn(); }
+  else { host.setActionHint('Còn lại: '+game.pool[p.id]+' quân để đặt.'); advanceSetupTurn(); }
   return true;
 }
 
@@ -3347,25 +3376,6 @@ function beginReinforcePhase(){
   startReinforce();
 }
 
-// "Chơi lại" (game-over screen): rebuilds the exact starting position captured by
-// beginReinforcePhase() — same map (mapData is untouched since game-over), same players/
-// difficulty/settings, same territory-owner/army layout — then plays out fresh from there.
-// Dice rolls, AI randomness, and any human choices are NOT replayed, so the match itself
-// will very likely unfold differently this time; only the starting position is identical.
-function replaySameGame(){
-  const snap = game.startSnapshot;
-  if(!snap) return;
-  const playerConfigs = snap.players.map(p=>({name:p.name, isHuman:p.isHuman, color:p.color, personality:p.personality}));
-  initGame(playerConfigs, snap.difficulty, snap.spectatorMode, snap.allianceEnabled, snap.tradeRule);
-  game.owner = {...snap.owner};
-  game.armies = {...snap.armies};
-  game.turnOrder = [...snap.turnOrder];
-  game.players.forEach(p=>{ game.pool[p.id] = 0; });
-  showScreen('screen-game');
-  maybeRotateMapForPortrait();
-  beginReinforcePhase();
-}
-
 /* ---------------- Reinforcement ---------------- */
 // Same math computeReinforcements() used to do inline, just broken out into its parts (base
 // from territory count + which continents kicked in a bonus) so the reinforce-phase log line
@@ -3385,7 +3395,7 @@ function computeReinforcements(pid){ return reinforcementBreakdown(pid).total; }
 
 function startReinforce(){
   const p = currentPlayer();
-  showTurnIntro(p);
+  host.showTurnIntro(p);
   game.phase='reinforce';
   const breakdown = reinforcementBreakdown(p.id);
   game.reinforceRemaining = breakdown.total;
@@ -3396,7 +3406,7 @@ function startReinforce(){
   // Render right away regardless of whose turn this is — otherwise the previous (human) turn's
   // phase-end button/phase badge would stay on screen, still clickable, for the whole
   // TURN_INTRO_TOTAL_MS delay below before the AI actually starts acting.
-  renderGame();
+  host.renderGame();
   if(!p.isHuman){
     // Held off by the turn-intro banner's own lifetime (see TURN_INTRO_TOTAL_MS) so the AI
     // doesn't start acting while the "lượt của X" banner is still showing/fading for the
@@ -3405,8 +3415,8 @@ function startReinforce(){
     aiSchedule(()=> aiRunFullTurn(p.id), TURN_INTRO_TOTAL_MS);
   } else {
     // forced trade if 5+ cards
-    if(p.cards.length>=5){ openCardsModal(true); }
-    setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
+    if(p.cards.length>=5){ host.openCardsModal(true); }
+    host.setActionHint('Nhấp vào lãnh thổ của bạn để đặt quân. Còn lại: '+game.reinforceRemaining);
   }
 }
 
@@ -3416,7 +3426,7 @@ function placeReinforcement(terrId){
   if(game.reinforceRemaining<=0) return false;
   game.armies[terrId]++;
   game.reinforceRemaining--;
-  renderGame();
+  host.renderGame();
   // Auto-advances once every troop is placed — unlike attack/fortify, there's no real decision
   // left to make in reinforce once the pool hits 0, so a manual "kết thúc" click here would just
   // be a needless extra tap. (If the player has 5+ cards, the forced-trade modal blocks placing
@@ -3425,7 +3435,7 @@ function placeReinforcement(terrId){
   if(game.reinforceRemaining<=0){
     beginAttackPhase();
   } else {
-    setActionHint('Còn lại: '+game.reinforceRemaining+' quân để đặt.');
+    host.setActionHint('Còn lại: '+game.reinforceRemaining+' quân để đặt.');
   }
   return true;
 }
@@ -3439,8 +3449,8 @@ function beginAttackPhase(){
   // (re-)entered, including the forced-card-trade bounce-back in endAttackPhase() that returns
   // here, so that always gets its own full wait too.
   game.attackPhaseEnteredAt = Date.now();
-  renderGame();
-  setActionHint('Chọn lãnh thổ của bạn (≥2 quân) rồi lãnh thổ địch liền kề để tấn công.');
+  host.renderGame();
+  host.setActionHint('Chọn lãnh thổ của bạn (≥2 quân) rồi lãnh thổ địch liền kề để tấn công.');
 }
 
 function canAttack(fromId,toId,pid){
@@ -3470,7 +3480,7 @@ function doBattle(fromId,toId,opts){
   }
   game.armies[fromId]-=attLoss;
   game.armies[toId]-=defLoss;
-  if(!silent) showDice(ad,dd,results);
+  if(!silent) host.showDice(ad,dd,results);
   const attP = game.players[game.owner[fromId]];
   const defP = game.players[game.owner[toId]];
   if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
@@ -3495,108 +3505,8 @@ function doBattle(fromId,toId,opts){
     if(!silent) logMsg('capture', `${attP.name} chiếm được ${mapData.territories[toId].name}!`, [attP.id, oldOwner]);
     checkElimination(oldOwner, attP.id);
   }
-  if(!silent) renderGame();
+  if(!silent) host.renderGame();
   return {attLoss,defLoss,captured,ad,dd,results,moving,maxMovable};
-}
-
-// Shown by the human attack entry points (doSingleAttack()/allOutAttack() in
-// 06-render-game.js) after a fight resolves — folds "kết quả trận đánh" (who lost how many,
-// over how many rounds) into the same dialog as the "chiếm được" troop-move decision when the
-// attack also captured the territory, instead of only ever showing that decision (and only
-// when there was a non-trivial amount to redistribute) while every other outcome sat in the
-// combat log alone.
-// Shown by the human attack entry points (doSingleAttack()/allOutAttack() in
-// 06-render-game.js) ONLY when a capture leaves extra armies worth deciding how to split — a
-// plain "-N" battle result is now conveyed visually instead (the flying-badge/impact animation
-// in drawGameCanvas(), see attackAnim), so there's nothing to show here when there's no real
-// choice to make (not captured, or captured with nothing left over to redistribute).
-function showCaptureMoveModal(fromId, toId, moving, maxMovable){
-  const fromName = mapData.territories[fromId].name;
-  const toName = mapData.territories[toId].name;
-  // no-blur: unlike other modals, dragging this slider is meant to be checked against the map
-  // live (see the slider's 'input' handler below) — blurring it out from under the modal would
-  // defeat the point.
-  const overlay = el('div','modal-overlay no-blur');
-  const modal = el('div','modal translucent');
-  let keyHandler = null;
-  function close(){
-    if(keyHandler) document.removeEventListener('keydown', keyHandler);
-    document.body.removeChild(overlay);
-  }
-
-  const alreadyMoved = moving;
-  const extraMax = maxMovable - alreadyMoved; // how many MORE can move beyond the guaranteed minimum
-  modal.appendChild(el('h3','', `🎉 Chiếm được "${toName}"!`));
-  modal.appendChild(el('p','', `Bạn có thể chuyển thêm quân từ "${fromName}" sang "${toName}" (đã chuyển tối thiểu ${alreadyMoved} quân theo luật).`));
-
-  const bigRow = el('div','');
-  bigRow.style.cssText = 'display:flex;justify-content:space-around;align-items:center;margin:18px 0;text-align:center;';
-  const fromBox = el('div','');
-  const fromCount = el('div','', String(game.armies[fromId])); fromCount.style.cssText='font-size:26px;font-weight:800;color:#fff;';
-  fromBox.appendChild(fromCount); fromBox.appendChild(el('div','',fromName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
-  const arrow = el('div','','→'); arrow.style.cssText='font-size:22px;color:var(--muted);';
-  const toBox = el('div','');
-  const toCount = el('div','', String(game.armies[toId])); toCount.style.cssText='font-size:26px;font-weight:800;color:var(--good);';
-  toBox.appendChild(toCount); toBox.appendChild(el('div','',toName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
-  bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
-  modal.appendChild(bigRow);
-
-  // Caller (doSingleAttack()/allOutAttack()) only opens this modal when extraMax>0 — there's
-  // always a real slider choice to make here, never just a bare "Đóng" button.
-  const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
-  const slider = document.createElement('input');
-  slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
-  slider.style.flex='1';
-  const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
-  // Applied LIVE (not just previewed) on every drag — appliedExtra tracks how much of the
-  // transfer is already reflected in game.armies, so each new slider position only moves the
-  // DELTA from there instead of re-applying the whole amount. The map badges are seeded into
-  // lastDrawnArmies before renderGame() so they jump straight to the new value instead of
-  // kicking off the usual ~350ms count-up/down tween on every single drag tick, which would
-  // otherwise lag visibly behind wherever the slider actually is.
-  let appliedExtra = 0;
-  slider.addEventListener('input', ()=>{
-    const extra = Number(slider.value);
-    const delta = extra-appliedExtra;
-    game.armies[fromId] -= delta;
-    game.armies[toId] += delta;
-    appliedExtra = extra;
-    sliderLabel.textContent = '+'+extra;
-    fromCount.textContent = String(game.armies[fromId]);
-    toCount.textContent = String(game.armies[toId]);
-    lastDrawnArmies[fromId] = game.armies[fromId];
-    lastDrawnArmies[toId] = game.armies[toId];
-    renderGame();
-  });
-  sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
-  modal.appendChild(sliderRow);
-  modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
-
-  const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
-  const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','A')); quickMin.title='Phím tắt: A';
-  quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
-  const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','D')); quickMax.title='Phím tắt: D';
-  quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
-  // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
-  // closes the modal, nothing left to actually move.
-  const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
-  confirmBtn.addEventListener('click', ()=>{ close(); renderGame(); });
-  btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
-  modal.appendChild(btnRow);
-
-  keyHandler = function(e){
-    const key = e.key.toLowerCase();
-    if(key==='a'){ e.preventDefault(); quickMin.click(); }
-    else if(key==='d'){ e.preventDefault(); quickMax.click(); }
-    else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
-  };
-  document.addEventListener('keydown', keyHandler);
-  // sync the big from/to numbers with the slider's initial value (defaults to max extra) —
-  // without this they show the pre-transfer counts until the user drags the slider once.
-  slider.dispatchEvent(new Event('input'));
-
-  overlay.appendChild(modal);
-  document.body.appendChild(overlay);
 }
 
 // Tracks the single attack (1 human click, or 1 AI battleBatch) with the highest combined
@@ -3627,7 +3537,7 @@ function checkWinCondition(){
   const alivePlayers = game.players.filter(p=>p.alive);
   if(alivePlayers.length<=1){
     game.over=true;
-    showGameOver(alivePlayers[0]);
+    host.showGameOver(alivePlayers[0]);
   }
 }
 
@@ -3635,9 +3545,9 @@ function checkWinCondition(){
 function beginFortifyPhase(){
   game.phase='fortify';
   game.selectedFrom=null; game.selectedTo=null;
-  renderGame();
+  host.renderGame();
   if(!currentPlayer().isHuman) return; // handled by AI routine
-  setActionHint('Chọn lãnh thổ nguồn rồi đích để chuyển quân, hoặc kết thúc lượt.');
+  host.setActionHint('Chọn lãnh thổ nguồn rồi đích để chuyển quân, hoặc kết thúc lượt.');
 }
 
 function pathExistsOwned(fromId,toId,pid){
@@ -3654,6 +3564,7 @@ function pathExistsOwned(fromId,toId,pid){
 
 function endTurn(){
   const p = currentPlayer();
+  host.beforeEndTurn(p);
   // cardAwardEvent config (Settings screen) picks which of the 3 rules grants a card
   // at the end of this player's turn. Shared by human and AI turns alike, since both
   // go through this same function.
@@ -3674,63 +3585,6 @@ function endTurn(){
   } while(!isAlive(currentPlayerId()));
   if(game.over) return;
   startReinforce();
-}
-
-/* ---------------- Save / load an in-progress game ---------------- */
-// A save file bundles the map (same plain shape used by the map editor's export) together
-// with the `game` object itself, which is already plain JSON-serializable data (no Sets,
-// Maps, or function references live on it — those are all on mapData instead).
-const GAME_SAVE_FORMAT_VERSION = 1;
-
-function exportGameJSON(){
-  // Always the CANONICAL (un-rotated) map, regardless of whether this session is currently
-  // displaying a portrait auto-rotated copy (see maybeRotateMapForPortrait() in
-  // 06-render-game.js) — otherwise reloading the save on a landscape device would show it
-  // sideways relative to how it was actually authored/generated.
-  const out = {
-    formatVersion: GAME_SAVE_FORMAT_VERSION,
-    savedAt: Date.now(),
-    spectatorMode,
-    mapData: mapToPlainObject(unrotateMapData(mapData)),
-    game,
-  };
-  const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
-  a.href = url; a.download = 'risk-save-'+stamp+'.json';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-function importGameJSON(obj){
-  if(!obj || !obj.mapData || !obj.game) throw new Error('File không đúng định dạng ván chơi đã lưu.');
-  mapData = mapFromPlainObject(obj.mapData);
-  game = obj.game;
-  spectatorMode = !!obj.spectatorMode;
-  aiPaused = false; pendingAIResume = null;
-  gameZoom = 1;
-  resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
-  showScreen('screen-game');
-  maybeRotateMapForPortrait();
-  renderGame();
-  renderCombatLog();
-  if(game.over) return;
-  // If it was an AI's turn (or still mid initial placement) when saved, nothing is scheduled
-  // to continue it on its own — kick the appropriate step back off from wherever it left off.
-  // Each of these reads current game state fresh rather than re-deriving it (e.g. aiReinforceStep
-  // just keeps spending game.reinforceRemaining, it doesn't recompute/re-grant it), so resuming
-  // mid-phase is safe and doesn't double up any army grants.
-  if(game.phase==='setup-place'){
-    setupPlaceNext();
-  } else {
-    const cp = currentPlayer();
-    if(!cp.isHuman){
-      if(game.phase==='reinforce') aiReinforceStep(cp.id);
-      else if(game.phase==='attack') aiAttackStep(cp.id);
-      else if(game.phase==='fortify') aiFortifyStep(cp.id);
-    }
-  }
 }
 
 /* ---- src/js/05-ai.js ---- */
@@ -3994,7 +3848,7 @@ function pickAIReinforceTarget(pid, mine, intent){
 }
 
 function aiRunFullTurn(pid){
-  setActionHint(game.players[pid].name+' đang suy nghĩ...');
+  host.setActionHint(game.players[pid].name+' đang suy nghĩ...');
   const intent = pickAITurnIntent(pid);
   aiSchedule(()=>{ aiReinforceStep(pid, intent); }, aiDelay(300));
 }
@@ -4010,7 +3864,7 @@ function aiReinforceStep(pid, intent){
     game.armies[target]++;
     game.reinforceRemaining--;
   }
-  renderGame();
+  host.renderGame();
   aiSchedule(()=> aiAttackStep(pid, intent), aiDelay(350));
 }
 
@@ -4058,7 +3912,7 @@ function tradeCards(p, indices){
     game.pool[p.id] = (game.pool[p.id]||0) + value;
   }
   logMsg('info', p.name+' đổi thẻ bài lấy '+value+' quân.', p.id);
-  renderGame();
+  host.renderGame();
 }
 
 function aiAttackStep(pid, intent){
@@ -4220,7 +4074,7 @@ function aiAttackStep(pid, intent){
     // up for an AI's move too, not just a human's. Shown for one aiDelay() beat (the AI's
     // existing "thinking" pause, previously just empty wait time) before actually fighting.
     game.selectedFrom = from; game.selectedTo = to;
-    renderGame();
+    host.renderGame();
     if(game.over) return;
     aiSchedule(()=> executeAttack(from, to, forcedForCard), aiDelay(260));
   }
@@ -4245,19 +4099,19 @@ function aiAttackStep(pid, intent){
       // full "thinking pause".
       aiSchedule(step, 80);
     }
-    if(result.rounds<=0){ renderGame(); nextDecision(); return; }
+    if(result.rounds<=0){ host.renderGame(); nextDecision(); return; }
     const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
     logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`, [pid, defenderId]);
-    if(result.lastRes) showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
+    if(result.lastRes) host.showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
     if(result.captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [pid, defenderId]);
     // startAttackAnim's onDone fires once the fly/impact/return sequence finishes (see
     // 06-render-game.js) — the next attack decision waits for that instead of firing right
     // after the battle resolves, same as the human attack flow.
-    startAttackAnim({
+    host.startAttackAnim({
       fromId:from, toId:to, attLoss:result.attLossTotal, defLoss:result.defLossTotal, captured:result.captured,
       fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
     }, nextDecision);
-    renderGame();
+    host.renderGame();
   }
   step();
 }
@@ -4265,7 +4119,7 @@ function aiAttackStep(pid, intent){
 function aiFortifyStep(pid, intent){
   intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   game.phase='fortify';
-  renderGame();
+  host.renderGame();
   const p = game.players[pid];
   // Same gang-up detection as aiAttackStep/pickAIReinforceTarget — a forced leader-only turn is
   // also this turn's fortify front, not just this turn's attack target, so troops actually pile
@@ -4321,7 +4175,7 @@ function aiFortifyStep(pid, intent){
   Object.keys(movedTo).forEach(dstId=>{
     logMsg('info', p.name+' tăng cường '+movedTo[dstId]+' quân đến '+mapData.territories[dstId].name+'.', pid);
   });
-  renderGame();
+  host.renderGame();
   aiSchedule(()=> endTurn(), aiDelay(400));
 }
 
@@ -6196,10 +6050,202 @@ function showGameOver(winner){
   document.body.appendChild(overlay);
 }
 
+/* ---- src/js/07b-game-ui.js ---- */
+/* =========================================================================
+   GAME UI FLOW — the browser-only parts of running a game
+   ---------------------------------------------------------------------
+   Dialogs and file save/load that sit around the rules in 04-game-state.js. Kept out of that
+   file because it is part of the core (see 00-core-utils.js), which also runs on the server.
+   ========================================================================= */
+
+// "Chơi lại" (game-over screen): rebuilds the exact starting position captured by
+// beginReinforcePhase() — same map (mapData is untouched since game-over), same players/
+// difficulty/settings, same territory-owner/army layout — then plays out fresh from there.
+// Dice rolls, AI randomness, and any human choices are NOT replayed, so the match itself
+// will very likely unfold differently this time; only the starting position is identical.
+function replaySameGame(){
+  const snap = game.startSnapshot;
+  if(!snap) return;
+  const playerConfigs = snap.players.map(p=>({name:p.name, isHuman:p.isHuman, color:p.color, personality:p.personality}));
+  initGame(playerConfigs, snap.difficulty, snap.spectatorMode, snap.allianceEnabled, snap.tradeRule);
+  game.owner = {...snap.owner};
+  game.armies = {...snap.armies};
+  game.turnOrder = [...snap.turnOrder];
+  game.players.forEach(p=>{ game.pool[p.id] = 0; });
+  showScreen('screen-game');
+  maybeRotateMapForPortrait();
+  beginReinforcePhase();
+}
+
+// Shown by the human attack entry points (doSingleAttack()/allOutAttack() in
+// 06-render-game.js) after a fight resolves — folds "kết quả trận đánh" (who lost how many,
+// over how many rounds) into the same dialog as the "chiếm được" troop-move decision when the
+// attack also captured the territory, instead of only ever showing that decision (and only
+// when there was a non-trivial amount to redistribute) while every other outcome sat in the
+// combat log alone.
+// Shown by the human attack entry points (doSingleAttack()/allOutAttack() in
+// 06-render-game.js) ONLY when a capture leaves extra armies worth deciding how to split — a
+// plain "-N" battle result is now conveyed visually instead (the flying-badge/impact animation
+// in drawGameCanvas(), see attackAnim), so there's nothing to show here when there's no real
+// choice to make (not captured, or captured with nothing left over to redistribute).
+function showCaptureMoveModal(fromId, toId, moving, maxMovable){
+  const fromName = mapData.territories[fromId].name;
+  const toName = mapData.territories[toId].name;
+  // no-blur: unlike other modals, dragging this slider is meant to be checked against the map
+  // live (see the slider's 'input' handler below) — blurring it out from under the modal would
+  // defeat the point.
+  const overlay = el('div','modal-overlay no-blur');
+  const modal = el('div','modal translucent');
+  let keyHandler = null;
+  function close(){
+    if(keyHandler) document.removeEventListener('keydown', keyHandler);
+    document.body.removeChild(overlay);
+  }
+
+  const alreadyMoved = moving;
+  const extraMax = maxMovable - alreadyMoved; // how many MORE can move beyond the guaranteed minimum
+  modal.appendChild(el('h3','', `🎉 Chiếm được "${toName}"!`));
+  modal.appendChild(el('p','', `Bạn có thể chuyển thêm quân từ "${fromName}" sang "${toName}" (đã chuyển tối thiểu ${alreadyMoved} quân theo luật).`));
+
+  const bigRow = el('div','');
+  bigRow.style.cssText = 'display:flex;justify-content:space-around;align-items:center;margin:18px 0;text-align:center;';
+  const fromBox = el('div','');
+  const fromCount = el('div','', String(game.armies[fromId])); fromCount.style.cssText='font-size:26px;font-weight:800;color:#fff;';
+  fromBox.appendChild(fromCount); fromBox.appendChild(el('div','',fromName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
+  const arrow = el('div','','→'); arrow.style.cssText='font-size:22px;color:var(--muted);';
+  const toBox = el('div','');
+  const toCount = el('div','', String(game.armies[toId])); toCount.style.cssText='font-size:26px;font-weight:800;color:var(--good);';
+  toBox.appendChild(toCount); toBox.appendChild(el('div','',toName)).style.cssText='font-size:12px;color:var(--muted);margin-top:2px;';
+  bigRow.appendChild(fromBox); bigRow.appendChild(arrow); bigRow.appendChild(toBox);
+  modal.appendChild(bigRow);
+
+  // Caller (doSingleAttack()/allOutAttack()) only opens this modal when extraMax>0 — there's
+  // always a real slider choice to make here, never just a bare "Đóng" button.
+  const sliderRow = el('div',''); sliderRow.style.cssText='display:flex;align-items:center;gap:12px;margin:14px 0 6px;';
+  const slider = document.createElement('input');
+  slider.type='range'; slider.min='0'; slider.max=String(extraMax); slider.value=String(extraMax);
+  slider.style.flex='1';
+  const sliderLabel = el('span','', '+'+extraMax); sliderLabel.style.cssText='min-width:48px;text-align:center;font-weight:700;color:var(--good);';
+  // Applied LIVE (not just previewed) on every drag — appliedExtra tracks how much of the
+  // transfer is already reflected in game.armies, so each new slider position only moves the
+  // DELTA from there instead of re-applying the whole amount. The map badges are seeded into
+  // lastDrawnArmies before renderGame() so they jump straight to the new value instead of
+  // kicking off the usual ~350ms count-up/down tween on every single drag tick, which would
+  // otherwise lag visibly behind wherever the slider actually is.
+  let appliedExtra = 0;
+  slider.addEventListener('input', ()=>{
+    const extra = Number(slider.value);
+    const delta = extra-appliedExtra;
+    game.armies[fromId] -= delta;
+    game.armies[toId] += delta;
+    appliedExtra = extra;
+    sliderLabel.textContent = '+'+extra;
+    fromCount.textContent = String(game.armies[fromId]);
+    toCount.textContent = String(game.armies[toId]);
+    lastDrawnArmies[fromId] = game.armies[fromId];
+    lastDrawnArmies[toId] = game.armies[toId];
+    renderGame();
+  });
+  sliderRow.appendChild(slider); sliderRow.appendChild(sliderLabel);
+  modal.appendChild(sliderRow);
+  modal.appendChild(el('p','', 'Kéo để chọn số quân chuyển thêm, tối thiểu 1 quân luôn phải ở lại '+fromName+'.')).style.cssText='font-size:11.5px;color:var(--muted);margin:0 0 10px;';
+
+  const btnRow = el('div',''); btnRow.style.cssText='display:flex;gap:8px;';
+  const quickMin = el('button','ghost',withShortcut('Giữ nguyên (+0)','A')); quickMin.title='Phím tắt: A';
+  quickMin.addEventListener('click', ()=>{ slider.value='0'; slider.dispatchEvent(new Event('input')); });
+  const quickMax = el('button','ghost',withShortcut('Tối đa (+'+extraMax+')','D')); quickMax.title='Phím tắt: D';
+  quickMax.addEventListener('click', ()=>{ slider.value=String(extraMax); slider.dispatchEvent(new Event('input')); });
+  // Transfer is already live-applied by the slider's own 'input' handler above — confirming just
+  // closes the modal, nothing left to actually move.
+  const confirmBtn = el('button','primary',withShortcut('Xác nhận','X')); confirmBtn.title='Phím tắt: X';
+  confirmBtn.addEventListener('click', ()=>{ close(); renderGame(); });
+  btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
+  modal.appendChild(btnRow);
+
+  keyHandler = function(e){
+    const key = e.key.toLowerCase();
+    if(key==='a'){ e.preventDefault(); quickMin.click(); }
+    else if(key==='d'){ e.preventDefault(); quickMax.click(); }
+    else if(key==='x'){ e.preventDefault(); confirmBtn.click(); }
+  };
+  document.addEventListener('keydown', keyHandler);
+  // sync the big from/to numbers with the slider's initial value (defaults to max extra) —
+  // without this they show the pre-transfer counts until the user drags the slider once.
+  slider.dispatchEvent(new Event('input'));
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+}
+
+/* ---------------- Save / load an in-progress game ---------------- */
+// A save file bundles the map (same plain shape used by the map editor's export) together
+// with the `game` object itself, which is already plain JSON-serializable data (no Sets,
+// Maps, or function references live on it — those are all on mapData instead).
+const GAME_SAVE_FORMAT_VERSION = 1;
+
+function exportGameJSON(){
+  // Always the CANONICAL (un-rotated) map, regardless of whether this session is currently
+  // displaying a portrait auto-rotated copy (see maybeRotateMapForPortrait() in
+  // 06-render-game.js) — otherwise reloading the save on a landscape device would show it
+  // sideways relative to how it was actually authored/generated.
+  const out = {
+    formatVersion: GAME_SAVE_FORMAT_VERSION,
+    savedAt: Date.now(),
+    spectatorMode,
+    mapData: mapToPlainObject(unrotateMapData(mapData)),
+    game,
+  };
+  const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+  a.href = url; a.download = 'risk-save-'+stamp+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importGameJSON(obj){
+  if(!obj || !obj.mapData || !obj.game) throw new Error('File không đúng định dạng ván chơi đã lưu.');
+  mapData = mapFromPlainObject(obj.mapData);
+  game = obj.game;
+  spectatorMode = !!obj.spectatorMode;
+  aiPaused = false; pendingAIResume = null;
+  gameZoom = 1;
+  resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
+  showScreen('screen-game');
+  maybeRotateMapForPortrait();
+  renderGame();
+  renderCombatLog();
+  if(game.over) return;
+  // If it was an AI's turn (or still mid initial placement) when saved, nothing is scheduled
+  // to continue it on its own — kick the appropriate step back off from wherever it left off.
+  // Each of these reads current game state fresh rather than re-deriving it (e.g. aiReinforceStep
+  // just keeps spending game.reinforceRemaining, it doesn't recompute/re-grant it), so resuming
+  // mid-phase is safe and doesn't double up any army grants.
+  if(game.phase==='setup-place'){
+    setupPlaceNext();
+  } else {
+    const cp = currentPlayer();
+    if(!cp.isHuman){
+      if(game.phase==='reinforce') aiReinforceStep(cp.id);
+      else if(game.phase==='attack') aiAttackStep(cp.id);
+      else if(game.phase==='fortify') aiFortifyStep(cp.id);
+    }
+  }
+}
+
 /* ---- src/js/08-wiring.js ---- */
 /* =========================================================================
    NAVIGATION / WIRING
    ========================================================================= */
+// The browser's side of the core's `host` (00-core-utils.js): the rules and AI call these to
+// show what just happened.
+Object.assign(host, {
+  renderGame, renderCombatLog, setActionHint, showDice, showTurnIntro, openCardsModal,
+  showGameOver, startAttackAnim,
+  onGameInit(){ gameZoom = 1; resetRenderAnimState(); },
+});
+
 // A clicked <button> keeps keyboard focus afterward (standard browser behavior) — left alone,
 // that means the NEXT Space or Enter press activates THAT button again instead of whatever
 // global shortcut the key is supposed to mean (e.g. click "📜 Nhật ký trận đấu" once, then press

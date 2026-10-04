@@ -8,15 +8,13 @@
    screen can also export the current values back out as a config.json file to
    promote them into the real source-of-truth default for the next build.
    ========================================================================= */
-const CONFIG_KEYS = Object.keys(GAME_CONFIG); // every key in src/config.json is a setting
 const SETTINGS_STORAGE_KEY = 'riskDominationSettings';
-function pickConfig(obj){ const out={}; CONFIG_KEYS.forEach(k=> out[k]=obj[k]); return out; }
 function loadRuntimeConfig(){
   let stored = {};
   try{ stored = JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}'); }catch(e){ stored = {}; }
   return Object.assign({}, GAME_CONFIG, stored);
 }
-let RUNTIME_CONFIG = loadRuntimeConfig();
+RUNTIME_CONFIG = loadRuntimeConfig();
 function saveRuntimeConfig(){ localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(pickConfig(RUNTIME_CONFIG))); }
 function setConfigValue(key, value){ RUNTIME_CONFIG[key] = value; saveRuntimeConfig(); }
 function resetRuntimeConfig(){ RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG); localStorage.removeItem(SETTINGS_STORAGE_KEY); }
@@ -45,10 +43,6 @@ function withShortcut(label, key){ return hasKeyboardDetected ? `${label} (${key
    ========================================================================= */
 const $ = (id)=>document.getElementById(id);
 function el(tag, cls, html){ const e=document.createElement(tag); if(cls) e.className=cls; if(html!==undefined) e.innerHTML=html; return e; }
-function rand(n){ return Math.floor(Math.random()*n); }
-function randChoice(arr){ return arr[rand(arr.length)]; }
-function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=rand(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
-function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
 function shadeColor(hex, percent){
   // percent negative = darker/richer, positive = lighter/washed out
   const num = parseInt(hex.slice(1),16);
@@ -57,13 +51,6 @@ function shadeColor(hex, percent){
   let b = (num&0xff) + Math.round(2.55*percent);
   r=clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
   return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1).toUpperCase();
-}
-// Rough perceptual distance between 2 hex colors (Euclidean over RGB — good enough for picking
-// visually-distinct continent colors, no need for a proper color space here).
-function colorDistance(hexA, hexB){
-  const a = parseInt(hexA.slice(1),16), b = parseInt(hexB.slice(1),16);
-  const dr = ((a>>16)&255)-((b>>16)&255), dg = ((a>>8)&255)-((b>>8)&255), db = (a&255)-(b&255);
-  return Math.sqrt(dr*dr+dg*dg+db*db);
 }
 let _stripeTileCanvas = null;
 function getStripeTile(){
@@ -105,7 +92,6 @@ function getNoiseTile(){
   return c;
 }
 function getNoisePattern(ctx){ return ctx.createPattern(getNoiseTile(), 'repeat'); }
-function rollDie(){ return 1+rand(6); }
 // Draws text centered at (x,y) — assumes ctx.textAlign='center', ctx.textBaseline='middle' —
 // on a translucent dark rounded-rect background. Continent labels sit directly on top of
 // whatever territory colors happen to be underneath (unlike army badges, which always sit on a
@@ -125,31 +111,6 @@ function fillTextWithBackground(ctx, text, x, y){
   ctx.fillStyle = '#fff';
   ctx.fillText(text, x, y);
 }
-// Real-world grounding for how big a freshly random-generated map's territories should be:
-// mobile touch-target guidelines (iOS Human Interface Guidelines, Android Material Design)
-// call for a minimum ~44px tappable area. Territories — not individual grid cells — are what
-// the player actually taps, so the target below is the AVERAGE territory footprint. It's set
-// equal to that 44px minimum (no headroom multiplier) — a smaller target means more, smaller
-// territories per map, which was chosen deliberately over guaranteeing every single
-// below-average territory clears the touch target too.
-const TOUCH_TARGET_PX = 44;
-const AVG_TERRITORY_TARGET_PX = TOUCH_TARGET_PX*1.5;
-
-// Rough estimate of the canvas's usable width share of the viewport, leaving room for the
-// surrounding overlay panels/chrome whose exact size isn't known before layout happens. Used by
-// computeCellsPerTerritory() in 02-map-model.js.
-// A generated map's grid/territory count is baked into its data — it doesn't get re-partitioned
-// when later opened on a different device. So this is deliberately NOT the current device's
-// actual window.innerWidth: sizing off whatever screen happens to generate the map would make a
-// map generated on desktop (more territories, calibrated to desktop's wider canvas) unplayably
-// cramped if later opened on mobile, even though the reverse (mobile-generated map opened on
-// desktop — same content, just rendered bigger on the larger canvas) is always fine. Fixed at a
-// conservative mobile-landscape width instead, so every map is comfortable on the smallest
-// supported device by construction and only ever looks BIGGER, never smaller, elsewhere.
-const MOBILE_BASELINE_WIDTH = 700;
-function estimateCanvasWidth(){
-  return Math.max(320, MOBILE_BASELINE_WIDTH*0.72);
-}
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
@@ -157,63 +118,11 @@ function showScreen(id){
   document.body.classList.toggle('in-game-screen', id==='screen-game');
 }
 
-// A few entries here used to be bright/pale blues or teals ("#98c1d9","#00bbf9","#00f5d4",
-// "#2ec4b6","#1982c4") close enough to the bright ocean color (see OCEAN_COLOR in
-// 06-render-game.js/03-editor.js) that a territory/continent using one could visually blend
-// into the surrounding water — swapped for warm/jewel tones with no such collision instead.
-const PALETTE_TERR = ["#e07a5f","#81b29a","#f2cc8f","#3d5a80","#e8998d","#c9a0dc","#f4a261","#e76f51",
-  "#606c38","#bc6c25","#457b9d","#d62828","#6a994e","#a7c957","#9b5de5","#f15bb5","#ffb703","#c9184a",
-  "#fee440","#ff9f1c","#7209b7","#e71d36","#8ac926","#fb8500","#6a4c93","#ff595e"];
-const PALETTE_CONT = ["#5b8def","#4ac97e","#f2b84b","#ef5b6b","#9b5de5","#f72585","#ff9f5b","#7bd389"];
 // Bright ocean blue used for water fill on both canvases and for the space around the map,
 // so zooming out reads as one continuous ocean surrounding the continents.
-// Turn-intro banner timing (see showTurnIntro() in 06-render-game.js) — kept here rather than
-// in that file so 04-game-state.js's startReinforce() can reference TURN_INTRO_TOTAL_MS without
-// depending on the DOM-only render module (also the module the AI smoke-test harness loads
-// alongside 04, since it deliberately skips 06-08).
-const TURN_INTRO_SHOW_MS = 1000;
-const TURN_INTRO_FADE_MS = 400;
-const TURN_INTRO_TOTAL_MS = TURN_INTRO_SHOW_MS + TURN_INTRO_FADE_MS;
-
-// Radius (canvas-space units, same as map.cellSize) of the fixed-size army badge drawn on each
-// territory (drawArmyBadge, 06-render-game.js). The random map generator sizes territories so
-// 3 of these fit in each one (territoryFitsBadges, 02-map-model.js).
-const ARMY_BADGE_RADIUS = 13;
 
 const OCEAN_COLOR = '#1CB5E0';
 const PLAYER_COLORS = [
   {name:"Đỏ", hex:"#ef5b6b"}, {name:"Xanh dương", hex:"#5b8def"}, {name:"Xanh lá", hex:"#4ac97e"},
   {name:"Vàng", hex:"#f2c94c"}, {name:"Tím", hex:"#9b5de5"}, {name:"Cam", hex:"#f2994a"}
 ];
-
-/* ---------- Naming rules: territory names always lowercase, continent names always
-   uppercase, no digits or special characters in either. ---------- */
-const TERR_PREFIXES = ["đông","tây","nam","bắc","trung","thượng","hạ","tân","cổ","đại"];
-const TERR_BASES = ["sơn","hà","giang","hải","phong","lâm","thảo","sa","đồng","hồ","vịnh","đảo",
-  "làng","phố","thôn","đèo","gò","bãi","cồn","thung","cao","mộc","thủy","vân","yên","bình","an","khê","trại","doi"];
-const CONT_WORDS = ["úc","phi","âu","á","mỹ","cực bắc","cực nam","hoang mạc","bình nguyên",
-  "cao nguyên","quần đảo","thảo nguyên","đại dương","hải đảo","sơn nguyên"];
-
-function stripInvalidNameChars(str){
-  // Keep unicode letters and spaces only; strip digits, punctuation, symbols.
-  return String(str||'').replace(/[^\p{L}\s]/gu,'').replace(/\s+/g,' ');
-}
-function finalizeTerrName(str){
-  const s = stripInvalidNameChars(str).trim();
-  return s ? s.toLocaleLowerCase('vi') : '';
-}
-function finalizeContName(str){
-  const s = stripInvalidNameChars(str).trim();
-  return s ? s.toLocaleUpperCase('vi') : '';
-}
-function defaultTerrName(id){
-  const idx = id-1;
-  const p = TERR_PREFIXES[idx % TERR_PREFIXES.length];
-  const b = TERR_BASES[Math.floor(idx/TERR_PREFIXES.length) % TERR_BASES.length];
-  return finalizeTerrName(p+' '+b);
-}
-function defaultContName(id){
-  const idx = id-1;
-  return finalizeContName(CONT_WORDS[idx % CONT_WORDS.length]);
-}
-

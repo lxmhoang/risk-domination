@@ -16,24 +16,38 @@ split at the same logical boundaries the code already had.
   rest of a game's per-match settings; overrides live in `RUNTIME_CONFIG` (see
   `01-utils.js`), persisted to `localStorage`, and can be exported back out as a new
   `config.json` to promote into the real default.
-- **01-utils.js** — DOM helpers (`$`, `el`), RNG helpers, Vietnamese name generation
-  (`finalizeTerrName`, `finalizeContName`, prefix/base word lists), string sanitization,
-  and the `RUNTIME_CONFIG` / `localStorage` settings layer described above.
-- **02-map-model.js** — the map data model: `newMap`, `createTerritory`/`createContinent`,
+- **00-core-utils.js** *(core)* — the `host` hooks object, `RUNTIME_CONFIG` defaults, RNG
+  helpers, palettes, Vietnamese name generation (`finalizeTerrName`, `finalizeContName`).
+- **01-utils.js** — DOM helpers (`$`, `el`), canvas patterns, `showScreen`, and the
+  `localStorage` settings layer over `RUNTIME_CONFIG` described above.
+- **02-map-model.js** *(core)* — the map data model: `newMap`, `createTerritory`/`createContinent`,
   cell painting/flood-fill, water-mask generation, `generateRandomMap`, connected-component
   analysis, isolated-landmass bridging (`ensureNoIsolatedTerritories`).
 - **03-editor.js** — map editor UI: canvas painting tools, sidebar accordion panels,
   territory/continent list rendering, validate/export/import.
-- **04-game-state.js** — core game state machine: `initGame`, setup-place phase,
+- **04-game-state.js** *(core)* — core game state machine: `initGame`, setup-place phase,
   reinforcement, combat resolution (`doBattle`), fortify, turn/elimination/win logic.
-- **05-ai.js** — AI opponent logic (reinforcement targeting, attack scoring with reserve
+- **05-ai.js** *(core)* — AI opponent logic (reinforcement targeting, attack scoring with reserve
   keeping / continent-completion / kill-priority, fortify). Has an inline "design doc"
   comment block explaining the strategy.
 - **06-render-game.js** — game screen canvas rendering (territories, continent-view mode,
   stripe highlight overlay, labels).
 - **07-cards-modal.js** — Risk card trade-in modal.
+- **07b-game-ui.js** — browser-only flow around the rules: capture-move dialog, save/load
+  to file, "play again".
 - **08-wiring.js** — DOM event listeners, screen navigation, app entry point, and the
   `window.__debug` testing hooks.
+
+## Core vs UI
+
+The files marked *(core)* — `00-core-utils.js`, `02-map-model.js`, `04-game-state.js`,
+`05-ai.js` (the list is `CORE_FILES` in `build.js`) — are the rules, AI and map model. They
+run in the browser **and** in Node: `build.js` also writes them out as `dist/core.js`
+(`require('./dist/core.js')(config, hostHooks)`), which the server and `test/ai-smoke-test.js`
+use. Core files must not touch the DOM, `window`, `localStorage`, or anything a UI file
+declares — the build fails if they do. When the core needs to show something it calls a
+`host` hook (`host.renderGame()`, `host.showDice(…)`, …); the browser fills those in at the
+top of `08-wiring.js`.
 
 ## Editing
 

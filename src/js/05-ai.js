@@ -258,7 +258,7 @@ function pickAIReinforceTarget(pid, mine, intent){
 }
 
 function aiRunFullTurn(pid){
-  setActionHint(game.players[pid].name+' đang suy nghĩ...');
+  host.setActionHint(game.players[pid].name+' đang suy nghĩ...');
   const intent = pickAITurnIntent(pid);
   aiSchedule(()=>{ aiReinforceStep(pid, intent); }, aiDelay(300));
 }
@@ -274,7 +274,7 @@ function aiReinforceStep(pid, intent){
     game.armies[target]++;
     game.reinforceRemaining--;
   }
-  renderGame();
+  host.renderGame();
   aiSchedule(()=> aiAttackStep(pid, intent), aiDelay(350));
 }
 
@@ -322,7 +322,7 @@ function tradeCards(p, indices){
     game.pool[p.id] = (game.pool[p.id]||0) + value;
   }
   logMsg('info', p.name+' đổi thẻ bài lấy '+value+' quân.', p.id);
-  renderGame();
+  host.renderGame();
 }
 
 function aiAttackStep(pid, intent){
@@ -484,7 +484,7 @@ function aiAttackStep(pid, intent){
     // up for an AI's move too, not just a human's. Shown for one aiDelay() beat (the AI's
     // existing "thinking" pause, previously just empty wait time) before actually fighting.
     game.selectedFrom = from; game.selectedTo = to;
-    renderGame();
+    host.renderGame();
     if(game.over) return;
     aiSchedule(()=> executeAttack(from, to, forcedForCard), aiDelay(260));
   }
@@ -509,19 +509,19 @@ function aiAttackStep(pid, intent){
       // full "thinking pause".
       aiSchedule(step, 80);
     }
-    if(result.rounds<=0){ renderGame(); nextDecision(); return; }
+    if(result.rounds<=0){ host.renderGame(); nextDecision(); return; }
     const roundsLabel = result.rounds>1 ? ` (${result.rounds} hiệp)` : '';
     logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${result.attLossTotal}, đối phương mất ${result.defLossTotal}.`, [pid, defenderId]);
-    if(result.lastRes) showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
+    if(result.lastRes) host.showDice(result.lastRes.ad, result.lastRes.dd, result.lastRes.results);
     if(result.captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [pid, defenderId]);
     // startAttackAnim's onDone fires once the fly/impact/return sequence finishes (see
     // 06-render-game.js) — the next attack decision waits for that instead of firing right
     // after the battle resolves, same as the human attack flow.
-    startAttackAnim({
+    host.startAttackAnim({
       fromId:from, toId:to, attLoss:result.attLossTotal, defLoss:result.defLossTotal, captured:result.captured,
       fromCountBefore, toCountBefore, fromCountAfter, toCountAfter, attackerColor, defenderColor,
     }, nextDecision);
-    renderGame();
+    host.renderGame();
   }
   step();
 }
@@ -529,7 +529,7 @@ function aiAttackStep(pid, intent){
 function aiFortifyStep(pid, intent){
   intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   game.phase='fortify';
-  renderGame();
+  host.renderGame();
   const p = game.players[pid];
   // Same gang-up detection as aiAttackStep/pickAIReinforceTarget — a forced leader-only turn is
   // also this turn's fortify front, not just this turn's attack target, so troops actually pile
@@ -585,7 +585,7 @@ function aiFortifyStep(pid, intent){
   Object.keys(movedTo).forEach(dstId=>{
     logMsg('info', p.name+' tăng cường '+movedTo[dstId]+' quân đến '+mapData.territories[dstId].name+'.', pid);
   });
-  renderGame();
+  host.renderGame();
   aiSchedule(()=> endTurn(), aiDelay(400));
 }
 

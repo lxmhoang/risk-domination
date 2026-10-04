@@ -3,20 +3,17 @@
 /* =========================================================================
    AI HEADLESS SMOKE TEST
    ---------------------------------------------------------------------
-   Loads the real, unmodified game logic (01-utils, 02-map-model,
-   04-game-state, 05-ai — deliberately NOT 03-editor/06-render-game/
-   07-cards-modal/08-wiring, which are DOM-only and never touched by AI
-   decisions) into a Node `vm` sandbox with the smallest possible
-   document/window/localStorage stubs, builds a synthetic 6x6 grid map (4
-   quadrant "continents", 4-directionally adjacent — connected and roughly
-   Risk-shaped, but perfectly symmetric, which is a harder stress case than
-   most real hand-drawn maps), and runs several full AI-vs-AI games end to
-   end via aiSchedule() rerouted through setImmediate instead of real
-   setTimeout delays, so a whole game finishes in milliseconds instead of
-   minutes.
+   Loads the game's core (dist/core.js — the same rules/AI/map-model module the
+   server runs, built by `node build.js` from the core files in src/js), builds
+   a synthetic 6x6 grid map (4 quadrant "continents", 4-directionally adjacent —
+   connected and roughly Risk-shaped, but perfectly symmetric, which is a harder
+   stress case than most real hand-drawn maps), and runs several full AI-vs-AI
+   games end to end with the AI's scheduled steps rerouted through setImmediate
+   instead of real delays, so a whole game finishes in milliseconds instead of
+   minutes. Run `node build.js` first: this tests the built module.
 
-   This is NOT a visual/UI check (nothing is rendered — renderGame() etc.
-   are stubbed no-ops) and it is NOT a substitute for actually opening
+   This is NOT a visual/UI check (nothing is rendered — the core's host
+   hooks are left as no-ops) and it is NOT a substitute for actually opening
    dist/index.html and watching a spectator match. What it verifies fast,
    on every source edit, without a browser:
      - the AI never throws mid-turn across a spread of player counts/
@@ -35,157 +32,89 @@
    property of the map/heuristic combo, not a regression signal by itself
    (verified by running this same map against the pre-refactor AI too).
    ========================================================================= */
-const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 
-const SRC_JS = path.join(__dirname, '..', 'src', 'js');
-const CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'config.json'), 'utf8'));
+const createCore = require(path.join(__dirname, '..', 'dist', 'core.js'));
+const CONFIG = JSON.parse(require('fs').readFileSync(path.join(__dirname, '..', 'src', 'config.json'), 'utf8'));
 const ROUND_CAP = 3000; // hard stop so a stalemate config can't run forever / balloon game.log
 
-function buildSandbox(){
-  const store = {};
-  const localStorage = {
-    getItem: k => (k in store ? store[k] : null),
-    setItem: (k,v) => { store[k] = String(v); },
-    removeItem: k => { delete store[k]; },
-  };
-  const fakeElement = () => ({
-    classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
-    style: {}, dataset: {}, addEventListener(){}, appendChild(){}, remove(){},
-    setAttribute(){}, getAttribute(){ return null; }, querySelectorAll(){ return []; },
-    querySelector(){ return null; }, value:'', checked:false, textContent:'', innerHTML:'',
-  });
-  const document = {
-    getElementById(){ return fakeElement(); },
-    createElement(){ return fakeElement(); },
-    querySelectorAll(){ return []; },
-    querySelector(){ return null; },
-    body: fakeElement(),
-    addEventListener(){},
-  };
-  const window = { addEventListener(){}, innerWidth:390, innerHeight:844 };
-  const sandbox = {
-    console, document, window, localStorage,
-    setTimeout, clearTimeout, setImmediate, Math, Set, Array, Object, JSON, Number, String,
-    GAME_CONFIG: CONFIG,
-  };
-  vm.createContext(sandbox);
-  return sandbox;
-}
-
-function loadModules(sandbox, cardMode){
-  const files = ['01-utils.js','02-map-model.js','04-game-state.js','05-ai.js'];
-  for(const f of files){
-    vm.runInContext(fs.readFileSync(path.join(SRC_JS, f), 'utf8'), sandbox, { filename: f });
-  }
-  sandbox.__cardMode = cardMode;
-  sandbox.__roundCap = ROUND_CAP;
-  // Stub the rendering/UI-only functions that 04/05 call but that live in the
-  // DOM-dependent modules we deliberately did NOT load (06/07/08). Also
-  // instrument logMsg/endTurn to tally what we're checking for, and reroute
-  // aiSchedule through setImmediate (no real delay) with an exception net so
-  // one bad turn is reported instead of silently killing the process.
-  vm.runInContext(`
-    RUNTIME_CONFIG.cardAwardEvent = __cardMode;
-    let __harnessErrors = [];
-    let __harnessLastWinner = null;
-    let __tally = {turns:0, noCardDespiteOptions:0, noCardNoOptions:0, forcedLogs:0};
-    function renderGame(){}
-    function renderCombatLog(){ if(game.log.length>500) game.log.length=0; } // avoid unbounded growth on a stalemate config
-    function setActionHint(){}
-    function showDice(){}
-    function openCardsModal(){}
-    function resetRenderAnimState(){} // real impl lives in 06-render-game.js, deliberately not loaded here
-    function startAttackAnim(info, onDone){ if(onDone) onDone(); } // ditto — skip straight to onDone, no visuals to fake here
-    function showTurnIntro(){} // ditto — no DOM banner to fake here
-    function showGameOver(winner){ __harnessLastWinner = winner ? winner.name : null; }
-    const __realLogMsg = logMsg;
-    logMsg = function(type, msg){
-      if(msg.indexOf('liều đánh')>=0) __tally.forcedLogs++;
-      return __realLogMsg(type, msg);
-    };
-    const __realEndTurn = endTurn;
-    endTurn = function(){
-      const p = currentPlayer();
-      const mode = RUNTIME_CONFIG.cardAwardEvent;
+// A fresh core per game, with host hooks that do what this harness needs instead of drawing:
+// tally what we're checking for, and run the AI's scheduled steps through setImmediate (no real
+// delay) with an exception net so one bad turn is reported instead of silently killing the process.
+function buildCore(cardMode){
+  const h = { errors: [], lastWinner: null, tally: {turns:0, noCardDespiteOptions:0, noCardNoOptions:0, forcedLogs:0} };
+  const core = createCore(CONFIG, {
+    renderCombatLog(){
+      const log = core.game.log, last = log[log.length-1];
+      if(last && last.msg.indexOf('liều đánh')>=0) h.tally.forcedLogs++;
+      if(log.length>500) log.length = 0; // avoid unbounded growth on a stalemate config
+    },
+    showGameOver(winner){ h.lastWinner = winner ? winner.name : null; },
+    beforeEndTurn(p){
+      const mode = core.RUNTIME_CONFIG.cardAwardEvent;
       const hasCard = mode==='on_turn_end' ? true : mode==='on_kill' ? p.killedThisTurn : p.capturedThisTurn;
-      __tally.turns++;
+      h.tally.turns++;
       if(!hasCard){
-        const mine = ownedTerritories(p.id);
-        const hadOption = mine.some(id=> game.armies[id]>=2 && [...mapData.territories[id].neighbors].some(n=>game.owner[n]!==p.id));
-        if(hadOption) __tally.noCardDespiteOptions++; else __tally.noCardNoOptions++;
+        const mine = core.ownedTerritories(p.id);
+        const hadOption = mine.some(id=> core.game.armies[id]>=2 && [...core.mapData.territories[id].neighbors].some(n=>core.game.owner[n]!==p.id));
+        if(hadOption) h.tally.noCardDespiteOptions++; else h.tally.noCardNoOptions++;
       }
-      return __realEndTurn();
-    };
-    aiSchedule = function(fn, delay){
+    },
+    schedule(fn){
       setImmediate(()=>{
-        if(game && game.roundNumber>__roundCap) return; // let it stall out quietly past the cap
-        try{ fn(); }catch(e){ __harnessErrors.push(e.stack || String(e)); }
+        if(core.game && core.game.roundNumber>ROUND_CAP) return; // let it stall out quietly past the cap
+        try{ fn(); }catch(e){ h.errors.push(e.stack || String(e)); }
       });
-    };
-  `, sandbox, { filename: 'harness-stubs.js' });
+    },
+  });
+  core.RUNTIME_CONFIG.cardAwardEvent = cardMode;
+  return { core, h };
 }
 
 // A 6x6 grid of territories split into 4 quadrant "continents" (9 territories
 // each), 4-directionally adjacent — small but fully-connected, close enough
 // in shape to a real Risk map to exercise continent-completion, border
 // reserves, and elimination logic.
-function buildSyntheticMap(sandbox){
-  vm.runInContext(`
-    (function(){
-      mapData = newMap(6, 6, 'Bản đồ test');
-      let nextId = 1;
-      const idOf = {};
-      for(let r=0;r<6;r++) for(let c=0;c<6;c++){
-        const id = nextId++;
-        idOf[r+'_'+c] = id;
-        const contId = (r<3?0:1)*2 + (c<3?0:1) + 1;
-        mapData.territories[id] = {id, name:'T'+id, continentId:contId, color:'#fff', cells:[], neighbors:new Set(), centroid:{x:c,y:r}};
-      }
-      for(let cid=1; cid<=4; cid++){ mapData.continents[cid] = {id:cid, name:'C'+cid, color:'#000', bonus:3}; }
-      for(let r=0;r<6;r++) for(let c=0;c<6;c++){
-        const id = idOf[r+'_'+c];
-        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc])=>{
-          const rr=r+dr, cc=c+dc;
-          if(rr>=0&&rr<6&&cc>=0&&cc<6){ mapData.territories[id].neighbors.add(idOf[rr+'_'+cc]); }
-        });
-      }
-    })();
-  `, sandbox, { filename: 'synthetic-map.js' });
+function buildSyntheticMap(core){
+  const map = core.newMap(6, 6, 'Bản đồ test');
+  let nextId = 1;
+  const idOf = {};
+  for(let r=0;r<6;r++) for(let c=0;c<6;c++){
+    const id = nextId++;
+    idOf[r+'_'+c] = id;
+    const contId = (r<3?0:1)*2 + (c<3?0:1) + 1;
+    map.territories[id] = {id, name:'T'+id, continentId:contId, color:'#fff', cells:[], neighbors:new Set(), centroid:{x:c,y:r}};
+  }
+  for(let cid=1; cid<=4; cid++){ map.continents[cid] = {id:cid, name:'C'+cid, color:'#000', bonus:3}; }
+  for(let r=0;r<6;r++) for(let c=0;c<6;c++){
+    const id = idOf[r+'_'+c];
+    [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc])=>{
+      const rr=r+dr, cc=c+dc;
+      if(rr>=0&&rr<6&&cc>=0&&cc<6){ map.territories[id].neighbors.add(idOf[rr+'_'+cc]); }
+    });
+  }
+  core.mapData = map;
 }
 
 function runOneGame(numPlayers, difficulty, allianceEnabled, tradeRule, cardMode){
-  const sandbox = buildSandbox();
-  loadModules(sandbox, cardMode);
-  buildSyntheticMap(sandbox);
+  const { core, h } = buildCore(cardMode);
+  buildSyntheticMap(core);
   const personalities = ['balanced','turtle','rusher','opportunist'];
   const cfg = Array.from({length:numPlayers}, (_,i)=>({
     name:'AI'+i, isHuman:false, color:'#000', personality: personalities[i%4],
   }));
-  sandbox.__playerCfg = cfg;
-  sandbox.__difficulty = difficulty;
-  sandbox.__alliance = allianceEnabled;
-  sandbox.__tradeRule = tradeRule;
-  vm.runInContext(`
-    initGame(__playerCfg, __difficulty, true, __alliance, __tradeRule);
-    autoPlaceInitialArmies();
-    beginReinforcePhase();
-  `, sandbox, { filename: 'run-game.js' });
+  core.initGame(cfg, difficulty, true, allianceEnabled, tradeRule);
+  core.autoPlaceInitialArmies();
+  core.beginReinforcePhase();
 
   return new Promise((resolve) => {
     const start = Date.now();
     const TIMEOUT_MS = 15000;
     const check = () => {
-      const over = vm.runInContext('!!(game && game.over)', sandbox);
-      const errs = vm.runInContext('__harnessErrors', sandbox);
-      const round = vm.runInContext('game ? game.roundNumber : -1', sandbox);
-      if(over || errs.length>0 || round>ROUND_CAP || Date.now()-start>TIMEOUT_MS){
-        resolve({
-          over, errors: errs, round,
-          winner: vm.runInContext('__harnessLastWinner', sandbox),
-          tally: vm.runInContext('__tally', sandbox),
-        });
+      const over = !!(core.game && core.game.over);
+      const round = core.game ? core.game.roundNumber : -1;
+      if(over || h.errors.length>0 || round>ROUND_CAP || Date.now()-start>TIMEOUT_MS){
+        resolve({ over, errors: h.errors, round, winner: h.lastWinner, tally: h.tally });
         return;
       }
       setImmediate(check);
