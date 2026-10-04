@@ -3697,7 +3697,7 @@ function performAttack(p, fromId, toId, allOut){
   recordBattleStat(p.name, defenderName, fromName, toName, attLoss+defLoss);
   // Captured with armies to spare: the player may send more in (moveAfterCapture) until their
   // next action. The rule's minimum has already moved (see doBattle()).
-  const extraMax = captured ? lastRes.maxMovable-lastRes.moving : 0;
+  const extraMax = captured && !game.over ? lastRes.maxMovable-lastRes.moving : 0;
   game.pendingCapture = extraMax>0 ? {from:fromId, to:toId} : null;
   // Eliminating someone hands over their cards — a hand of 5+ has to be traded down right away.
   const mustTrade = !game.over && p.cards.length>=FORCED_TRADE_HAND;
