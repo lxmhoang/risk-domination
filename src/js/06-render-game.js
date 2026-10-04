@@ -318,7 +318,7 @@ function mapIsWrapping(){ return !!(mapData && (mapData.wrapX || mapData.wrapY))
 // above; 'seam' = one fixed copy of the map, laid out exactly like a non-wrapping one, with glowing
 // marks on the stretches of edge that join (drawWrapSeams) and arrows leaving through one edge
 // and arriving through the other. Only the display differs — the neighbor graph is the same.
-function wrapTiled(){ return mapIsWrapping() && RUNTIME_CONFIG.wrapDisplay!=='seam'; }
+function wrapTiled(){ return mapIsWrapping() && RUNTIME_CONFIG.wrapDisplay==='globe'; }
 // Pans the wrap camera by (dx,dy) screen px (dragging the map right moves the view left).
 function panWrapView(dxScreen, dyScreen){
   const W = mapData.cols*mapData.cellSize, H = mapData.rows*mapData.cellSize;

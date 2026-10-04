@@ -3,7 +3,7 @@
   "manualInitialPlacement": false,
   "cardAwardEvent": "on_capture",
   "mapWrapX": true,
-  "wrapDisplay": "globe",
+  "wrapDisplay": "seam",
   "aiEasyThreshold": 2.0,
   "aiEasyReserve": 1.0,
   "aiNormalThreshold": 1.5,
