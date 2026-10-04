@@ -4540,51 +4540,98 @@ function clipOutSeam(ctx, map){
   ctx.clip('evenodd');
 }
 
-// Outside renderView's focus window (one map's worth) only a narrow strip of the map's repeat
-// stays visible, dimmed but see-through, as a hint that the map continues; past that strip the
-// canvas is erased outright (transparent — the wrap's own background shows through, same as
-// around a non-wrapping map). Drawn in canvas CSS px.
-const FOCUS_STRIP_PX = 64;      // width of the dimmed, see-through strip on each side
-const FOCUS_SOFT_EDGE_PX = 24;  // soft edge where the strip meets the bright window
-const FOCUS_DIM = 'rgba(4,7,14,0.62)', FOCUS_DIM_CLEAR = 'rgba(4,7,14,0)';
-const ERASE = 'rgba(0,0,0,1)'; // used with 'destination-out' — erases fully
-function dimOutsideFocusWindow(ctx, dpr, viewW, viewH){
-  const v = renderView;
-  ctx.save();
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  const fill = (x0,y0,x1,y1, style)=>{
-    if(x1<=x0 || y1<=y0) return;
-    ctx.fillStyle = style; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+// ---- Globe edges (wrapping maps) ----
+// Along the wrap axis the screen shows one map's worth flat in the middle (the "focus window",
+// where the map sat before wrapping existed), and on each side a band where the map's repeat
+// curves away like the surface of a globe rolling over the horizon: the scene is drawn into an
+// off-screen buffer that's longer than the screen along that axis (see drawGameCanvas()), then
+// pasted back flat in the middle and in thin slices at the sides, each slice taking a bigger
+// stretch of the buffer the closer it is to the edge (sphere geometry: on-screen distance from
+// the window = R*sin(θ) for a surface arc R*θ). The bands are then shaded — darker toward the
+// limb, fading into the sea color, with a thin bright "atmosphere" rim — and nothing is drawn past
+// the limb, so the game screen's own sea-colored background shows there.
+const GLOBE_BAND_PX = 120;     // on-screen width of each curved band (less if there isn't room)
+const GLOBE_THETA_MAX = 1.31;  // how far round the globe the band reaches (~75°) — 90° would squash the last slice to nothing
+let globeBuf = null;           // off-screen buffer canvas, reused between frames
+const GLOBE_BAND_DPR_MAX = 0.75;  // band buffer resolution cap (device px per CSS px)
+// a = where the flat window starts, focusLen = its length, outLen = screen length (CSS px, along the axis)
+function makeGlobeWarp(axis, a, focusLen, outLen){
+  if(focusLen >= outLen-1){
+    // zoomed in past the screen: no room for an edge, the whole screen is flat map
+    a = 0; focusLen = outLen;
+  }
+  const b = a+focusLen, k = Math.sin(GLOBE_THETA_MAX);
+  const CL = Math.max(0, Math.min(GLOBE_BAND_PX, a)), CR = Math.max(0, Math.min(GLOBE_BAND_PX, outLen-b));
+  const RL = CL/k, RR = CR/k, LsL = RL*GLOBE_THETA_MAX, LsR = RR*GLOBE_THETA_MAX;
+  return {
+    axis, a, b, CL, CR, RL, RR, LsL, LsR, srcLen: LsL+focusLen+LsR,
+    // screen position -> buffer position (null past the limb, where nothing is drawn)
+    outToSrc(o){
+      if(o<a){ const d=a-o; if(d>CL+1e-6) return null; return LsL - RL*Math.asin(Math.min(1, d/RL)); }
+      if(o>b){ const d=o-b; if(d>CR+1e-6) return null; return LsL+focusLen + RR*Math.asin(Math.min(1, d/RR)); }
+      return LsL+(o-a);
+    },
+    // buffer position -> screen position (null if it's round the back of the globe)
+    srcToOut(p){
+      if(p<LsL){ const sArc=LsL-p; if(RL<=0 || sArc>LsL+1e-6) return null; return a - RL*Math.sin(sArc/RL); }
+      const pe = LsL+focusLen;
+      if(p>pe){ const sArc=p-pe; if(RR<=0 || sArc>LsR+1e-6) return null; return b + RR*Math.sin(sArc/RR); }
+      return a+(p-LsL);
+    },
   };
-  const ramp = (x0,y0,x1,y1, gx0,gy0,gx1,gy1, from, to)=>{
-    if(x1<=x0 || y1<=y0) return;
-    const g = ctx.createLinearGradient(gx0,gy0,gx1,gy1);
-    g.addColorStop(0, from); g.addColorStop(1, to);
-    ctx.fillStyle = g; ctx.fillRect(x0,y0,x1-x0,y1-y0);
+}
+// Pastes the band buffer onto the visible canvas's curved bands through the globe warp (the flat
+// window was already painted straight onto the screen), then shades the bands. `octx` is the
+// visible canvas's context (any transform), sizes in CSS px.
+function drawGlobeComposite(octx, buf, g, dpr, bufDpr, viewW, viewH){
+  const X = g.axis==='x';
+  const across = X ? viewH : viewW;      // extent perpendicular to the wrap axis
+  const bufLen = X ? buf.width : buf.height;
+  octx.save();
+  octx.setTransform(1,0,0,1,0,0);
+  // the flat window is already on screen; clear the bands and everything past them
+  const W = octx.canvas.width, H = octx.canvas.height;
+  if(X){ octx.clearRect(0, 0, Math.floor(g.a*dpr), H); octx.clearRect(Math.ceil(g.b*dpr), 0, W, H); }
+  else { octx.clearRect(0, 0, W, Math.floor(g.a*dpr)); octx.clearRect(0, Math.ceil(g.b*dpr), W, H); }
+  octx.imageSmoothingEnabled = true;
+  // warp position -> position in the band buffer (the far band's stretch sits right after the near one's)
+  const focusLen = g.b-g.a;
+  const globeBufPos = sPos=> sPos<=g.LsL ? sPos : sPos-focusLen;
+  // copy warp range [s0,s1] onto screen range [o0,o1] along the axis (CSS px); +0.75 device px
+  // of overlap so neighboring slices never leave a hairline gap between them
+  const blit = (s0, s1, o0, o1)=>{
+    s0 = globeBufPos(s0); s1 = globeBufPos(s1);
+    const sa = Math.max(0, s0*bufDpr), sl = Math.min(bufLen, s1*bufDpr) - sa;
+    if(sl<=0) return;
+    if(X) octx.drawImage(buf, sa, 0, sl, across*bufDpr, o0*dpr, 0, (o1-o0)*dpr+0.75, across*dpr);
+    else  octx.drawImage(buf, 0, sa, across*bufDpr, sl, 0, o0*dpr, across*dpr, (o1-o0)*dpr+0.75);
   };
-  // one side: `edge` = where the bright window ends, `dir` = +1 outward to larger coords, -1 to smaller
-  function side(edge, dir, limit, horizontal){
-    const S = FOCUS_STRIP_PX, E = FOCUS_SOFT_EDGE_PX;
-    const box = (a,b)=> horizontal ? [Math.min(a,b),0,Math.max(a,b),viewH] : [0,Math.min(a,b),viewW,Math.max(a,b)];
-    const grad = (a,b)=> horizontal ? [a,0,b,0] : [0,a,0,b];
-    const stripEnd = edge + dir*S;
-    // soft edge into the dim, then full dim for the rest of the strip
-    ramp(...box(edge, edge+dir*E), ...grad(edge+dir*E, edge), FOCUS_DIM, FOCUS_DIM_CLEAR);
-    fill(...box(edge+dir*E, stripEnd), FOCUS_DIM);
-    // the strip itself stays dimmed but see-through for its full width; past it, erased outright
-    ctx.globalCompositeOperation = 'destination-out';
-    fill(...box(stripEnd, limit), ERASE);
-    ctx.globalCompositeOperation = 'source-over';
-  }
-  if(mapData.wrapX && v.focusW < viewW){
-    side(v.focusX0, -1, 0, true);
-    side(v.focusX0+v.focusW, 1, viewW, true);
-  }
-  if(mapData.wrapY && v.focusH < viewH){
-    side(v.focusY0, -1, 0, false);
-    side(v.focusY0+v.focusH, 1, viewH, false);
-  }
-  ctx.restore();
+  const STEP = 4; // slice width (CSS px) — fine enough for a smooth curve, few enough drawImage calls to stay cheap
+  for(let o=g.a-g.CL; o<g.a-1e-6; o+=STEP){ const o1=Math.min(o+STEP, g.a); blit(g.outToSrc(o), g.outToSrc(o1), o, o1); }
+  for(let o=g.b; o<g.b+g.CR-1e-6; o+=STEP){ const o1=Math.min(o+STEP, g.b+g.CR); blit(g.outToSrc(o), g.outToSrc(o1), o, o1); }
+
+  // shading, in CSS px. `edge` = where the flat window ends, `limb` = outer end of the band.
+  octx.setTransform(dpr,0,0,dpr,0,0);
+  const band = (edge, limb, stops)=>{
+    if(Math.abs(limb-edge)<1) return;
+    const grad = X ? octx.createLinearGradient(edge,0,limb,0) : octx.createLinearGradient(0,edge,0,limb);
+    stops.forEach(([t,c])=> grad.addColorStop(t,c));
+    octx.fillStyle = grad;
+    const lo = Math.min(edge,limb), hi = Math.max(edge,limb);
+    if(X) octx.fillRect(lo, 0, hi-lo, across); else octx.fillRect(0, lo, across, hi-lo);
+  };
+  const sides = [[g.a, g.a-g.CL, -1], [g.b, g.b+g.CR, 1]];
+  sides.forEach(([edge, limb, dir])=>{
+    if(Math.abs(limb-edge)<1) return;
+    // the far side of the globe is in shadow — darker toward the limb
+    band(edge, limb, [[0,'rgba(4,7,14,0)'], [0.5,'rgba(4,7,14,0.08)'], [1,'rgba(4,7,14,0.32)']]);
+    // ...and dissolves into the sea, reaching the plain sea color right at the limb
+    band(edge, limb, [[0,'rgba(28,181,224,0)'], [0.4,'rgba(28,181,224,0)'], [0.75,'rgba(28,181,224,0.55)'], [1,'rgba(28,181,224,1)']]);
+    // thin bright atmosphere rim straddling the limb
+    const rim = 12;
+    band(limb-dir*rim, limb+dir*rim, [[0,'rgba(225,250,255,0)'], [0.5,'rgba(225,250,255,0.5)'], [1,'rgba(225,250,255,0)']]);
+  });
+  octx.restore();
 }
 
 // Marks every stretch of the map edge where land continues across the seam — the cue that the
@@ -4704,16 +4751,21 @@ function mapPointToScreen(x, y){
   const nativeW = mapData.cols*mapData.cellSize, nativeH = mapData.rows*mapData.cellSize;
   if(!mapIsWrapping()) return { x: rect.left + x*(rect.width/nativeW), y: rect.top + y*(rect.height/nativeH) };
   // Wrapping axis: the point is visible once per tile — use the copy nearest the middle of the
-  // undimmed focus window (see dimOutsideFocusWindow()).
+  // flat focus window, then take it through the globe warp to its screen position.
   const fold = (v, origin, size, span, target)=>{
     let c = mod(v-origin, size);
     while(c+size <= span+size && Math.abs(c+size-target) < Math.abs(c-target)) c += size;
     return c;
   };
-  const sc = renderView.scale;
-  const cx = mapData.wrapX ? fold(x, renderView.originX, nativeW, renderView.canvasW, (renderView.focusX0+renderView.focusW/2)/sc) : x-renderView.originX;
-  const cy = mapData.wrapY ? fold(y, renderView.originY, nativeH, renderView.canvasH, (renderView.focusY0+renderView.focusH/2)/sc) : y-renderView.originY;
-  return { x: rect.left + cx*renderView.scale, y: rect.top + cy*renderView.scale };
+  const sc = renderView.scale, sh = renderView.bufShift, g = renderView.globe;
+  const cx = mapData.wrapX ? fold(x, renderView.originX, nativeW, renderView.canvasW, (renderView.focusX0+renderView.focusW/2+sh)/sc) : x-renderView.originX;
+  const cy = mapData.wrapY ? fold(y, renderView.originY, nativeH, renderView.canvasH, (renderView.focusY0+renderView.focusH/2+sh)/sc) : y-renderView.originY;
+  let px = cx*sc, py = cy*sc; // buffer CSS px
+  if(g){
+    const toScreen = p=>{ const o = g.srcToOut(p); return o!=null ? o : (p<g.LsL ? g.a-g.CL : g.b+g.CR); };
+    if(g.axis==='x') px = toScreen(px); else py = toScreen(py);
+  }
+  return { x: rect.left + px, y: rect.top + py };
 }
 
 // gameZoom=1 reproduces the old "shrink to fit the wrap, never enlarge" behavior exactly;
@@ -4818,6 +4870,16 @@ function positionPortraitControlStacks(){
   right.style.bottom = bottomPx;
 }
 
+// Map-native bounding box [x0,y0,x1,y1] of a territory's cells, cached on the territory object.
+function territoryBBox(map, t){
+  if(t._bb) return t._bb;
+  let minC=Infinity, maxC=-Infinity, minR=Infinity, maxR=-Infinity;
+  t.cells.forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
+  const cs = map.cellSize;
+  t._bb = [minC*cs, minR*cs, (maxC+1)*cs, (maxR+1)*cs];
+  return t._bb;
+}
+
 function drawGameCanvas(){
   const canvas = $('gameCanvas');
   const cs = mapData.cellSize;
@@ -4899,7 +4961,7 @@ function drawGameCanvas(){
   // margins — on the wrapping axis it spans exactly the visible area (never scrolls; the map is
   // tiled across it and panned via wrapView), on the other axis it spans the same total extent
   // the margins used to, with the map drawn offset by what the leading margin was. So the map's
-  // repeats and the dimmed side bands (dimOutsideFocusWindow) reach every edge of the screen.
+  // repeats and the globe's curved edges (drawGlobeComposite) can reach every edge of the screen.
   const wrapping = mapIsWrapping();
   const viewW = mapData.wrapX ? Math.max(1, wrap.clientWidth) : (wrapping ? marginLeftPx+cssW+marginRightPx : cssW);
   const viewH = mapData.wrapY ? Math.max(1, wrap.clientHeight) : (wrapping ? marginTopPx+cssH+marginBottomPx : cssH);
@@ -4921,26 +4983,39 @@ function drawGameCanvas(){
     wrapView.x = mapData.wrapX ? mod(-marginLeftPx/displayScale, nativeW) : 0;
     wrapView.y = mapData.wrapY ? mod(-marginTopPx/displayScale, nativeH) : 0;
   }
+  // Globe edges: on a wrapping map the scene is drawn into an off-screen buffer that's longer than
+  // the screen along the wrap axis, then pasted back through the globe warp at the end of this
+  // function (see makeGlobeWarp()/drawGlobeComposite()). In the flat middle, buffer position =
+  // screen position + bufShift along that axis; the other axis is 1:1.
+  const globe = wrapping ? (mapData.wrapX ? makeGlobeWarp('x', marginLeftPx, cssW, viewW) : makeGlobeWarp('y', marginTopPx, cssH, viewH)) : null;
+  const bufShift = globe ? globe.LsL-globe.a : 0;
+  const warpW = globe && globe.axis==='x' ? globe.srcLen : viewW; // total length of the warp coordinate space
+  const warpH = globe && globe.axis==='y' ? globe.srcLen : viewH;
   renderView = {
     scale: displayScale,
-    // map-native coordinate at the canvas's left/top edge (negative = map starts that far in)
-    originX: mapData.wrapX ? mod(wrapView.x, nativeW) : (wrapping ? -marginLeftPx/displayScale : 0),
-    originY: mapData.wrapY ? mod(wrapView.y, nativeH) : (wrapping ? -marginTopPx/displayScale : 0),
-    canvasW: viewW/displayScale, canvasH: viewH/displayScale,
+    // map-native coordinate at the drawing surface's left/top edge (the buffer's, on a wrapping
+    // map; negative = map starts that far in)
+    originX: mapData.wrapX ? mod(wrapView.x - bufShift/displayScale, nativeW) : (wrapping ? -marginLeftPx/displayScale : 0),
+    originY: mapData.wrapY ? mod(wrapView.y - bufShift/displayScale, nativeH) : (wrapping ? -marginTopPx/displayScale : 0),
+    canvasW: warpW/displayScale, canvasH: warpH/displayScale,
     // The "main" window — exactly one map's worth, where the map sat before wrapping existed —
-    // in canvas CSS px. Everything outside it is dimmed (see the end of this function), so each
-    // territory reads clearly exactly once; the repeats past it only hint that the map goes on.
+    // in screen CSS px; flat, with the globe's curved edges outside it.
     focusX0: marginLeftPx, focusW: cssW,
     focusY0: marginTopPx, focusH: cssH,
+    globe, bufShift,
   };
-  // Tile offsets (map-native px) — one tile per copy of the map that overlaps the canvas.
-  const tileXs = [], tileYs = [];
-  if(mapData.wrapX){ for(let x=-renderView.originX; x<renderView.canvasW; x+=nativeW) tileXs.push(x); } else tileXs.push(-renderView.originX);
-  if(mapData.wrapY){ for(let y=-renderView.originY; y<renderView.canvasH; y+=nativeH) tileYs.push(y); } else tileYs.push(-renderView.originY);
-  const ctx = canvas.getContext('2d');
-  ctx.scale(displayScale*dpr, displayScale*dpr); // canvas.width/height assignment above already reset the transform to identity
-  ctx.fillStyle=OCEAN_COLOR;
-  ctx.fillRect(0,0,renderView.canvasW,renderView.canvasH);
+  // The surface the two layers below draw onto — reassigned by paintScene() (end of this
+  // function), since a wrapping map paints the scene onto more than one surface per frame.
+  let ctx = canvas.getContext('2d');
+  // Map-native rect of the tile currently being painted — territories entirely outside it are
+  // skipped (offView), so painting a narrow strip doesn't pay for the whole map.
+  let vis = null;
+  const CULL_PAD = 60; // badge + name label can spill this far past a territory's own cells
+  const offView = t=>{
+    if(!vis) return false;
+    const b = territoryBBox(mapData, t);
+    return b[2] < vis.x0-CULL_PAD || b[0] > vis.x1+CULL_PAD || b[3] < vis.y0-CULL_PAD || b[1] > vis.y1+CULL_PAD;
+  };
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
   const now = performance.now();
@@ -4953,6 +5028,7 @@ function drawGameCanvas(){
   // tile boundary isn't painted over by the next tile's base fills.
   const drawBase = ()=>{
   terrs.forEach(t=>{
+    if(offView(t)) return;
     let color;
     if(showContinentsGame){
       const cont = t.continentId!=null ? mapData.continents[t.continentId] : null;
@@ -5021,6 +5097,7 @@ function drawGameCanvas(){
   // when in continent view (rather than comparing neighbor-by-neighbor, each continent's own
   // traced outer edge already IS exactly where a thick border belongs).
   terrs.forEach(t=>{
+    if(offView(t)) return;
     pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(8,10,18,0.85)';
     ctx.stroke();
@@ -5106,6 +5183,7 @@ function drawGameCanvas(){
   // specially further down instead).
   Object.values(mapData.territories).forEach(t=>{
     if(t.cells.length===0) return;
+    if(offView(t)) return;
     if(attackAnim && (t.id===attackAnim.fromId || t.id===attackAnim.toId)) return;
     const realArmyCount = game.armies[t.id];
     if(realArmyCount===undefined) return;
@@ -5153,12 +5231,61 @@ function drawGameCanvas(){
     ctx.globalAlpha = 1;
   });
   };
-  [drawBase, drawOverlay].forEach(layer=>{
-    tileYs.forEach(ty=> tileXs.forEach(tx=>{
+  // Paints both layers onto `target` for the region whose top-left is map-native point (ox,oy),
+  // ew x eh native px big, placed at CSS px (surfX,surfY) on the target — one pass per copy of
+  // the map that overlaps it on a wrapping axis.
+  function paintScene(target, ox, oy, ew, eh, surfX, surfY, pxRatio){
+    if(ew<=0 || eh<=0) return;
+    const pr = pxRatio || dpr;
+    ctx = target;
+    ctx.save();
+    ctx.setTransform(pr,0,0,pr,0,0);
+    ctx.beginPath(); ctx.rect(surfX, surfY, ew*displayScale, eh*displayScale); ctx.clip();
+    ctx.translate(surfX, surfY);
+    ctx.scale(displayScale, displayScale);
+    ctx.fillStyle = OCEAN_COLOR;
+    ctx.fillRect(0, 0, ew, eh);
+    const xs = [], ys = [];
+    if(mapData.wrapX){ for(let x=-mod(ox,nativeW); x<ew; x+=nativeW) xs.push(x); } else xs.push(-ox);
+    if(mapData.wrapY){ for(let y=-mod(oy,nativeH); y<eh; y+=nativeH) ys.push(y); } else ys.push(-oy);
+    [drawBase, drawOverlay].forEach(layer=> ys.forEach(ty=> xs.forEach(tx=>{
+      vis = {x0:-tx, y0:-ty, x1:-tx+ew, y1:-ty+eh};
       ctx.save(); ctx.translate(tx, ty); layer(); ctx.restore();
-    }));
-  });
-  if(mapIsWrapping()) dimOutsideFocusWindow(ctx, dpr, viewW, viewH);
+    })));
+    vis = null;
+    ctx.restore();
+  }
+  const screenCtx = canvas.getContext('2d');
+  if(!globe){
+    paintScene(screenCtx, renderView.originX, renderView.originY, viewW/displayScale, viewH/displayScale, 0, 0);
+  } else {
+    // Flat window: straight onto the screen, only its own stretch (the bands are filled in by
+    // drawGlobeComposite()). wrapView = native point at screen 0 under the flat layout.
+    const X = globe.axis==='x', sc = displayScale, focusLen = globe.b-globe.a;
+    if(X) paintScene(screenCtx, wrapView.x + globe.a/sc, renderView.originY, focusLen/sc, viewH/sc, globe.a, 0);
+    else  paintScene(screenCtx, renderView.originX, wrapView.y + globe.a/sc, viewW/sc, focusLen/sc, 0, globe.a);
+    // Curved bands: the stretches of map they show, side by side in a small buffer — the near
+    // band's is buffer position [0,LsL] (= warp position [0,LsL]), the far band's follows it
+    // (= warp position [LsL+focusLen, srcLen]). See globeBufPos() in drawGlobeComposite().
+    // Rendered at lower resolution than the screen: the bands are squashed and fading into the sea
+    // anyway, so full sharpness there is wasted work (a 3x phone would paint 9x the pixels).
+    const bandDpr = Math.min(dpr, GLOBE_BAND_DPR_MAX);
+    const across = X ? viewH : viewW, bandLen = globe.LsL+globe.LsR;
+    const bw = Math.max(1, Math.round((X ? bandLen : across)*bandDpr)), bh = Math.max(1, Math.round((X ? across : bandLen)*bandDpr));
+    if(!globeBuf) globeBuf = document.createElement('canvas');
+    if(globeBuf.width!==bw || globeBuf.height!==bh){ globeBuf.width = bw; globeBuf.height = bh; }
+    const bctx = globeBuf.getContext('2d');
+    const farOrigin = (X ? renderView.originX : renderView.originY) + (globe.LsL+focusLen)/sc;
+    if(X){
+      paintScene(bctx, renderView.originX, renderView.originY, globe.LsL/sc, across/sc, 0, 0, bandDpr);
+      paintScene(bctx, farOrigin, renderView.originY, globe.LsR/sc, across/sc, globe.LsL, 0, bandDpr);
+    } else {
+      paintScene(bctx, renderView.originX, renderView.originY, across/sc, globe.LsL/sc, 0, 0, bandDpr);
+      paintScene(bctx, renderView.originX, farOrigin, across/sc, globe.LsR/sc, 0, globe.LsL, bandDpr);
+    }
+    ctx = screenCtx;
+    drawGlobeComposite(screenCtx, globeBuf, globe, dpr, bandDpr, viewW, viewH);
+  }
 
   // Keep animating next frame if anything above is still mid-transition — otherwise rendering
   // goes back to being purely event-driven (see RENDER ANIMATION STATE at the top of this file).
@@ -5688,8 +5815,14 @@ function getTerritoryFromCanvasEvent(canvas, evt){
   const rect = canvas.getBoundingClientRect();
   if(mapIsWrapping()){
     const cs = mapData.cellSize;
-    let x = renderView.originX + (evt.clientX-rect.left)/renderView.scale;
-    let y = renderView.originY + (evt.clientY-rect.top)/renderView.scale;
+    let ox = evt.clientX-rect.left, oy = evt.clientY-rect.top; // screen CSS px
+    const g = renderView.globe;
+    if(g){ // undo the globe warp: screen -> buffer position (nothing drawn past the limb)
+      if(g.axis==='x'){ ox = g.outToSrc(ox); if(ox==null) return -1; }
+      else { oy = g.outToSrc(oy); if(oy==null) return -1; }
+    }
+    let x = renderView.originX + ox/renderView.scale;
+    let y = renderView.originY + oy/renderView.scale;
     if(mapData.wrapX) x = mod(x, mapData.cols*cs);
     if(mapData.wrapY) y = mod(y, mapData.rows*cs);
     const c = Math.floor(x/cs), r = Math.floor(y/cs);
