@@ -293,7 +293,7 @@ function aiTryTradeCards(p){
     const combo = findTradeCombo(p.cards);
     const forced = p.cards.length>=5;
     if(!combo) break;
-    if(!forced && Math.random()<holdChance && p.cards.length<5) break; // sometimes hold cards
+    if(!forced && random()<holdChance && p.cards.length<5) break; // sometimes hold cards
     tradeCards(p, combo);
   }
 }

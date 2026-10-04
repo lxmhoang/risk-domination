@@ -697,7 +697,7 @@ function generateWaterMask(cols, rows, waterRatio, spread, wrapX){
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const idx = nr*cols+nc;
         if(water[idx]) continue;
-        if(Math.random()<fillProb){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
+        if(random()<fillProb){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
       }
     }
     frontier = next;
@@ -919,7 +919,7 @@ function territoryPoleCell(cells){
 function makeNoiseWeight(cols, rows, step, amp){
   const gw = Math.ceil(cols/step)+2, gh = Math.ceil(rows/step)+2;
   const g = new Float64Array(gw*gh);
-  for(let i=0;i<g.length;i++) g[i] = Math.random()*2-1;
+  for(let i=0;i<g.length;i++) g[i] = random()*2-1;
   const w = new Float64Array(cols*rows);
   const smooth = t=> t*t*(3-2*t);
   for(let r=0;r<rows;r++){
@@ -999,7 +999,7 @@ function farthestPointSeeds(cols, cellIdxs, k){
   if(cellIdxs.length===0) return [];
   const minD = new Float64Array(cellIdxs.length).fill(Infinity);
   const seeds = [];
-  let next = Math.floor(Math.random()*cellIdxs.length);
+  let next = rand(cellIdxs.length);
   while(seeds.length<k && seeds.length<cellIdxs.length){
     const s = cellIdxs[next]; seeds.push(s);
     const sc = s%cols, sr = (s/cols)|0;
@@ -1228,6 +1228,12 @@ function minCellsPerFitTerritory(map){
 // Every territory of the result fits 3 army badges, but a very water-heavy roll can leave only
 // a handful of islands big enough for that (or none) — so a layout with too few territories to
 // play on is re-rolled, easing off the water after the second try, keeping the best one seen.
+// generateRandomMap() on a seed of its own: the same seed and arguments always give the same map.
+function generateSeededMap(seed, ...args){
+  mapRng = seedRng(seed);
+  try{ return generateRandomMap(...args); }
+  finally{ mapRng = null; }
+}
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const ratio = waterRatio===undefined ? 0.28 : waterRatio;
   const playable = Math.min(numTerr, 12);

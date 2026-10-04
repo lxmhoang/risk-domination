@@ -42,7 +42,11 @@ function tradeInValue(rule, tradeCount, personalTradeCount){
 // playerConfigs: [{name, color, personality, isHuman}, ...] — index 0 is "you" (a real human
 // unless spectator mode made them AI-controlled too), built by readPlayerConfigs() in the
 // setup screen.
-function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule){
+// seed: optional — everything random in the game follows from it (see random() in
+// 00-core-utils.js); left out, a fresh one is picked.
+function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule, seed){
+  if(seed==null) seed = newRandomSeed();
+  game = { rng: seedRng(seed) }; // live from here on, so the shuffles below already use it
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
   host.onGameInit(); // the browser resets zoom and leftover fades/tweens from the last game
@@ -63,6 +67,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
   players.forEach(p=> pool[p.id] = startArmies - terrIds.filter(id=>owner[id]===p.id).length);
 
   game = {
+    seed, rng: game.rng,
     players, owner, armies, pool,
     turnOrder: shuffle(players.map(p=>p.id)),
     turnIdx: 0,

@@ -22,6 +22,7 @@ const host = {
   onGameInit(){},      // a new game object was just created (reset view state)
   beforeEndTurn(){},   // called with the player whose turn is ending, before anything changes
   schedule: null,      // (fn, delayMs) — replaces the default pausable setTimeout in aiSchedule()
+  random: null,        // () => float in [0,1) — replaces the seeded generator (see random())
 };
 
 /* ---- Config ---- */
@@ -33,7 +34,44 @@ function pickConfig(obj){ const out={}; CONFIG_KEYS.forEach(k=> out[k]=obj[k]); 
 let RUNTIME_CONFIG = Object.assign({}, GAME_CONFIG);
 
 /* ---- Utilities ---- */
-function rand(n){ return Math.floor(Math.random()*n); }
+// ---- Randomness ----
+// Everything random in the core (dice, shuffles, card draws, AI coin-flips, map generation) goes
+// through random(), never Math.random directly, so a run can be reproduced from its seed:
+//  - during a game it steps game.rng (four 32-bit integers, part of the saved game), so the same
+//    seed and the same actions always give the same game;
+//  - generateSeededMap() runs the map generator on a seed of its own;
+//  - host.random, when set, overrides both (the server can plug in a cryptographic source — a
+//    seeded generator's future rolls could be worked out from the rolls a player has seen);
+//  - with none of those (the editor's random map, old saves with no game.rng) it is Math.random.
+// The generator is sfc32 (small, fast, passes the usual statistical tests).
+let mapRng = null; // set only while generateSeededMap() runs
+function seedRng(seed){
+  // spread any integer/string seed over the four state words (xmur3-style hash), then warm up
+  const str = String(seed);
+  let h = 1779033703 ^ str.length;
+  for(let i=0;i<str.length;i++){ h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h<<13) | (h>>>19); }
+  const next = ()=>{ h = Math.imul(h ^ (h>>>16), 2246822507); h = Math.imul(h ^ (h>>>13), 3266489909); return (h ^= h>>>16) >>> 0; };
+  const st = [next(), next(), next(), next()];
+  for(let i=0;i<12;i++) stepRng(st);
+  return st;
+}
+function stepRng(st){ // advances st in place, returns a float in [0,1)
+  const t = (((st[0] + st[1]) | 0) + st[3]) | 0;
+  st[3] = (st[3] + 1) | 0;
+  st[0] = st[1] ^ (st[1] >>> 9);
+  st[1] = (st[2] + (st[2] << 3)) | 0;
+  st[2] = ((st[2] << 21) | (st[2] >>> 11));
+  st[2] = (st[2] + t) | 0;
+  return (t >>> 0) / 4294967296;
+}
+function newRandomSeed(){ return Math.floor(Math.random()*0xFFFFFFFF); }
+function random(){
+  if(host.random) return host.random();
+  if(mapRng) return stepRng(mapRng);
+  if(game && game.rng) return stepRng(game.rng);
+  return Math.random();
+}
+function rand(n){ return Math.floor(random()*n); }
 function randChoice(arr){ return arr[rand(arr.length)]; }
 function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=rand(i+1); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function clamp(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
@@ -821,7 +859,7 @@ function generateWaterMask(cols, rows, waterRatio, spread, wrapX){
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const idx = nr*cols+nc;
         if(water[idx]) continue;
-        if(Math.random()<fillProb){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
+        if(random()<fillProb){ water[idx]=1; count++; next.push({c:nc,r:nr}); }
       }
     }
     frontier = next;
@@ -1043,7 +1081,7 @@ function territoryPoleCell(cells){
 function makeNoiseWeight(cols, rows, step, amp){
   const gw = Math.ceil(cols/step)+2, gh = Math.ceil(rows/step)+2;
   const g = new Float64Array(gw*gh);
-  for(let i=0;i<g.length;i++) g[i] = Math.random()*2-1;
+  for(let i=0;i<g.length;i++) g[i] = random()*2-1;
   const w = new Float64Array(cols*rows);
   const smooth = t=> t*t*(3-2*t);
   for(let r=0;r<rows;r++){
@@ -1123,7 +1161,7 @@ function farthestPointSeeds(cols, cellIdxs, k){
   if(cellIdxs.length===0) return [];
   const minD = new Float64Array(cellIdxs.length).fill(Infinity);
   const seeds = [];
-  let next = Math.floor(Math.random()*cellIdxs.length);
+  let next = rand(cellIdxs.length);
   while(seeds.length<k && seeds.length<cellIdxs.length){
     const s = cellIdxs[next]; seeds.push(s);
     const sc = s%cols, sr = (s/cols)|0;
@@ -1352,6 +1390,12 @@ function minCellsPerFitTerritory(map){
 // Every territory of the result fits 3 army badges, but a very water-heavy roll can leave only
 // a handful of islands big enough for that (or none) — so a layout with too few territories to
 // play on is re-rolled, easing off the water after the second try, keeping the best one seen.
+// generateRandomMap() on a seed of its own: the same seed and arguments always give the same map.
+function generateSeededMap(seed, ...args){
+  mapRng = seedRng(seed);
+  try{ return generateRandomMap(...args); }
+  finally{ mapRng = null; }
+}
 function generateRandomMap(cols, rows, numTerr, numCont, name, waterRatio, waterSpread){
   const ratio = waterRatio===undefined ? 0.28 : waterRatio;
   const playable = Math.min(numTerr, 12);
@@ -1734,7 +1778,11 @@ function tradeInValue(rule, tradeCount, personalTradeCount){
 // playerConfigs: [{name, color, personality, isHuman}, ...] — index 0 is "you" (a real human
 // unless spectator mode made them AI-controlled too), built by readPlayerConfigs() in the
 // setup screen.
-function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule){
+// seed: optional — everything random in the game follows from it (see random() in
+// 00-core-utils.js); left out, a fresh one is picked.
+function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRule, seed){
+  if(seed==null) seed = newRandomSeed();
+  game = { rng: seedRng(seed) }; // live from here on, so the shuffles below already use it
   spectatorMode = !!spectator;
   aiPaused = false; pendingAIResume = null;
   host.onGameInit(); // the browser resets zoom and leftover fades/tweens from the last game
@@ -1755,6 +1803,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
   players.forEach(p=> pool[p.id] = startArmies - terrIds.filter(id=>owner[id]===p.id).length);
 
   game = {
+    seed, rng: game.rng,
     players, owner, armies, pool,
     turnOrder: shuffle(players.map(p=>p.id)),
     turnIdx: 0,
@@ -2391,7 +2440,7 @@ function aiTryTradeCards(p){
     const combo = findTradeCombo(p.cards);
     const forced = p.cards.length>=5;
     if(!combo) break;
-    if(!forced && Math.random()<holdChance && p.cards.length<5) break; // sometimes hold cards
+    if(!forced && random()<holdChance && p.cards.length<5) break; // sometimes hold cards
     tradeCards(p, combo);
   }
 }
@@ -2690,6 +2739,10 @@ function aiFortifyStep(pid, intent){
 if(hostHooks) Object.assign(host, hostHooks);
 return {
   pickConfig,
+  seedRng,
+  stepRng,
+  newRandomSeed,
+  random,
   rand,
   randChoice,
   shuffle,
@@ -2758,6 +2811,7 @@ return {
   splitToTargetCount,
   idealFitTerritoryCells,
   minCellsPerFitTerritory,
+  generateSeededMap,
   generateRandomMap,
   generateTerritoryLayout,
   wouldStayConnectedAfterRemoving,
@@ -2831,6 +2885,7 @@ return {
   CARD_ICON,
   AI_PERSONALITIES,
   get RUNTIME_CONFIG(){ return RUNTIME_CONFIG; }, set RUNTIME_CONFIG(v){ RUNTIME_CONFIG = v; },
+  get mapRng(){ return mapRng; }, set mapRng(v){ mapRng = v; },
   get mapData(){ return mapData; }, set mapData(v){ mapData = v; },
   get spectatorMode(){ return spectatorMode; }, set spectatorMode(v){ spectatorMode = v; },
   get aiPaused(){ return aiPaused; }, set aiPaused(v){ aiPaused = v; },

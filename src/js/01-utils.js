@@ -83,7 +83,7 @@ function getNoiseTile(){
   const c = document.createElement('canvas'); c.width=size; c.height=size;
   const cx = c.getContext('2d');
   for(let i=0;i<90;i++){
-    const x = rand(size), y = rand(size), r = 0.4+Math.random()*0.9;
+    const x = Math.floor(Math.random()*size), y = Math.floor(Math.random()*size), r = 0.4+Math.random()*0.9;
     cx.beginPath(); cx.arc(x,y,r,0,Math.PI*2);
     cx.fillStyle = Math.random()<0.5 ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)';
     cx.fill();
