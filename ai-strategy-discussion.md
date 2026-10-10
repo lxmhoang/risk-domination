@@ -1,9 +1,12 @@
 # Thảo luận: nâng cấp AI theo hướng "1 chiến lược tổng thể/lượt" + thang trigger/đối sách
 
-Ghi lại nguyên trạng thảo luận (2026-09) để lục lại sau — **CHƯA implement**, chỉ mới
-đã làm xong phần `pickAITurnIntent` cơ bản (4 intent, không có thang level) trong
-`src/js/05-ai.js` + tài liệu ở [`ai.md`](ai.md). Phần dưới đây là bước tiếp theo được
-đề xuất nhưng đang tạm dừng lại để làm việc khác trước.
+Ghi lại nguyên trạng thảo luận (2026-09 → chốt 2026-10) để lục lại sau. **Đã implement**
+(2026-10) trong `src/js/05-ai.js` — xem [`ai.md`](ai.md) mục 4 cho mô tả theo code thật.
+File này giữ lại làm lịch sử thảo luận/thiết kế, không còn là "đề xuất chưa làm" nữa.
+Vài điểm tài liệu này còn mơ hồ đã được code-time quyết cụ thể hơn khi cài — xem ghi chú
+`/* * */` trong `TRIGGER_LEAN`/`RESPONSE_LEAN` ở 05-ai.js và mục 10 "Giới hạn đã biết"
+trong ai.md (đặc biệt: mood dùng chung 1 roll cho mọi intent khiến AI thụ động hơn hẳn ở
+test thực đo, chưa được tinh chỉnh lại).
 
 ## Bối cảnh
 
@@ -15,8 +18,32 @@ fortify để chúng cộng điểm ưu tiên theo đúng ý định đã chọn
 
 ## Đề xuất mở rộng (chưa làm)
 
+### Tỷ lệ quân số (dùng chung cho mọi chỗ ước lượng tấn công bên dưới)
+
+A = tổng quân của mình ở các Tỉnh giáp Tỉnh mục tiêu
+B = quân địch ở Tỉnh mục tiêu
+ratio = A/B
+
+A **không** trừ quân dự phòng cho các láng giềng địch khác (khác với `reserveFor` ở
+`aiAttackStep` hiện tại) — đã quyết đánh thì không giữ phần nào lại để phòng thủ nữa.
+
+3 mức, dùng lại đúng 3 ngưỡng `baseThreshold` đã có sẵn và configurable trên admin portal
+(nhóm "AI theo độ khó" trong `server/admin-config.js` — `aiEasyThreshold` /
+`aiNormalThreshold` / `aiHardThreshold`) thay vì thêm 1 bộ ngưỡng mới cùng tính chất:
+
+- **Cẩn thận** = `aiEasyThreshold` (hiện 2.0)
+- **Bình thường** = `aiNormalThreshold` (hiện 1.5)
+- **Chủ quan** = `aiHardThreshold` (hiện 1.15)
+
+Đóng gói thành 1 hàm chung (ví dụ `estimateCaptureRatio(targetId, pid)` trả về `ratio`),
+dùng lại ở mọi logic bên dưới (stay_survival, finish_continent, …) thay vì mỗi intent tự
+viết lại công thức A/B riêng — mức nào trong 3 mức trên được dùng ở đâu do personality +
+mood của intent đó quyết định (xem từng intent), nhưng *nguồn ngưỡng* và *nơi config*
+luôn là một, không tạo field admin mới trùng ý nghĩa với 3 ngưỡng độ khó đã có.
+
 Ý tưởng: mỗi intent (kể cả intent mới `stay_survival`) không còn là điều kiện đơn "có/
 không" nữa, mà có **2 thang riêng**:
+
 
 1. **Thang trigger** (nhiều mức, quy ước Level 4 = cẩn trọng nhất, Level 1 = bỏ qua hẳn
    intent đó lượt này) — quyết định intent này CÓ được chọn hay không. Lưu ý: "cẩn
@@ -26,9 +53,23 @@ không" nữa, mà có **2 thang riêng**:
    trigger KHÓ/CHẶT hơn (chỉ làm khi chắc ăn).
 2. **Thang đối sách** — sau khi trigger, chọn cách thực thi nặng/nhẹ khác nhau.
 
-Level nào được dùng (cả trigger lẫn đối sách) phụ thuộc `personality` của AI đó (thiên
-hướng cố định) **+ 1 yếu tố "mood" random mỗi lượt** để tạo đa dạng lối chơi giữa các
-lượt dù cùng 1 AI/personality.
+Level nào được dùng phụ thuộc `personality` của AI đó (thiên hướng cố định — "Personality
+lean" ghi ở mỗi intent dưới đây chỉ là mức AI đó hay "chạm" nhất, không phải mức duy
+nhất có thể ra) **+ 1 lần roll "mood" random mỗi lượt** để tạo đa dạng lối chơi giữa các
+lượt dù cùng 1 AI/personality. Mood gồm **2 thuộc tính độc lập**, roll chung 1 lần nhưng
+không liên quan tới nhau:
+
+- **mood.trigger** — chọn level của **thang trigger**, áp lên TẤT CẢ intent trong lượt.
+- **mood.response** — chọn level của **thang đối sách**, áp lên TẤT CẢ intent trong lượt.
+
+Cách roll: **random thôi**, không có công thức lệch ±N cố định — mỗi thuộc tính random
+giữa các level hợp lệ, lệch theo trọng số "lean" của personality (lean của AI đó ra nhiều
+hơn, nhưng level khác vẫn có thể ra). Không cần công thức toán chính xác hơn lúc này.
+
+Tức là đối sách (response) KHÔNG suy ra từ việc trigger-level nào vừa khớp/nghiêm trọng
+tới đâu — nó là 1 roll riêng, độc lập hoàn toàn với trigger. 1 lượt "trigger dễ nổi nóng"
+(mood.trigger ra mức dễ kích hoạt) hoàn toàn có thể đi cùng 1 "đối sách nhẹ nhàng"
+(mood.response ra Response A) trong cùng 1 lượt, và ngược lại.
 
 ### Intent mới: `stay_survival`
 
@@ -37,38 +78,47 @@ chiếm nốt châu lục.
 
 Công thức: với mỗi láng giềng địch trực tiếp của 1 lãnh thổ biên, A = quân địch tại đó
 (+ dự phóng tăng viện lượt tới của họ nếu level yêu cầu, ước theo kiểu
-`computeReinforcements`), B = quân tôi tại đó (+ quân bên thứ 3 phải bị vượt qua nếu là
-mối đe doạ 2 bước chứ không giáp biên trực tiếp — **chỗ này còn đang đoán, chưa chắc
-đúng ý user, cần xác nhận lại**). ratio = A/B.
+`computeReinforcements`), B = tổng số quân tôi có trên map (+ quân bên thứ 3 phải bị vượt qua để càn qua hết các lãnh thổ của tôi. ratio = A/B.
 
-- **Level 4 — Nhạy bén**: A gồm dự phóng tăng viện lượt tới của địch. Ngưỡng ratio ≥ 1.5.
-- **Level 3 — Bình thường**: như trên nhưng A chỉ tính quân hiện tại. Ngưỡng vẫn 1.5.
-- **Level 2 — Dè dặt**: như Level 3, ngưỡng nâng lên ratio ≥ 2.0.
+Tái dùng đúng 3 giá trị ngưỡng của "Tỷ lệ quân số" (2.0 / 1.5 / 1.15, cùng nguồn
+`ai*Threshold` trên admin portal) — nhưng **chiều gán bị đảo lại** so với các intent tấn
+công, vì ở đây ngưỡng THẤP mới là trigger DỄ/SỚM hơn (xem lưu ý "cẩn trọng" ở đầu mục
+này), không phải ngưỡng cao:
+
+- **Level 4 — Nhạy bén**: A gồm dự phóng tăng viện lượt tới của địch. Ngưỡng ratio ≥ 1.15
+  (giá trị thấp nhất trong 3 mức → dễ trigger nhất).
+- **Level 3 — Bình thường**: như trên nhưng A chỉ tính quân hiện tại. Ngưỡng ratio ≥ 1.5.
+- **Level 2 — Dè dặt**: như Level 3, ngưỡng nâng lên ratio ≥ 2.0 (giá trị cao nhất trong
+  3 mức → khó trigger nhất trong các level còn active).
 - **Level 1 — Vô tư**: bỏ qua hẳn, không xét stay_survival lượt này.
 
 Lưu ý: 3 mức trên **lồng nhau** trên cùng 1 tín hiệu (Level 2 đúng ⟹ Level 3, 4 cũng
-đúng) — không phải 4 tình huống loại trừ nhau. Personality+mood quyết định "kiểm tra sâu
-tới mức nào" (ngưỡng nào còn buồn kiểm tra), rồi lấy mức SÂU NHẤT (khắt khe nhất) đang
-đúng để suy ra độ nghiêm trọng → chọn đối sách.
+đúng) — không phải 4 tình huống loại trừ nhau. `mood.trigger` + personality quyết định
+"kiểm tra sâu tới mức nào" (ngưỡng nào còn buồn kiểm tra), rồi lấy mức SÂU NHẤT (khắt khe
+nhất) đang đúng để biết stay_survival có trigger hay không.
 
-Đối sách:
-- **Response 2 — Cực đoan (co cụm)**: khi Level 2's bar đúng (nguy hiểm hiện tại, thật)
-  → không tấn công gì cả lượt, dồn hết quân dự phòng về đúng biên bị đe doạ, nằm yên.
-- **Response 1 — Đánh rỉa**: khi chỉ Level 3/4's bar đúng (cảnh báo sớm) → vẫn cố kiếm 1
-  lá bài: `on_capture` → chọn đúng 1 ô địch ít quân nhất chiếm rồi dừng; `on_kill` →
-  đánh 1 hiệp có lợi rồi dừng; `on_turn_end` → behave như Response 2 (không cần đánh).
+Đối sách — chọn **độc lập** với trigger-level nào vừa khớp, bằng `mood.response` +
+personality (xem mục "Thang đối sách" ở trên — không suy từ độ nghiêm trọng của trigger):
+- **Response 2 — Cực đoan (co cụm)**: không tấn công gì cả lượt, dồn hết quân dự phòng về
+  đúng biên bị đe doạ, nằm yên.
+- **Response 1 — Đánh rỉa**: vẫn cố kiếm 1 lá bài: `on_capture` → chọn đúng 1 ô địch ít
+  quân nhất chiếm rồi dừng; `on_kill` → đánh 1 hiệp có lợi rồi dừng; `on_turn_end` →
+  behave như Response 2 (không cần đánh).
 
-Personality lean: turtle → hay chạm Level 4; rusher → mặc định Level 2; opportunist/
-balanced → Level 3.
+Personality lean (trigger): turtle → hay chạm Level 4; rusher → mặc định Level 2;
+opportunist/balanced → Level 3. Personality lean (response): turtle → hay chạm Response
+2; rusher/opportunist → hay chạm Response 1; balanced → tuỳ `mood.response`.
 
 ### `finish_continent`
 
-- **Level 4 — Thận trọng**: thiếu đúng 1 ô, giáp biên, VÀ sau khi chiếm vẫn đủ quân giữ
-  TRỌN đường biên mới của châu lục (kiểm tra kiểu `reserveFor` cho từng biên mới, không
-  chỉ riêng ô vừa chiếm).
-- **Level 3 — Bình thường**: thiếu đúng 1 ô, giáp biên, ô đó không bị phòng thủ quá dày
-  — nhưng KHÔNG kiểm tra khả năng giữ cả châu lục sau đó.
-- **Level 2 — Bất cẩn (hành vi hiện tại)**: thiếu đúng 1 ô, giáp biên → đánh luôn.
+
+- **Level 4 — Thận trọng**: thiếu đúng 1 ô, giáp biên, VÀ Tỷ lệ quân số (mục trên) ở mức
+  Cẩn thận, VÀ sau khi chiếm vẫn đủ quân giữ TRỌN đường biên mới của châu lục (kiểm tra
+  kiểu `reserveFor` cho từng biên mới, không chỉ riêng ô vừa chiếm).
+- **Level 3 — Bình thường**: thiếu đúng 1 ô, giáp biên, VÀ Tỷ lệ quân số ở mức Cẩn thận —
+  nhưng KHÔNG kiểm tra khả năng giữ cả châu lục sau đó.
+- **Level 2 — Bất cẩn (hành vi hiện tại)**: thiếu đúng 1 ô, giáp biên, VÀ Tỷ lệ quân số ở
+  mức Cẩn thận → đánh luôn.
 - **Level 1 — Mù mờ**: bỏ qua, không màng hoàn tất châu lục lượt này.
 
 Đối sách:
@@ -77,8 +127,9 @@ balanced → Level 3.
 - **Response A — Có tính toán**: fortify chỉ kéo đủ mức tối thiểu để biên yếu nhất an
   toàn, phần còn lại vẫn phục vụ intent khác.
 
-Personality lean: turtle → Level 4/Response A; rusher → Level 2/Response B; balanced →
-Level 3/Response A.
+Personality lean (trigger): turtle → hay chạm Level 4; rusher → hay chạm Level 2;
+balanced → hay chạm Level 3. Personality lean (response): turtle/balanced → hay chạm
+Response A; rusher → hay chạm Response B.
 
 ### `kill_weak`
 
@@ -95,8 +146,10 @@ Level 3/Response A.
 - **Response A — Ăn miếng ngon**: chỉ đớp 1 miếng ngon nhất lượt này, không cố loại hẳn
   bằng mọi giá.
 
-Personality lean: opportunist → Level 4/Response B (khớp `killBonusMult:1.8` sẵn có);
-turtle → Level 2/Response A; balanced → Level 3/Response A.
+Personality lean (trigger): opportunist → hay chạm Level 4 (khớp `killBonusMult:1.8`
+sẵn có); turtle → hay chạm Level 2; balanced → hay chạm Level 3. Personality lean
+(response): opportunist/rusher → hay chạm Response B; turtle/balanced → hay chạm
+Response A.
 
 ### `defend`
 
@@ -116,8 +169,9 @@ loại. Nếu `stay_survival` đã trigger thì `defend` coi như vô nghĩa lư
 - **Response A — Gia cố nhẹ (hành vi hiện tại)**: bonus +1.0, phạt tấn công nơi khác
   giữ nguyên −0.3.
 
-Personality lean: turtle → Level 3/Response B; balanced → Level 2/Response A; rusher →
-Level 1.
+Personality lean (trigger): turtle → hay chạm Level 3; balanced → hay chạm Level 2;
+rusher → hay chạm Level 1. Personality lean (response): turtle → hay chạm Response B;
+balanced/rusher → hay chạm Response A.
 
 ### `expand` (mặc định/fallback — luôn có thể trigger)
 
@@ -131,18 +185,38 @@ Level 1.
   tốt.
 - **Response A — Thăm dò**: giới hạn tối đa 1-2 trận lượt này dù vẫn còn mục tiêu ngon.
 
-Personality lean: rusher → Level 3/Response B; turtle → Level 1/Response A; balanced/
-opportunist → Level 2/Response A.
+Personality lean (trigger): rusher → hay chạm Level 3; turtle → hay chạm Level 1;
+balanced/opportunist → hay chạm Level 2. Personality lean (response): rusher → hay chạm
+Response B; turtle/balanced/opportunist → hay chạm Response A.
+
+## Đã chốt với user (2026-10)
+
+1. ✅ Thứ tự ưu tiên: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak` >
+   `defend` > `expand`.
+2. ✅ Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng
+   từng intent) — nhưng mood gồm **2 thuộc tính độc lập** (`mood.trigger`,
+   `mood.response`), mỗi thuộc tính lệch level của đúng 1 thang (trigger hoặc đối sách),
+   áp lên TẤT CẢ intent trong lượt. Xem mục "Thang đối sách" ở trên.
+3. ✅ Công thức "bên thứ 3" ở `stay_survival` Level 4 — đúng ý user, giữ như đã viết.
+4. ✅ Đối sách (response) KHÔNG suy ra từ việc trigger-level nào vừa khớp/nghiêm trọng
+   tới đâu. Nó là 1 roll độc lập (`mood.response` + personality lean riêng cho response),
+   không liên quan gì tới `mood.trigger` hay level trigger đã khớp. Đã sửa lại phần đối
+   sách của `stay_survival` theo đúng cơ chế này (trước đó bản nháp lỡ gán cứng Response 2
+   ↔ Level 2, Response 1 ↔ Level 3/4 — sai).
+5. ✅ `stay_survival` tái dùng đúng 3 giá trị ngưỡng của "Tỷ lệ quân số" (2.0 / 1.5 /
+   1.15), nhưng B vẫn là tổng quân TOÀN BẢN ĐỒ của tôi (không phải quân ở 1 Tỉnh biên như
+   công thức chung) — công thức A/B riêng của `stay_survival`, chỉ mượn chung *3 con số
+   ngưỡng + nguồn config*, không mượn định nghĩa A/B.
+6. ✅ Đã viết lại "Personality lean" của `finish_continent`/`kill_weak`/`defend`/`expand`
+   thành 2 dòng riêng (trigger lean / response lean) cho đồng bộ với `stay_survival`,
+   thay cho 1 cặp (level, response) cố định như bản nháp cũ.
+7. ✅ Cách roll mood: **random thôi**, không có công thức lệch ±N cố định. Mỗi lượt
+   `mood.trigger`/`mood.response` random giữa các level hợp lệ, lệch theo trọng số
+   "lean" của personality — không cần công thức toán chi tiết hơn ở giai đoạn thảo luận
+   này, để lúc code mới quyết cách random cụ thể (uniform có trọng số, hay cách khác).
 
 ## Giả định còn treo, cần user xác nhận trước khi code
 
-1. Thứ tự ưu tiên mới: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak`
-   > `defend` > `expand`.
-2. Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng
-   từng intent) — áp dụng lệch ±1 level lên baseline của TẤT CẢ intent trong lượt đó.
-3. Công thức "bên thứ 3" ở `stay_survival` Level 4 — đang đoán, chưa chắc đúng ý user.
-4. Số lượng level của thang trigger vs thang đối sách không nhất thiết bằng nhau (ví dụ
-   stay_survival có 4 trigger level nhưng chỉ 2 response level) — cần user xác nhận quy
-   tắc ánh xạ trigger-level → response-level cho từng intent, hiện đang đoán theo kiểu
-   "level nào nghiêm trọng hơn cũng có xu hướng dùng response nặng hơn", không có công
-   thức chung cứng.
+Hiện không còn câu hỏi treo nào — phần "Đề xuất mở rộng" ở trên coi như đã chốt đủ để
+bắt đầu code. Cách random có trọng số cụ thể (mục 7) để ngỏ cho lúc code, không chặn lại
+việc bắt đầu.
