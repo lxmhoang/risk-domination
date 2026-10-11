@@ -2747,15 +2747,55 @@ function pickAIReinforceTarget(pid, mine, intent){
   return best;
 }
 
+// Human-readable flavor text for the "<name> đang suy nghĩ..." hint shown throughout an AI
+// turn (see aiSetStepHint() below) — the WHY behind this turn's campaign (pickAITurnIntent),
+// in plain Vietnamese. Deliberately never prints intent.type/level/response or any other
+// internal name — those are implementation detail, not something a viewer should have to
+// decode, and showing the raw trigger/response level would spoil exactly the "khó đoán"
+// quality the level system is for.
+function describeAITurnIntent(intent){
+  switch(intent.type){
+    case 'stay_survival': {
+      const t = mapData.territories[intent.focusTerrId];
+      return 'lo sống còn ở '+(t?t.name:'1 biên giới');
+    }
+    case 'finish_continent': {
+      const c = mapData.continents[intent.continentId];
+      return 'muốn hoàn tất châu lục '+(c?c.name:'');
+    }
+    case 'kill_weak': {
+      const target = game.players[intent.targetPlayerId];
+      return 'muốn kết liễu '+(target?target.name:'1 đối thủ sắp tàn');
+    }
+    case 'defend': {
+      const t = mapData.territories[intent.focusTerrId];
+      return 'lo củng cố biên giới'+(t?' ở '+t.name:'');
+    }
+    default: // expand
+      return intent.level>=3 ? 'tìm mặt trận dễ ăn nhất' : 'chưa có mục tiêu rõ ràng';
+  }
+}
+// Every step of an AI turn (reinforce/attack/fortify, see aiRunFullTurn below) sets its own
+// hint instead of 1 generic "đang suy nghĩ..." for the whole turn — `step` names what's
+// happening RIGHT NOW ("đặt quân tăng viện", "tấn công", …), ai-strategy-discussion.md's
+// WHY (describeAITurnIntent above) rides along so a viewer can follow 1 campaign across all
+// 4 steps instead of 4 unrelated-looking actions. Reuses whatever aiDelay() pacing the
+// caller is already scheduling its NEXT step with — no separate "how long to show a hint"
+// setting, same "Độ trễ khi xem AI đấu" knob paces both.
+function aiSetStepHint(pid, intent, step){
+  host.setActionHint(game.players[pid].name+' đang '+step+': '+describeAITurnIntent(intent)+'.');
+}
+
 function aiRunFullTurn(pid){
-  host.setActionHint(game.players[pid].name+' đang suy nghĩ...');
   const intent = pickAITurnIntent(pid);
+  aiSetStepHint(pid, intent, 'suy nghĩ');
   aiSchedule(()=>{ aiReinforceStep(pid, intent); }, aiDelay(300));
 }
 
 function aiReinforceStep(pid, intent){
   intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   const p = game.players[pid];
+  aiSetStepHint(pid, intent, 'đặt quân tăng viện');
   aiTryTradeCards(p);
   let guard=0;
   while(game.reinforceRemaining>0 && guard++<200){
@@ -2840,7 +2880,8 @@ function staySurvivalNibble(pid, intent){
       doBattle(from, to, {});
       logMsg('info', p.name+' đánh rỉa 1 hiệp vào '+toName+' từ '+fromName+' rồi dừng.', pid);
     }
-    aiFortifyStep(pid, intent);
+    host.renderGame();
+    aiSchedule(()=> aiFortifyStep(pid, intent), aiDelay(260)); // give the hint above its beat
     return;
   }
   // on_capture — chọn đúng 1 ô địch ít quân nhất mà tôi đánh được (usable>=1), cố chiếm.
@@ -2853,7 +2894,7 @@ function staySurvivalNibble(pid, intent){
       if(game.armies[to]<bestEnemyArmies){ bestEnemyArmies=game.armies[to]; bestOpt={from,to}; }
     });
   });
-  if(!bestOpt){ aiFortifyStep(pid, intent); return; }
+  if(!bestOpt){ aiSchedule(()=> aiFortifyStep(pid, intent), aiDelay(260)); return; }
   const { from, to } = bestOpt;
   game.selectedFrom=from; game.selectedTo=to; host.renderGame();
   aiSchedule(()=>{
@@ -2883,11 +2924,17 @@ function aiAttackStep(pid, intent){
   // không chủ động tấn công — chỉ reinforce/fortify.
   if(intent.type==='stay_survival'){
     if(intent.response===2 || RUNTIME_CONFIG.cardAwardEvent==='on_turn_end'){
-      aiFortifyStep(pid, intent); return;
+      aiSetStepHint(pid, intent, 'co cụm phòng thủ');
+      aiSchedule(()=> aiFortifyStep(pid, intent), aiDelay(260)); return;
     }
+    aiSetStepHint(pid, intent, 'đánh rỉa kiếm bài');
     staySurvivalNibble(pid, intent); return;
   }
-  if(intent.type==='expand' && intent.level===1){ aiFortifyStep(pid, intent); return; }
+  if(intent.type==='expand' && intent.level===1){
+    aiSetStepHint(pid, intent, 'giữ nguyên quân, không mạo hiểm');
+    aiSchedule(()=> aiFortifyStep(pid, intent), aiDelay(260)); return;
+  }
+  aiSetStepHint(pid, intent, 'tấn công');
   const profile = difficultyProfile(game.difficulty, p.personality);
   const opponents = game.players.filter(pl=>pl.alive && pl.id!==pid);
   const myPower = evaluatePlayerPower(pid);
@@ -3049,7 +3096,13 @@ function aiAttackStep(pid, intent){
     const forcedForCard = !meetsThreshold && !!bestOpt && stillNeedsCardThisTurn();
     if(!bestOpt || (!meetsThreshold && !forcedForCard)){
       game.selectedFrom=null; game.selectedTo=null;
-      aiFortifyStep(pid, intent); return;
+      // No attack happened yet this turn (the common "nothing worth attacking" case) — give
+      // the "đang tấn công" hint set at the top of aiAttackStep at least 1 beat before it's
+      // replaced by fortify's, instead of swapping it out instantly. Once at least 1 attack
+      // has actually run, its own delays already gave that hint plenty of screen time.
+      if(attacksCompleted===0) aiSchedule(()=> aiFortifyStep(pid, intent), aiDelay(260));
+      else aiFortifyStep(pid, intent);
+      return;
     }
 
     const { from, to } = bestOpt;
@@ -3105,6 +3158,7 @@ function aiAttackStep(pid, intent){
 function aiFortifyStep(pid, intent){
   intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   game.phase='fortify';
+  aiSetStepHint(pid, intent, 'tăng cường quân');
   host.renderGame();
   const p = game.players[pid];
   // Same gang-up detection as aiAttackStep/pickAIReinforceTarget — a forced leader-only turn is
@@ -3314,6 +3368,8 @@ return {
   canHoldContinentBorders,
   pickAITurnIntent,
   pickAIReinforceTarget,
+  describeAITurnIntent,
+  aiSetStepHint,
   aiRunFullTurn,
   aiReinforceStep,
   aiTryTradeCards,
