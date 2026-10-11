@@ -201,53 +201,24 @@
 <!-- ============ CONFIG ============ -->
 <!-- Every input with data-cfg="<key>" is bound to RUNTIME_CONFIG[<key>] (src/config.json holds the
      defaults) by the generic wiring in 08-wiring.js — adding a setting is: a key in config.json, a
-     data-cfg input here, and code that reads RUNTIME_CONFIG.<key>. -->
+     data-cfg input here, and code that reads RUNTIME_CONFIG.<key>.
+
+     AI/balance knobs (difficulty thresholds, personality traits, alliance & power weights, cards,
+     reinforcement) used to be editable here too, duplicating server/admin-config.js — removed on
+     purpose (2026-10): this screen's values are LOCAL to the browser (localStorage) and the server
+     never reads them for online games (see server/app.js's getGameConfig()), so they only ever
+     tuned OFFLINE play, while admin-config.js's copy only ever tunes ONLINE play. Keeping both was
+     2 places to edit the same knob with no way to tell which one currently applied. The admin page
+     (/admin, server-side) is now the one place for that tuning; offline play always uses the
+     shipped defaults (src/config.json) for those knobs. What's left below is genuinely LOCAL/display
+     stuff the server has no use for either way (see admin-config.js's own comment on that point). -->
 <div class="screen" id="screen-config">
   <div class="cfg-wrap">
     <div class="cfg-head">
       <h2>⚙️ Cấu hình</h2>
-      <span class="cfg-note">Tự lưu trong trình duyệt này. Ô viền vàng = khác mặc định. Rê chuột vào ô để xem giải thích.</span>
+      <span class="cfg-note">Tự lưu trong trình duyệt này. Ô viền vàng = khác mặc định. Rê chuột vào ô để xem giải thích. Cấu hình AI/cân bằng (độ khó, tính cách, thẻ bài, tăng viện…) đã dời sang <code>/admin</code> cho ván online — ván offline luôn dùng giá trị mặc định.</span>
     </div>
     <div class="cfg-grid">
-      <section class="cfg-card">
-        <h3>🤖 AI theo độ khó</h3>
-        <table class="cfg-table">
-          <tr><th></th><th title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công">Ngưỡng đánh</th><th title="Phần quân giữ lại phòng thủ">Giữ quân</th></tr>
-          <tr><th>Dễ</th><td><input type="number" data-cfg="aiEasyThreshold" step="0.05" min="1" max="5" title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công"></td><td><input type="number" data-cfg="aiEasyReserve" step="0.05" min="0" max="3" title="Phần quân giữ lại để phòng các địch kề bên khác (× quân địch mạnh nhất kề bên)"></td></tr>
-          <tr><th>Thường</th><td><input type="number" data-cfg="aiNormalThreshold" step="0.05" min="1" max="5" title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công"></td><td><input type="number" data-cfg="aiNormalReserve" step="0.05" min="0" max="3" title="Phần quân giữ lại để phòng các địch kề bên khác (× quân địch mạnh nhất kề bên)"></td></tr>
-          <tr><th>Khó</th><td><input type="number" data-cfg="aiHardThreshold" step="0.05" min="1" max="5" title="Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công"></td><td><input type="number" data-cfg="aiHardReserve" step="0.05" min="0" max="3" title="Phần quân giữ lại để phòng các địch kề bên khác (× quân địch mạnh nhất kề bên)"></td></tr>
-        </table>
-      </section>
-      <section class="cfg-card cfg-wide">
-        <h3>🎭 Tính cách AI <span class="cfg-sub">(chỉnh thêm lên trên độ khó)</span></h3>
-        <table class="cfg-table">
-          <tr><th></th><th title="Cộng vào ngưỡng tấn công">Ngưỡng ±</th><th title="Nhân với mức giữ quân">Giữ quân ×</th><th title="Nhân với điểm thưởng khi diệt được người chơi yếu">Diệt ×</th><th title="Nhân với điểm thưởng khi chiếm trọn châu lục">Châu lục ×</th></tr>
-          <tr><th>Cân bằng</th><td><input type="number" data-cfg="persBalancedThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persBalancedReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persBalancedKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persBalancedContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
-          <tr><th>Rùa</th><td><input type="number" data-cfg="persTurtleThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persTurtleReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persTurtleKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persTurtleContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
-          <tr><th>Xông pha</th><td><input type="number" data-cfg="persRusherThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persRusherReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persRusherKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persRusherContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
-          <tr><th>Cơ hội</th><td><input type="number" data-cfg="persOpportunistThresholdAdj" step="0.05" min="-2" max="2" title="Cộng vào ngưỡng tấn công của độ khó (âm = hung hăng hơn)"></td><td><input type="number" data-cfg="persOpportunistReserveMult" step="0.1" min="0" max="5" title="Nhân với mức giữ quân phòng thủ của độ khó"></td><td><input type="number" data-cfg="persOpportunistKillBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi diệt được người chơi yếu"></td><td><input type="number" data-cfg="persOpportunistContinentBonus" step="0.1" min="0" max="5" title="Nhân với điểm thưởng khi chiếm trọn châu lục"></td></tr>
-        </table>
-      </section>
-      <section class="cfg-card">
-        <h3>🤝 Liên minh &amp; sức mạnh</h3>
-        <div class="cfg-line">Thành leader khi sức mạnh ≥ <input type="number" data-cfg="allianceLeaderVsField" step="0.05" min="0" max="5" title="Tối thiểu bao nhiêu lần tổng sức mạnh của tất cả người còn lại"> × tổng những người còn lại</div>
-        <div class="cfg-line">và ≥ <input type="number" data-cfg="allianceLeaderMargin" step="0.05" min="1" max="5" title="Tối thiểu bao nhiêu lần sức mạnh của người đứng thứ 2"> × người thứ 2</div>
-        <div class="cfg-line">Sức mạnh = quân × <input type="number" data-cfg="powerWeightArmies" step="0.5" min="0" max="20" title="Trọng số tổng số quân"> + lãnh thổ × <input type="number" data-cfg="powerWeightTerritories" step="0.5" min="0" max="20" title="Trọng số số lãnh thổ"> + tăng viện/lượt × <input type="number" data-cfg="powerWeightReinforcements" step="0.5" min="0" max="50" title="Trọng số số quân tăng viện mỗi lượt"></div>
-      </section>
-      <section class="cfg-card">
-        <h3>🃏 Thẻ bài &amp; tăng viện</h3>
-        <div class="cfg-line">Phát thẻ:
-          <select data-cfg="cardAwardEvent">
-            <option value="on_capture">khi chiếm được lãnh thổ</option>
-            <option value="on_kill">khi diệt được ít nhất 1 quân địch</option>
-            <option value="on_turn_end">hết lượt là có</option>
-          </select>
-        </div>
-        <div class="cfg-line">Bảng đổi thẻ: <input type="text" data-cfg="tradeValues" data-kind="list" class="cfg-list" title="Số quân nhận được ở lần đổi thứ 1, 2, 3… (cách nhau bởi dấu phẩy)"></div>
-        <div class="cfg-line">Luỹ tiến: hết bảng thì +<input type="number" data-cfg="tradeProgressiveStep" step="1" min="0" max="50" title="Mỗi lần đổi sau khi hết bảng được cộng thêm bao nhiêu"> mỗi lần</div>
-        <div class="cfg-line">Theo cá nhân: <input type="number" data-cfg="tradeExpBase" step="1" min="1" max="50" title="Số quân ở lần đổi đầu tiên"> × <input type="number" data-cfg="tradeExpGrowth" step="0.05" min="1" max="3" title="Hệ số nhân mỗi lần đổi"><sup>n</sup></div>
-        <div class="cfg-line">Tăng viện = max(<input type="number" data-cfg="reinforceMin" step="1" min="0" max="20" title="Số quân tăng viện tối thiểu mỗi lượt">, lãnh thổ ÷ <input type="number" data-cfg="reinforceDivisor" step="1" min="1" max="10" title="Chia số lãnh thổ cho bao nhiêu">) + thưởng châu lục</div>
-      </section>
       <section class="cfg-card">
         <h3>🎮 Khác</h3>
         <div class="cfg-line">Hiển thị map global:
