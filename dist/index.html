@@ -4239,7 +4239,9 @@ function describeAITurnIntent(intent){
       return 'lo củng cố biên giới'+(t?' ở '+t.name:'');
     }
     default: // expand
-      return intent.level>=3 ? 'tìm mặt trận dễ ăn nhất' : 'chưa có mục tiêu rõ ràng';
+      return intent.level>=3 ? 'tìm mặt trận dễ ăn nhất'
+        : intent.level===2 ? 'đánh vào biên yếu nhất của mình'
+        : 'chưa có mục tiêu rõ ràng'; // Level 1 "Rụt rè" — không chủ động tấn công
   }
 }
 // Every step of an AI turn (reinforce/attack/fortify, see aiRunFullTurn below) sets its own
