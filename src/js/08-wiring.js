@@ -165,7 +165,10 @@ function setMapWrap(on){
     mapData._quickPlay = true;
   } else {
     mapData.wrapX = on; mapData.wrapY = false;
+    // outlines/bboxes of territories across the edge are laid out differently with and without wrap
     delete mapData._seamMask;
+    mapData._terrBoundaryCache = {}; mapData._contBoundaryCache = {};
+    Object.values(mapData.territories).forEach(t=>{ delete t._bb; });
     recomputeGraph(mapData);
   }
 }

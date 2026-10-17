@@ -211,7 +211,7 @@ function drawAttackAnimBadges(ctx, now){
   const a = attackAnim;
   const fromT = mapData.territories[a.fromId], toT = mapData.territories[a.toId];
   if(!fromT || !toT){ finishAttackAnim(); return; }
-  const fromPos = fromT.centroid, toPos = toT.centroid;
+  const fromPos = territoryAnchor(fromT), toPos = territoryAnchor(toT);
   const elapsed = now-a.stageStart;
   // Across a world-wrap seam the badge flies toward the defender's wrapped image (out through the
   // near edge) — the scene is tiled on a wrapping map, so the next copy shows it arriving.
@@ -304,6 +304,28 @@ function wrapShift(from, to){
   if(mapData.wrapY){ const dy=to.y-from.y; if(dy>H/2) y=-H; else if(dy<-H/2) y=H; }
   return {x, y};
 }
+// Where a territory's badge sits and its arrows start and end: its centroid — except on a wrapX
+// map shown as one flat copy, where a territory across the left/right edge appears as two halves
+// and uses flatAnchor instead (inside the bigger half, see recomputeGraph() in 02-map-model.js).
+function territoryAnchor(t){ return (!wrapTiled() && t.flatAnchor) || t.centroid; }
+// A territory's outline (getTerritoryBoundaryLoops) is in shape space: one piece, which for a
+// territory across the left/right edge runs past the right edge of the map. True for those.
+function territoryOverhangs(map, t){ return map.wrapX && territoryBBox(map, t)[2] > map.cols*map.cellSize; }
+// Outline loops for drawing a wrapX map as ONE flat copy in a single path: any loop that runs past
+// the right edge is added again one map-width to the left, where the rest of the shape shows.
+// (Only for flat fills/strokes — a gradient fill wants each copy centered on its own piece.)
+function withFlatWrapCopy(map, loops){
+  if(!map.wrapX) return loops;
+  const W = map.cols*map.cellSize;
+  const over = loops.filter(loop=> loop.some(p=> p[0]>W));
+  return over.length ? loops.concat(over.map(loop=> loop.map(([x,y])=> [x-W, y]))) : loops;
+}
+// The territory's centroid in the same shape space as its outline (the centroid itself is
+// folded into the map, so it can sit one map-width left of the piece the outline draws).
+function territoryShapeCenter(map, t){
+  const c = t.centroid;
+  return { x: c.x < territoryBBox(map, t)[0] ? c.x + map.cols*map.cellSize : c.x, y: c.y };
+}
 // ---- World-wrap camera ----
 // On a wrapping axis the canvas is exactly as big as the visible area and never scrolls; instead
 // wrapView.x/.y (map-native px shown at the canvas's left/top edge) moves when the player pans,
@@ -336,29 +358,32 @@ function wrapMidpoint(from, to){
   return { x: clamp(m.x, 12, W-12), y: clamp(m.y, 12, H-12) };
 }
 
-// Continent outlines are traced as if the map edge were a coastline, so on a wrapping map they'd
-// draw a straight white line down the seam even where the SAME continent simply continues on
-// the other side. This builds an even-odd clip that masks those seam stretches out (only those —
-// where two different continents meet at the seam, the outline is a real border and stays).
-// Cached per map object; continents never change mid-game.
+// A continent's outline is traced in one piece across the left/right edge (see
+// getContinentBoundaryLoops()) — except one that reaches all the way round the world, which is
+// traced as stored, so its outline runs straight down the map edge where it simply continues on
+// the other side (and wrapY maps, which are never unwrapped). This builds an even-odd clip that
+// masks those edge stretches out (only those — where two different continents meet at the edge,
+// the outline is a real border and stays). Cached per map object; continents never change mid-game.
 function seamOutlineMask(map){
   if(map._seamMask!==undefined) return map._seamMask;
   const cs = map.cellSize, W = map.cols*cs, H = map.rows*cs, pad = 6;
   const rects = [];
+  Object.keys(map.continents).forEach(id=> getContinentBoundaryLoops(map, Number(id))); // fills map._contUncut
+  const uncut = map._contUncut || new Set();
   const contOf = idx=>{ const t = map.territories[map.cellTerritory[idx]]; return t ? t.continentId : null; };
-  function scan(len, cellA, cellB, toRects){
+  function scan(len, cellA, cellB, onlyCont, toRects){
     let start = -1;
     for(let i=0;i<=len;i++){
       let same = false;
       if(i<len){ const a=map.cellTerritory[cellA(i)], b=map.cellTerritory[cellB(i)];
-        same = a!==-1 && b!==-1 && contOf(cellA(i))!=null && contOf(cellA(i))===contOf(cellB(i)); }
+        same = a!==-1 && b!==-1 && contOf(cellA(i))!=null && contOf(cellA(i))===contOf(cellB(i)) && onlyCont(contOf(cellA(i))); }
       if(same && start<0) start = i;
       if(!same && start>=0){ toRects(start*cs-pad, i*cs+pad); start=-1; }
     }
   }
-  if(map.wrapX) scan(map.rows, r=>r*map.cols+map.cols-1, r=>r*map.cols,
+  if(map.wrapX) scan(map.rows, r=>r*map.cols+map.cols-1, r=>r*map.cols, cid=>uncut.has(cid),
     (a,b)=>{ rects.push([-pad,a,pad*2,b-a],[W-pad,a,pad*2,b-a]); });
-  if(map.wrapY) scan(map.cols, c=>(map.rows-1)*map.cols+c, c=>c,
+  if(map.wrapY) scan(map.cols, c=>(map.rows-1)*map.cols+c, c=>c, ()=>true,
     (a,b)=>{ rects.push([a,-pad,b-a,pad*2],[a,H-pad,b-a,pad*2]); });
   map._seamMask = rects.length ? rects : null;
   return map._seamMask;
@@ -706,11 +731,12 @@ function positionPortraitControlStacks(){
   right.style.bottom = bottomPx;
 }
 
-// Map-native bounding box [x0,y0,x1,y1] of a territory's cells, cached on the territory object.
+// Map-native bounding box [x0,y0,x1,y1] of a territory's cells, cached on the territory object —
+// in shape space like its outline (x1 can be past the map's right edge, see unwrapCells()).
 function territoryBBox(map, t){
   if(t._bb) return t._bb;
   let minC=Infinity, maxC=-Infinity, minR=Infinity, maxR=-Infinity;
-  t.cells.forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
+  unwrapCells(t.cells, map.cols, map.wrapX).forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
   const cs = map.cellSize;
   t._bb = [minC*cs, minR*cs, (maxC+1)*cs, (maxR+1)*cs];
   return t._bb;
@@ -863,7 +889,9 @@ function drawGameCanvas(){
   // Everything is drawn in two layers, each once per tile: the base (fills/borders) for every
   // tile first, then the overlay (arrows/badges/labels) — so an arrow or badge spilling across a
   // tile boundary isn't painted over by the next tile's base fills.
-  const drawBase = ()=>{
+  // isCopy: this pass only fills in the overhang of territories across the right edge (single flat
+  // copy of a wrapX map, see paintScene()), so the one-off edge marks aren't drawn again.
+  const drawBase = (isCopy)=>{
   terrs.forEach(t=>{
     if(offView(t)) return;
     let color;
@@ -880,7 +908,8 @@ function drawGameCanvas(){
         const prevOwner = lastDrawnOwner[t.id];
         const fromColor = prevOwner!=null && game.players[prevOwner] ? playerOf(prevOwner).color : '#444';
         colorFades[t.id] = {from:fromColor, to:color, start:now};
-        spawnCaptureParticles(t.centroid.x, t.centroid.y, color);
+        const at = territoryAnchor(t);
+        spawnCaptureParticles(at.x, at.y, color);
       }
       lastDrawnOwner[t.id] = ownerId;
       const fade = colorFades[t.id];
@@ -895,7 +924,7 @@ function drawGameCanvas(){
     // landmass" look with no texture art needed. Radius is derived from cell count (roughly the
     // territory's own extent in grid units) so it scales sensibly from a 1-cell sliver up to a
     // large territory instead of using one fixed size for every shape.
-    const cx=t.centroid.x, cy=t.centroid.y;
+    const {x:cx, y:cy} = territoryShapeCenter(mapData, t);
     const radius = Math.max(mapData.cellSize*1.5, Math.sqrt(t.cells.length)*mapData.cellSize*0.85);
     const grad = ctx.createRadialGradient(cx,cy,0, cx,cy,radius);
     grad.addColorStop(0, shadeColor(color, 16));
@@ -906,13 +935,12 @@ function drawGameCanvas(){
     // right after fill() — only beginPath() would clear it). Bounded to this territory's own
     // cell bounding box rather than the whole canvas so it stays cheap on maps with many
     // territories.
-    let minC=Infinity,maxC=-Infinity,minR=Infinity,maxR=-Infinity;
-    t.cells.forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
+    const bb = territoryBBox(mapData, t);
     ctx.save();
     ctx.clip();
     ctx.globalAlpha = 0.06;
     ctx.fillStyle = getNoisePattern(ctx);
-    ctx.fillRect(minC*cs, minR*cs, (maxC-minC+1)*cs, (maxR-minR+1)*cs);
+    ctx.fillRect(bb[0], bb[1], bb[2]-bb[0], bb[3]-bb[1]);
     ctx.restore();
   });
 
@@ -925,7 +953,7 @@ function drawGameCanvas(){
       pathFromLoops(ctx, mine.flatMap(t=>getTerritoryBoundaryLoops(mapData, t.id)));
       ctx.clip();
       ctx.fillStyle = getStripePattern(ctx);
-      ctx.fillRect(0,0,nativeW,nativeH);
+      ctx.fillRect(0,0,nativeW*2,nativeH); // 2x: outlines across the right edge run past it
       ctx.restore();
     }
   }
@@ -977,7 +1005,7 @@ function drawGameCanvas(){
   }
   ctx.restore();
   // Single fixed copy of a wrapping map: mark the stretches of edge that join each other.
-  if(!wrapping && mapIsWrapping()) drawWrapSeams(ctx, mapData, reducedMotion ? 0 : now);
+  if(!wrapping && mapIsWrapping() && !isCopy) drawWrapSeams(ctx, mapData, reducedMotion ? 0 : now);
   };
   // selection highlight — a slow pulsing glow instead of a static line, so the currently
   // selected territory/territories stay noticeable at a glance instead of blending into the
@@ -993,10 +1021,10 @@ function drawGameCanvas(){
     canAttack(game.selectedFrom, game.selectedTo, currentPlayerId());
   const showFortifyLine = game.phase==='fortify' && game.selectedFrom!=null && game.selectedTo!=null && canFortifyNow(currentPlayer());
   // The arrow/line target, on the same side of the seam as the source on a wrapping map.
-  const selFromPos = game.selectedFrom!=null && mapData.territories[game.selectedFrom] ? mapData.territories[game.selectedFrom].centroid : null;
+  const selFromPos = game.selectedFrom!=null && mapData.territories[game.selectedFrom] ? territoryAnchor(mapData.territories[game.selectedFrom]) : null;
   const selToPos = (()=>{
     if(!selFromPos || game.selectedTo==null || !mapData.territories[game.selectedTo]) return null;
-    const to = mapData.territories[game.selectedTo].centroid, sh = wrapShift(selFromPos, to);
+    const to = territoryAnchor(mapData.territories[game.selectedTo]), sh = wrapShift(selFromPos, to);
     return {x:to.x+sh.x, y:to.y+sh.y};
   })();
   // The arrow/line as drawable segments: one, or — across the seam on a single fixed copy of the
@@ -1004,21 +1032,28 @@ function drawGameCanvas(){
   // canvas clips each half at its own edge; the tiled view gets the other half from the next tile.
   const flowSegs = !selToPos ? [] : [[selFromPos, selToPos]];
   if(selToPos && !wrapping && game.selectedTo!=null){
-    const to = mapData.territories[game.selectedTo].centroid;
+    const to = territoryAnchor(mapData.territories[game.selectedTo]);
     if(to.x!==selToPos.x || to.y!==selToPos.y) flowSegs.push([{x:selFromPos.x-(selToPos.x-to.x), y:selFromPos.y-(selToPos.y-to.y)}, to]);
   }
   // Expired particles dropped once per frame, before the per-tile drawing below.
   captureParticles = captureParticles.filter(pt=> now-pt.start<PARTICLE_MS);
+  // Single flat copy of a wrapX map: a territory across the right edge also needs its outline
+  // drawn one map-width to the left, where the rest of it shows (the base layer gets that from
+  // paintScene()'s extra pass; the overlay is drawn once, so the selection glow does it itself).
+  const flatShifts = id=> (!tileX && territoryOverhangs(mapData, mapData.territories[id])) ? [0, -nativeW] : [0];
   const drawOverlay = ()=>{
   [['selectedFrom','#fff'],['selectedTo','#f2b84b']].forEach(([key,col])=>{
     const id = game[key];
     if(id!=null && mapData.territories[id]){
-      pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, id));
-      ctx.save();
-      ctx.shadowColor = col; ctx.shadowBlur = 5+7*pulse;
-      ctx.strokeStyle=col; ctx.lineWidth=3+1.2*pulse;
-      ctx.stroke();
-      ctx.restore();
+      flatShifts(id).forEach(sx=>{
+        ctx.save();
+        ctx.translate(sx, 0);
+        pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, id));
+        ctx.shadowColor = col; ctx.shadowBlur = 5+7*pulse;
+        ctx.strokeStyle=col; ctx.lineWidth=3+1.2*pulse;
+        ctx.stroke();
+        ctx.restore();
+      });
     }
   });
   if(showArrow) flowSegs.forEach(([a,b])=> drawFlowLine(ctx, a, b, now, {rainbow:true, cycleMs:1350, gap:16}));
@@ -1030,7 +1065,10 @@ function drawGameCanvas(){
   // specially further down instead).
   Object.values(mapData.territories).forEach(t=>{
     if(t.cells.length===0) return;
-    if(offView(t)) return;
+    // culled by the badge's own position, not the territory's outline: across the right edge the
+    // anchor can sit one map-width left of the outline's piece (see territoryShapeCenter())
+    const at = territoryAnchor(t);
+    if(vis && (at.x < vis.x0-CULL_PAD || at.x > vis.x1+CULL_PAD || at.y < vis.y0-CULL_PAD || at.y > vis.y1+CULL_PAD)) return;
     if(attackAnim && (t.id===attackAnim.fromId || t.id===attackAnim.toId)) return;
     const realArmyCount = game.armies[t.id];
     if(realArmyCount===undefined) return;
@@ -1053,7 +1091,7 @@ function drawGameCanvas(){
       const isValidTo = t.id===game.selectedTo && game.selectedFrom!=null && canAttack(game.selectedFrom, t.id, currentPlayerId());
       if(isFrom || isValidTo) badgeScale = 1+0.3*pulse;
     }
-    drawBadgeWithLabel(ctx, t.centroid.x, t.centroid.y, armyCount, t.name, {scale:badgeScale});
+    drawBadgeWithLabel(ctx, at.x, at.y, armyCount, t.name, {scale:badgeScale});
   });
   if(attackAnim) drawAttackAnimBadges(ctx, now);
   if(showContinentsGame){
@@ -1093,11 +1131,17 @@ function drawGameCanvas(){
     ctx.fillStyle = OCEAN_COLOR;
     ctx.fillRect(0, 0, ew, eh);
     const xs = [], ys = [];
-    if(tileX){ for(let x=-mod(ox,nativeW); x<ew; x+=nativeW) xs.push(x); } else xs.push(-ox);
+    // Tiled wrapX: also the copy just left of the first visible one — territories across the
+    // right edge draw past it (shape space, see getTerritoryBoundaryLoops()), so that copy's
+    // overhang is what fills the strip at the left. Culling keeps it to those few territories.
+    if(tileX){ for(let x=-mod(ox,nativeW)-(mapData.wrapX ? nativeW : 0); x<ew; x+=nativeW) xs.push(x); } else xs.push(-ox);
     if(tileY){ for(let y=-mod(oy,nativeH); y<eh; y+=nativeH) ys.push(y); } else ys.push(-oy);
-    [drawBase, drawOverlay].forEach(layer=> ys.forEach(ty=> xs.forEach(tx=>{
+    // Single flat copy of a wrapX map: the base layer once more, one map-width to the left, to
+    // show the overhang of territories across the right edge at the left edge (isCopy).
+    const baseXs = (!tileX && mapData.wrapX) ? xs.concat([xs[0]-nativeW]) : xs;
+    [[drawBase, baseXs], [drawOverlay, xs]].forEach(([layer, lxs])=> ys.forEach(ty=> lxs.forEach((tx, i)=>{
       vis = {x0:-tx, y0:-ty, x1:-tx+ew, y1:-ty+eh};
-      ctx.save(); ctx.translate(tx, ty); layer(); ctx.restore();
+      ctx.save(); ctx.translate(tx, ty); layer(lxs!==xs && i>=xs.length); ctx.restore();
     })));
     vis = null;
     ctx.restore();
@@ -1350,7 +1394,7 @@ function positionFloatingAttackButtons(){
   if(wrap.hidden) return;
   const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
   if(!fromT || !toT){ hideFloatingAttackButtons(); return; }
-  const mid = wrapMidpoint(fromT.centroid, toT.centroid);
+  const mid = wrapMidpoint(territoryAnchor(fromT), territoryAnchor(toT));
   const pt = mapPointToScreen(mid.x, mid.y);
   // CSS transform (translate(-50%, calc(-100% - 14px))) handles centering horizontally and
   // sitting the box above this exact point — see style.css.
@@ -1381,7 +1425,7 @@ function positionFloatingFortifyButton(){
   if(wrap.hidden) return;
   const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
   if(!fromT || !toT){ hideFloatingFortifyButton(); return; }
-  const mid = wrapMidpoint(fromT.centroid, toT.centroid);
+  const mid = wrapMidpoint(territoryAnchor(fromT), territoryAnchor(toT));
   const pt = mapPointToScreen(mid.x, mid.y);
   wrap.style.left = pt.x+'px';
   wrap.style.top = pt.y+'px';

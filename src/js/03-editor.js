@@ -7,17 +7,25 @@ let editorBrush = 2;
 let editorPainting = false;
 let editorShowContinents = false;
 
-/* Compute a label position (cell-weighted centroid) for each continent that has territories. */
+/* Compute a label position (cell-weighted centroid) for each continent that has territories.
+   On a wrapX map x is averaged as offsets from the continent's first territory, the short way
+   round, then folded back into the map — so a continent across the left/right edge gets its
+   label in its middle, not in the middle of the map. */
 function computeContinentLabelPositions(map){
   const acc = {};
+  const W = map.cols*map.cellSize;
   Object.values(map.territories).forEach(t=>{
     if(t.continentId==null || t.cells.length===0) return;
-    if(!acc[t.continentId]) acc[t.continentId] = {sx:0,sy:0,n:0};
+    if(!acc[t.continentId]) acc[t.continentId] = {ref:t.centroid.x,sx:0,sy:0,n:0};
     const a = acc[t.continentId];
-    a.sx += t.centroid.x*t.cells.length; a.sy += t.centroid.y*t.cells.length; a.n += t.cells.length;
+    a.sx += wrapDelta(t.centroid.x-a.ref, W, map.wrapX)*t.cells.length; a.sy += t.centroid.y*t.cells.length; a.n += t.cells.length;
   });
   const out = {};
-  Object.entries(acc).forEach(([cid,a])=>{ out[cid] = {x:a.sx/a.n, y:a.sy/a.n}; });
+  Object.entries(acc).forEach(([cid,a])=>{
+    let x = a.ref + a.sx/a.n;
+    if(map.wrapX) x = ((x%W)+W)%W;
+    out[cid] = {x, y:a.sy/a.n};
+  });
   return out;
 }
 
@@ -147,7 +155,7 @@ function drawEditorCanvas(){
     } else {
       ctx.fillStyle = t.color;
     }
-    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    pathFromLoops(ctx, withFlatWrapCopy(mapData, getTerritoryBoundaryLoops(mapData, t.id)));
     ctx.fill();
   });
 
@@ -155,23 +163,27 @@ function drawEditorCanvas(){
   // when in continent view (rather than comparing neighbor-by-neighbor, each continent's own
   // traced outer edge already IS exactly where a thick border belongs).
   terrs.forEach(t=>{
-    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    pathFromLoops(ctx, withFlatWrapCopy(mapData, getTerritoryBoundaryLoops(mapData, t.id)));
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,14,24,0.9)';
     ctx.stroke();
   });
   if(editorShowContinents){
+    ctx.save();
+    delete mapData._seamMask; // continents change while editing — rebuild rather than reuse the cached mask
+    clipOutSeam(ctx, mapData);
     Object.values(mapData.continents).forEach(cont=>{
       const loops = getContinentBoundaryLoops(mapData, cont.id);
       if(loops.length===0) return;
-      pathFromLoops(ctx, loops);
+      pathFromLoops(ctx, withFlatWrapCopy(mapData, loops));
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     });
+    ctx.restore();
   }
   drawWrapSeams(ctx, mapData, 0); // world-wrap seam marks (static here — no animation loop in the editor)
   // highlight current territory selection border
   if(editorCurrentTerrId && mapData.territories[editorCurrentTerrId] && mapData.territories[editorCurrentTerrId].cells.length){
-    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, editorCurrentTerrId));
+    pathFromLoops(ctx, withFlatWrapCopy(mapData, getTerritoryBoundaryLoops(mapData, editorCurrentTerrId)));
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.stroke();
   }
@@ -180,10 +192,11 @@ function drawEditorCanvas(){
   ctx.textAlign='center'; ctx.textBaseline='middle';
   Object.values(mapData.territories).forEach(t=>{
     if(t.cells.length===0) return;
+    const at = t.flatAnchor || t.centroid; // the editor always shows one flat copy
     ctx.fillStyle='rgba(0,0,0,0.55)';
-    ctx.fillText(t.name, t.centroid.x+1, t.centroid.y+1);
+    ctx.fillText(t.name, at.x+1, at.y+1);
     ctx.fillStyle= editorShowContinents ? 'rgba(255,255,255,0.85)' : '#fff';
-    ctx.fillText(t.name, t.centroid.x, t.centroid.y);
+    ctx.fillText(t.name, at.x, at.y);
   });
   if(editorShowContinents){
     ctx.font = 'bold 17px sans-serif';

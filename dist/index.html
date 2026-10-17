@@ -1376,9 +1376,10 @@ function newMap(cols, rows, name){
     // World wrap (cylinder, like Civilization): wrapX joins the left edge to the right edge, so a
     // territory touching column 0 neighbors whatever touches column cols-1 on the same row.
     // wrapY is the same along the top/bottom — only ever set by rotateMapData90CW(), which turns
-    // a horizontal wrap into a vertical one. Adjacency is the only thing that actually changes
-    // (see recomputeGraph()); territories never straddle the seam (the generator grows them
-    // without wrapping), so badges/borders/hit-testing need no seam handling of their own.
+    // a horizontal wrap into a vertical one. On a wrapX map the generator treats the left/right
+    // edge like any other column, so territories, continents and lakes run across it; outlines and
+    // badge anchors are worked out on the shape laid out in one piece (see unwrapCells()).
+    // wrapY is adjacency-only (see recomputeGraph()) — wrapping maps are never rotated in play.
     wrapX: false,
     wrapY: false,
     _terrBoundaryCache: {}, // terrId -> smoothed pixel-space loops, see getTerritoryBoundaryLoops()
@@ -1420,6 +1421,39 @@ function mapFromPlainObject(obj){
 
 function cellIndex(map,c,r){ return r*map.cols + c; }
 function inBounds(map,c,r){ return c>=0 && c<map.cols && r>=0 && r<map.rows; }
+
+// ---- World wrap geometry (wrapX) ----
+// A wrapX map is a cylinder: column cols-1 sits right next to column 0, so there's no special
+// meridian — territories, continents and lakes run across the left/right edge like anywhere else.
+// Cells are always STORED in their canonical column [0,cols) (cellTerritory indexes, t.cells);
+// these helpers are for the geometry that needs a shape laid out in one piece.
+// Column offset dx taken the short way round on a wrapping axis.
+function wrapDelta(dx, size, wrap){
+  if(!wrap) return dx;
+  dx = ((dx%size)+size)%size;
+  return dx>size/2 ? dx-size : dx;
+}
+// A cell list laid out contiguously ("shape space"): on a wrapX map, a shape that touches both
+// the first and last column is cut at its widest run of empty columns instead of at the map
+// edge, and the columns left of that cut are shifted right by cols — so its cells span
+// [start, start+width) with start in [0,cols), possibly past the right edge. Cutting at a column
+// the shape doesn't use never separates two of its cells that touch, so the result is the same
+// shape, just in one piece. A shape using every column has no such cut and is returned as is.
+function unwrapCells(cells, cols, wrapX){
+  if(!wrapX || cells.length===0) return cells;
+  const used = new Uint8Array(cols);
+  for(const [c] of cells) used[c] = 1;
+  if(!used[0] || !used[cols-1]) return cells;
+  let bestLen = 0, bestEnd = -1, run = 0;
+  for(let c=0;c<cols;c++){
+    if(used[c]){ run = 0; continue; }
+    run++;
+    if(run>bestLen){ bestLen = run; bestEnd = c; }
+  }
+  if(bestLen===0) return cells;
+  const start = bestEnd+1;
+  return cells.map(([c,r])=> c<start ? [c+cols,r] : [c,r]);
+}
 
 function createTerritory(map, name){
   const id = map.nextTerrId++;
@@ -1672,6 +1706,7 @@ function traceAndSmoothCells(map, cellList, idFn){
 // since map.cellTerritory[r*cols+c] would otherwise silently alias into the wrong row/be
 // out-of-range for a negative or overflowing c/r.
 function territoryIdAt(map, c, r){
+  if(map.wrapX) c = ((c%map.cols)+map.cols)%map.cols; // shape-space columns can run past either edge
   if(c<0||r<0||c>=map.cols||r>=map.rows) return -1;
   return map.cellTerritory[cellIndex(map,c,r)];
 }
@@ -1686,12 +1721,18 @@ function continentIdAt(map, c, r){
 // cached until invalidateBoundaryCache() drops it (see paintCell() below). idFn is by TERRITORY
 // id here — see splitLoopIntoRuns() for why boundary simplification needs to know exactly which
 // neighboring territory (not just "outside") faces each edge.
+// On a wrapX map the loops are in shape space (see unwrapCells()): a territory across the left/
+// right edge comes out as one outline that runs past the right edge (x > cols*cellSize), and the
+// renderer draws the map's next copy (or, showing one copy, a copy shifted left by the map's
+// width) to show that part at the left edge. A shared border with a neighbor drawn on the other
+// side of the edge comes out the same curve shifted by exactly the map width — the simplification
+// is translation-invariant (douglasPeuckerOpen's tie-break only compares points within one run).
 function getTerritoryBoundaryLoops(map, terrId){
   const t = map.territories[terrId];
   if(!t || t.cells.length===0) return [];
   if(!map._terrBoundaryCache) map._terrBoundaryCache = {};
   if(map._terrBoundaryCache[terrId]) return map._terrBoundaryCache[terrId];
-  const loops = traceAndSmoothCells(map, t.cells, (c,r)=>territoryIdAt(map,c,r));
+  const loops = traceAndSmoothCells(map, unwrapCells(t.cells, map.cols, map.wrapX), (c,r)=>territoryIdAt(map,c,r));
   map._terrBoundaryCache[terrId] = loops;
   return loops;
 }
@@ -1701,12 +1742,20 @@ function getTerritoryBoundaryLoops(map, terrId){
 // CONTINENT id here (not territory id) so an internal territory-territory seam within the same
 // continent never looks like a "neighbor" to split a run on — only a genuinely different
 // neighboring continent (or empty space) does.
+// Shape space on a wrapX map, as for territories. A continent that reaches all the way round the
+// world has no column to cut it at, so it's traced as stored and its outline runs straight down
+// the map edge where it continues on the other side — those continents are listed in
+// map._contUncut for the renderer to mask that stretch out (seamOutlineMask, 06-render-game.js).
 function getContinentBoundaryLoops(map, contId){
   if(!map._contBoundaryCache) map._contBoundaryCache = {};
   if(map._contBoundaryCache[contId]) return map._contBoundaryCache[contId];
-  const cellList = [];
+  let cellList = [];
   Object.values(map.territories).forEach(t=>{ if(t.continentId===contId) cellList.push(...t.cells); });
-  const loops = cellList.length ? traceAndSmoothCells(map, cellList, (c,r)=>continentIdAt(map,c,r)) : [];
+  const shaped = unwrapCells(cellList, map.cols, map.wrapX);
+  if(!map._contUncut) map._contUncut = new Set();
+  if(map.wrapX && shaped===cellList && cellList.some(([c])=>c===0) && cellList.some(([c])=>c===map.cols-1)) map._contUncut.add(contId);
+  else map._contUncut.delete(contId);
+  const loops = shaped.length ? traceAndSmoothCells(map, shaped, (c,r)=>continentIdAt(map,c,r)) : [];
   map._contBoundaryCache[contId] = loops;
   return loops;
 }
@@ -1716,6 +1765,7 @@ function getContinentBoundaryLoops(map, contId){
 // enough to just drop that whole (much smaller) cache rather than track it precisely.
 function invalidateBoundaryCache(map, terrId){
   if(map._terrBoundaryCache) delete map._terrBoundaryCache[terrId];
+  if(map.territories[terrId]) delete map.territories[terrId]._bb; // renderer's bbox cache (territoryBBox)
   map._contBoundaryCache = {};
 }
 
@@ -1785,10 +1835,21 @@ function recomputeGraph(map){
   // "centroid" is the territory's anchor point — where its army badge sits and where attack/
   // fortify arrows start and end. It's the deepest cell (see territoryPoleCell), not the plain
   // average position, since the average of a concave territory can land on its edge or outside it.
+  // On a wrapX map it's the deepest cell of the whole territory laid out in one piece, folded back
+  // into the map's columns. A territory across the edge also gets flatAnchor: the deepest cell
+  // with the map edge counted as an edge — where its badge goes when the map is shown as ONE flat
+  // copy, so the badge sits whole inside the bigger of its two halves instead of being cut in two.
+  const cs = map.cellSize;
   Object.values(map.territories).forEach(t=>{
+    delete t.flatAnchor;
     if(t.cells.length===0){ t.centroid={x:-1,y:-1}; return; }
-    const [pc,pr] = territoryPoleCell(t.cells);
-    t.centroid = { x: (pc+0.5)*map.cellSize, y: (pr+0.5)*map.cellSize };
+    const shaped = unwrapCells(t.cells, map.cols, map.wrapX);
+    const [pc,pr] = territoryPoleCell(shaped);
+    t.centroid = { x: (pc%map.cols+0.5)*cs, y: (pr+0.5)*cs };
+    if(shaped!==t.cells){
+      const [fc,fr] = territoryPoleCell(t.cells);
+      t.flatAnchor = { x: (fc+0.5)*cs, y: (fr+0.5)*cs };
+    }
   });
 }
 
@@ -1906,7 +1967,8 @@ function bridgeComponentOut(map, compTerrIds){
   while(qi<queue.length && !target){
     const cur = queue[qi++];
     for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const nc=cur.c+dc, nr=cur.r+dr;
+      let nc=cur.c+dc; const nr=cur.r+dr;
+      if(map.wrapX) nc=(nc+cols)%cols;
       if(!inBounds(map,nc,nr)) continue;
       const idx = nr*cols+nc;
       if(visited.has(idx)) continue;
@@ -2195,7 +2257,7 @@ function territoryFitsBadges(map, cells){
   if(cells.length<3) return false;
   const rC = ARMY_BADGE_RADIUS/map.cellSize;
   const need = rC + BADGE_FIT_MARGIN_CELLS;
-  const e = territoryEDT(cells);
+  const e = territoryEDT(unwrapCells(cells, map.cols, map.wrapX));
   const need2 = need*need;
   const pts = [];
   let best2 = 0;
@@ -2246,8 +2308,12 @@ function territoryPoleCell(cells){
 // Smooth random field in [1-amp, 1+amp] (bilinear-interpolated coarse random grid) used as a
 // per-cell step cost, so Voronoi region boundaries wander organically instead of running in the
 // dead-straight lines a plain distance metric gives.
-function makeNoiseWeight(cols, rows, step, amp){
-  const gw = Math.ceil(cols/step)+2, gh = Math.ceil(rows/step)+2;
+// wrapX: the field repeats every `cols` columns (the coarse grid's columns wrap round, with the
+// step stretched slightly so a whole number of them fits), so it's continuous across the edge.
+function makeNoiseWeight(cols, rows, step, amp, wrapX){
+  const period = wrapX ? Math.max(1, Math.round(cols/step)) : 0;
+  const stepX = wrapX ? cols/period : step;
+  const gw = wrapX ? period : Math.ceil(cols/step)+2, gh = Math.ceil(rows/step)+2;
   const g = new Float64Array(gw*gh);
   for(let i=0;i<g.length;i++) g[i] = random()*2-1;
   const w = new Float64Array(cols*rows);
@@ -2255,8 +2321,9 @@ function makeNoiseWeight(cols, rows, step, amp){
   for(let r=0;r<rows;r++){
     const gy = r/step, y0 = Math.floor(gy), fy = smooth(gy-y0);
     for(let c=0;c<cols;c++){
-      const gx = c/step, x0 = Math.floor(gx), fx = smooth(gx-x0);
-      const a = g[y0*gw+x0], b = g[y0*gw+x0+1], cc = g[(y0+1)*gw+x0], d = g[(y0+1)*gw+x0+1];
+      const gx = c/stepX, x0 = Math.floor(gx), fx = smooth(gx-x0);
+      const x1 = wrapX ? (x0+1)%gw : x0+1;
+      const a = g[y0*gw+x0], b = g[y0*gw+x1], cc = g[(y0+1)*gw+x0], d = g[(y0+1)*gw+x1];
       const val = (a*(1-fx)+b*fx)*(1-fy) + (cc*(1-fx)+d*fx)*fy;
       w[r*cols+c] = 1 + amp*val;
     }
@@ -2272,10 +2339,10 @@ const NB_LEN = [1,1,1,1,Math.SQRT2,Math.SQRT2,Math.SQRT2,Math.SQRT2];
 // Diagonal steps only where both cells they cut past are in the mask too. `offsets` (optional,
 // per seed) gives a seed a head start — an additively-weighted Voronoi, which is how the
 // generator lets a too-small region claim more land from its neighbors. Returns Int32Array
-// labels (-1 = unreachable from every seed).
+// labels (-1 = unreachable from every seed). wrapX: paths run across the left/right edge.
 // Called dozens of times per generated map, so the heap is inlined over typed arrays rather than
 // going through a generic heap object — this loop is most of the generator's run time.
-function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets){
+function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets, wrapX){
   const n = cols*rows;
   const dist = new Float64Array(n).fill(Infinity);
   const label = new Int32Array(n).fill(-1);
@@ -2311,7 +2378,8 @@ function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets){
     if(d>dist[idx]) continue;
     const c = idx%cols, r = (idx/cols)|0, w0 = weight[idx], lab = label[idx];
     for(let k=0;k<8;k++){
-      const nc=c+NB_DX[k], nr=r+NB_DY[k];
+      let nc=c+NB_DX[k]; const nr=r+NB_DY[k];
+      if(wrapX){ if(nc<0) nc+=cols; else if(nc>=cols) nc-=cols; }
       if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
       const nidx = nr*cols+nc;
       if(!mask[nidx]) continue;
@@ -2325,7 +2393,7 @@ function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets){
 
 // Greedy farthest-point sampling of k cells out of `cellIdxs` (flat indices) — spreads seeds
 // evenly over the land instead of leaving 2 of them side by side.
-function farthestPointSeeds(cols, cellIdxs, k){
+function farthestPointSeeds(cols, cellIdxs, k, wrapX){
   if(cellIdxs.length===0) return [];
   const minD = new Float64Array(cellIdxs.length).fill(Infinity);
   const seeds = [];
@@ -2335,7 +2403,7 @@ function farthestPointSeeds(cols, cellIdxs, k){
     const sc = s%cols, sr = (s/cols)|0;
     let bi = -1, bd = -1;
     for(let i=0;i<cellIdxs.length;i++){
-      const idx = cellIdxs[i], dd = (idx%cols-sc)**2 + (((idx/cols)|0)-sr)**2;
+      const idx = cellIdxs[i], dd = wrapDelta(idx%cols-sc, cols, wrapX)**2 + (((idx/cols)|0)-sr)**2;
       if(dd<minD[i]) minD[i] = dd;
       if(minD[i]>bd){ bd = minD[i]; bi = i; }
     }
@@ -2347,15 +2415,18 @@ function farthestPointSeeds(cols, cellIdxs, k){
 
 // One Lloyd step: move every seed to the cell of its own region nearest that region's average
 // position (staying on a real cell of the region, so it never lands in water).
-function lloydMoveSeeds(cols, cellIdxs, label, seeds){
+// Columns are averaged as offsets from the region's own seed, taken the short way round on a
+// wrapX map — so a region across the left/right edge averages to its middle, not the map's.
+function lloydMoveSeeds(cols, cellIdxs, label, seeds, wrapX){
   const k = seeds.length;
   const sx = new Float64Array(k), sy = new Float64Array(k), cnt = new Float64Array(k);
-  for(const idx of cellIdxs){ const l = label[idx]; if(l<0) continue; sx[l]+=idx%cols; sy[l]+=(idx/cols)|0; cnt[l]++; }
+  const refC = seeds.map(s=> s%cols);
+  for(const idx of cellIdxs){ const l = label[idx]; if(l<0) continue; sx[l]+=wrapDelta(idx%cols-refC[l], cols, wrapX); sy[l]+=(idx/cols)|0; cnt[l]++; }
   const bestD = new Float64Array(k).fill(Infinity);
   const moved = seeds.slice();
   for(const idx of cellIdxs){
     const l = label[idx]; if(l<0 || cnt[l]===0) continue;
-    const dd = (idx%cols - sx[l]/cnt[l])**2 + (((idx/cols)|0) - sy[l]/cnt[l])**2;
+    const dd = wrapDelta(idx%cols - refC[l] - sx[l]/cnt[l], cols, wrapX)**2 + (((idx/cols)|0) - sy[l]/cnt[l])**2;
     if(dd<bestD[l]){ bestD[l]=dd; moved[l]=idx; }
   }
   return moved;
@@ -2363,11 +2434,11 @@ function lloydMoveSeeds(cols, cellIdxs, label, seeds){
 
 // Lloyd relaxation: repeatedly partition, then recenter every seed in its region. A few rounds
 // turn an uneven first partition into compact, roughly equal-area regions. Returns the labels.
-function relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, rounds){
-  let label = weightedVoronoi(cols, rows, mask, seeds, weight);
+function relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, rounds, wrapX){
+  let label = weightedVoronoi(cols, rows, mask, seeds, weight, null, wrapX);
   for(let it=0; it<rounds; it++){
-    seeds = lloydMoveSeeds(cols, cellIdxs, label, seeds);
-    label = weightedVoronoi(cols, rows, mask, seeds, weight);
+    seeds = lloydMoveSeeds(cols, cellIdxs, label, seeds, wrapX);
+    label = weightedVoronoi(cols, rows, mask, seeds, weight, null, wrapX);
   }
   return label;
 }
@@ -2378,17 +2449,17 @@ function relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, rounds){
 // (typically squeezed against the coast) grow into their roomier neighbors instead of being
 // merged away. Whatever still fails after this is handled by repairUnfitTerritories().
 function balancedFitPartition(map, mask, landIdxs, k, weight){
-  const {cols, rows} = map;
-  let seeds = farthestPointSeeds(cols, landIdxs, k);
+  const {cols, rows, wrapX} = map;
+  let seeds = farthestPointSeeds(cols, landIdxs, k, wrapX);
   const offsets = new Float64Array(seeds.length);
   // Most regions don't change between balancing rounds (only the ones next to a growing region
   // do) — a cheap signature of each region's cells skips re-checking the unchanged ones.
   const lastSig = new Array(seeds.length).fill(null), lastFit = new Array(seeds.length).fill(false);
   let label = null;
   for(let it=0; it<25; it++){
-    label = weightedVoronoi(cols, rows, mask, seeds, weight, offsets);
-    if(it<5){ seeds = lloydMoveSeeds(cols, landIdxs, label, seeds); continue; }
-    enforceConnectedRegions(cols, rows, landIdxs, label);
+    label = weightedVoronoi(cols, rows, mask, seeds, weight, offsets, wrapX);
+    if(it<5){ seeds = lloydMoveSeeds(cols, landIdxs, label, seeds, wrapX); continue; }
+    enforceConnectedRegions(cols, rows, landIdxs, label, wrapX);
     const cellsOf = seeds.map(()=>[]), sig = seeds.map(()=>0);
     for(const idx of landIdxs){
       const l=label[idx]; if(l<0) continue;
@@ -2404,15 +2475,15 @@ function balancedFitPartition(map, mask, landIdxs, k, weight){
     });
     if(!anyFail) return label;
   }
-  enforceConnectedRegions(cols, rows, landIdxs, label);
+  enforceConnectedRegions(cols, rows, landIdxs, label, wrapX);
   return label;
 }
 
 // A region can come out of the partition in more than one 4-connected piece (two regions
 // pinching through a diagonal gap, say) — the game's adjacency is 4-directional, so each region
 // keeps only its biggest piece and every smaller stray piece is handed to whichever other region
-// borders it most.
-function enforceConnectedRegions(cols, rows, cellIdxs, label){
+// borders it most. wrapX: cells either side of the left/right edge touch.
+function enforceConnectedRegions(cols, rows, cellIdxs, label, wrapX){
   for(let pass=0; pass<10; pass++){
     const comp = new Int32Array(cols*rows).fill(-1);
     const comps = [];
@@ -2423,7 +2494,8 @@ function enforceConnectedRegions(cols, rows, cellIdxs, label){
       for(let qi=0; qi<cells.length; qi++){
         const idx=cells[qi], c=idx%cols, r=(idx/cols)|0;
         for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const nc=c+dc, nr=r+dr;
+          let nc=c+dc; const nr=r+dr;
+          if(wrapX) nc=(nc+cols)%cols;
           if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
           const nidx=nr*cols+nc;
           if(comp[nidx]===-1 && label[nidx]===l){ comp[nidx]=id; cells.push(nidx); }
@@ -2440,7 +2512,8 @@ function enforceConnectedRegions(cols, rows, cellIdxs, label){
       for(const idx of cp.cells){
         const c=idx%cols, r=(idx/cols)|0;
         for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const nc=c+dc, nr=r+dr;
+          let nc=c+dc; const nr=r+dr;
+          if(wrapX) nc=(nc+cols)%cols;
           if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
           const nl = label[nr*cols+nc];
           if(nl>=0 && nl!==cp.l) counts[nl]=(counts[nl]||0)+1;
@@ -2461,7 +2534,8 @@ function territoryBorderCounts(map, t){
   const counts = {};
   for(const [c,r] of t.cells){
     for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const nc=c+dc, nr=r+dr;
+      let nc=c+dc; const nr=r+dr;
+      if(map.wrapX) nc=(nc+map.cols)%map.cols;
       if(!inBounds(map,nc,nr)) continue;
       const o = map.cellTerritory[cellIndex(map,nc,nr)];
       if(o!==-1 && o!==t.id) counts[o]=(counts[o]||0)+1;
@@ -2499,15 +2573,15 @@ function repairUnfitTerritories(map, water){
 // Tries to split `t` into 2 compact halves (2-seed relaxed partition inside it, a few different
 // random starts). Returns the two cell lists only if BOTH halves still fit 3 badges, else null.
 function trySplitTerritory(map, t, weight){
-  const {cols, rows} = map;
+  const {cols, rows, wrapX} = map;
   const cellIdxs = t.cells.map(([c,r])=> r*cols+c);
   const mask = new Uint8Array(cols*rows);
   cellIdxs.forEach(i=> mask[i]=1);
   for(let attempt=0; attempt<2; attempt++){
-    const seeds = farthestPointSeeds(cols, cellIdxs, 2);
+    const seeds = farthestPointSeeds(cols, cellIdxs, 2, wrapX);
     if(seeds.length<2) return null;
-    const label = relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, 4);
-    enforceConnectedRegions(cols, rows, cellIdxs, label);
+    const label = relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, 4, wrapX);
+    enforceConnectedRegions(cols, rows, cellIdxs, label, wrapX);
     const halves = [[],[]];
     for(const idx of cellIdxs){ const l=label[idx]; if(l>=0) halves[l].push([idx%cols,(idx/cols)|0]); }
     if(halves[0].length+halves[1].length!==cellIdxs.length || !halves[0].length || !halves[1].length) continue;
@@ -2604,7 +2678,7 @@ function generateTerritoryLayout(cols, rows, numTerr, name, waterRatio, waterSpr
   const targetTerr = Math.max(1, Math.min(numTerr, Math.floor(landIdxs.length/minCellsPerFitTerritory(map))));
   const mask = new Uint8Array(cols*rows);
   landIdxs.forEach(i=> mask[i]=1);
-  const weight = makeNoiseWeight(cols, rows, 10, 0.45);
+  const weight = makeNoiseWeight(cols, rows, 10, 0.45, wrapX);
   const label = balancedFitPartition(map, mask, landIdxs, targetTerr, weight);
 
   const byLabel = {};
@@ -2627,7 +2701,8 @@ function generateTerritoryLayout(cols, rows, numTerr, name, waterRatio, waterSpr
       const idx=q[qi], c=idx%cols, r=(idx/cols)|0;
       t.cells.push([c,r]);
       for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const nc=c+dc, nr=r+dr;
+        let nc=c+dc; const nr=r+dr;
+        if(wrapX) nc=(nc+cols)%cols;
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const nidx=nr*cols+nc;
         if(mask[nidx] && map.cellTerritory[nidx]===-1){ map.cellTerritory[nidx]=t.id; q.push(nidx); }
@@ -2737,6 +2812,7 @@ function enforceMinContinentSize(map, minSize){
 function pickSpreadSeeds(map, ids, k){
   const pool = shuffle(ids.slice());
   const chosen = [pool.pop()];
+  const W = map.cols*map.cellSize;
   while(chosen.length<k && pool.length){
     let bestIdx=0, bestDist=-1;
     for(let i=0;i<pool.length;i++){
@@ -2744,7 +2820,7 @@ function pickSpreadSeeds(map, ids, k){
       let minD = Infinity;
       for(const cid of chosen){
         const cc = map.territories[cid].centroid;
-        const d = (c.x-cc.x)**2 + (c.y-cc.y)**2;
+        const d = wrapDelta(c.x-cc.x, W, map.wrapX)**2 + (c.y-cc.y)**2;
         if(d<minD) minD = d;
       }
       if(minD>bestDist){ bestDist=minD; bestIdx=i; }
@@ -2911,17 +2987,25 @@ let editorBrush = 2;
 let editorPainting = false;
 let editorShowContinents = false;
 
-/* Compute a label position (cell-weighted centroid) for each continent that has territories. */
+/* Compute a label position (cell-weighted centroid) for each continent that has territories.
+   On a wrapX map x is averaged as offsets from the continent's first territory, the short way
+   round, then folded back into the map — so a continent across the left/right edge gets its
+   label in its middle, not in the middle of the map. */
 function computeContinentLabelPositions(map){
   const acc = {};
+  const W = map.cols*map.cellSize;
   Object.values(map.territories).forEach(t=>{
     if(t.continentId==null || t.cells.length===0) return;
-    if(!acc[t.continentId]) acc[t.continentId] = {sx:0,sy:0,n:0};
+    if(!acc[t.continentId]) acc[t.continentId] = {ref:t.centroid.x,sx:0,sy:0,n:0};
     const a = acc[t.continentId];
-    a.sx += t.centroid.x*t.cells.length; a.sy += t.centroid.y*t.cells.length; a.n += t.cells.length;
+    a.sx += wrapDelta(t.centroid.x-a.ref, W, map.wrapX)*t.cells.length; a.sy += t.centroid.y*t.cells.length; a.n += t.cells.length;
   });
   const out = {};
-  Object.entries(acc).forEach(([cid,a])=>{ out[cid] = {x:a.sx/a.n, y:a.sy/a.n}; });
+  Object.entries(acc).forEach(([cid,a])=>{
+    let x = a.ref + a.sx/a.n;
+    if(map.wrapX) x = ((x%W)+W)%W;
+    out[cid] = {x, y:a.sy/a.n};
+  });
   return out;
 }
 
@@ -3051,7 +3135,7 @@ function drawEditorCanvas(){
     } else {
       ctx.fillStyle = t.color;
     }
-    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    pathFromLoops(ctx, withFlatWrapCopy(mapData, getTerritoryBoundaryLoops(mapData, t.id)));
     ctx.fill();
   });
 
@@ -3059,23 +3143,27 @@ function drawEditorCanvas(){
   // when in continent view (rather than comparing neighbor-by-neighbor, each continent's own
   // traced outer edge already IS exactly where a thick border belongs).
   terrs.forEach(t=>{
-    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
+    pathFromLoops(ctx, withFlatWrapCopy(mapData, getTerritoryBoundaryLoops(mapData, t.id)));
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,14,24,0.9)';
     ctx.stroke();
   });
   if(editorShowContinents){
+    ctx.save();
+    delete mapData._seamMask; // continents change while editing — rebuild rather than reuse the cached mask
+    clipOutSeam(ctx, mapData);
     Object.values(mapData.continents).forEach(cont=>{
       const loops = getContinentBoundaryLoops(mapData, cont.id);
       if(loops.length===0) return;
-      pathFromLoops(ctx, loops);
+      pathFromLoops(ctx, withFlatWrapCopy(mapData, loops));
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     });
+    ctx.restore();
   }
   drawWrapSeams(ctx, mapData, 0); // world-wrap seam marks (static here — no animation loop in the editor)
   // highlight current territory selection border
   if(editorCurrentTerrId && mapData.territories[editorCurrentTerrId] && mapData.territories[editorCurrentTerrId].cells.length){
-    pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, editorCurrentTerrId));
+    pathFromLoops(ctx, withFlatWrapCopy(mapData, getTerritoryBoundaryLoops(mapData, editorCurrentTerrId)));
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
     ctx.stroke();
   }
@@ -3084,10 +3172,11 @@ function drawEditorCanvas(){
   ctx.textAlign='center'; ctx.textBaseline='middle';
   Object.values(mapData.territories).forEach(t=>{
     if(t.cells.length===0) return;
+    const at = t.flatAnchor || t.centroid; // the editor always shows one flat copy
     ctx.fillStyle='rgba(0,0,0,0.55)';
-    ctx.fillText(t.name, t.centroid.x+1, t.centroid.y+1);
+    ctx.fillText(t.name, at.x+1, at.y+1);
     ctx.fillStyle= editorShowContinents ? 'rgba(255,255,255,0.85)' : '#fff';
-    ctx.fillText(t.name, t.centroid.x, t.centroid.y);
+    ctx.fillText(t.name, at.x, at.y);
   });
   if(editorShowContinents){
     ctx.font = 'bold 17px sans-serif';
@@ -4919,7 +5008,7 @@ function drawAttackAnimBadges(ctx, now){
   const a = attackAnim;
   const fromT = mapData.territories[a.fromId], toT = mapData.territories[a.toId];
   if(!fromT || !toT){ finishAttackAnim(); return; }
-  const fromPos = fromT.centroid, toPos = toT.centroid;
+  const fromPos = territoryAnchor(fromT), toPos = territoryAnchor(toT);
   const elapsed = now-a.stageStart;
   // Across a world-wrap seam the badge flies toward the defender's wrapped image (out through the
   // near edge) — the scene is tiled on a wrapping map, so the next copy shows it arriving.
@@ -5012,6 +5101,28 @@ function wrapShift(from, to){
   if(mapData.wrapY){ const dy=to.y-from.y; if(dy>H/2) y=-H; else if(dy<-H/2) y=H; }
   return {x, y};
 }
+// Where a territory's badge sits and its arrows start and end: its centroid — except on a wrapX
+// map shown as one flat copy, where a territory across the left/right edge appears as two halves
+// and uses flatAnchor instead (inside the bigger half, see recomputeGraph() in 02-map-model.js).
+function territoryAnchor(t){ return (!wrapTiled() && t.flatAnchor) || t.centroid; }
+// A territory's outline (getTerritoryBoundaryLoops) is in shape space: one piece, which for a
+// territory across the left/right edge runs past the right edge of the map. True for those.
+function territoryOverhangs(map, t){ return map.wrapX && territoryBBox(map, t)[2] > map.cols*map.cellSize; }
+// Outline loops for drawing a wrapX map as ONE flat copy in a single path: any loop that runs past
+// the right edge is added again one map-width to the left, where the rest of the shape shows.
+// (Only for flat fills/strokes — a gradient fill wants each copy centered on its own piece.)
+function withFlatWrapCopy(map, loops){
+  if(!map.wrapX) return loops;
+  const W = map.cols*map.cellSize;
+  const over = loops.filter(loop=> loop.some(p=> p[0]>W));
+  return over.length ? loops.concat(over.map(loop=> loop.map(([x,y])=> [x-W, y]))) : loops;
+}
+// The territory's centroid in the same shape space as its outline (the centroid itself is
+// folded into the map, so it can sit one map-width left of the piece the outline draws).
+function territoryShapeCenter(map, t){
+  const c = t.centroid;
+  return { x: c.x < territoryBBox(map, t)[0] ? c.x + map.cols*map.cellSize : c.x, y: c.y };
+}
 // ---- World-wrap camera ----
 // On a wrapping axis the canvas is exactly as big as the visible area and never scrolls; instead
 // wrapView.x/.y (map-native px shown at the canvas's left/top edge) moves when the player pans,
@@ -5044,29 +5155,32 @@ function wrapMidpoint(from, to){
   return { x: clamp(m.x, 12, W-12), y: clamp(m.y, 12, H-12) };
 }
 
-// Continent outlines are traced as if the map edge were a coastline, so on a wrapping map they'd
-// draw a straight white line down the seam even where the SAME continent simply continues on
-// the other side. This builds an even-odd clip that masks those seam stretches out (only those —
-// where two different continents meet at the seam, the outline is a real border and stays).
-// Cached per map object; continents never change mid-game.
+// A continent's outline is traced in one piece across the left/right edge (see
+// getContinentBoundaryLoops()) — except one that reaches all the way round the world, which is
+// traced as stored, so its outline runs straight down the map edge where it simply continues on
+// the other side (and wrapY maps, which are never unwrapped). This builds an even-odd clip that
+// masks those edge stretches out (only those — where two different continents meet at the edge,
+// the outline is a real border and stays). Cached per map object; continents never change mid-game.
 function seamOutlineMask(map){
   if(map._seamMask!==undefined) return map._seamMask;
   const cs = map.cellSize, W = map.cols*cs, H = map.rows*cs, pad = 6;
   const rects = [];
+  Object.keys(map.continents).forEach(id=> getContinentBoundaryLoops(map, Number(id))); // fills map._contUncut
+  const uncut = map._contUncut || new Set();
   const contOf = idx=>{ const t = map.territories[map.cellTerritory[idx]]; return t ? t.continentId : null; };
-  function scan(len, cellA, cellB, toRects){
+  function scan(len, cellA, cellB, onlyCont, toRects){
     let start = -1;
     for(let i=0;i<=len;i++){
       let same = false;
       if(i<len){ const a=map.cellTerritory[cellA(i)], b=map.cellTerritory[cellB(i)];
-        same = a!==-1 && b!==-1 && contOf(cellA(i))!=null && contOf(cellA(i))===contOf(cellB(i)); }
+        same = a!==-1 && b!==-1 && contOf(cellA(i))!=null && contOf(cellA(i))===contOf(cellB(i)) && onlyCont(contOf(cellA(i))); }
       if(same && start<0) start = i;
       if(!same && start>=0){ toRects(start*cs-pad, i*cs+pad); start=-1; }
     }
   }
-  if(map.wrapX) scan(map.rows, r=>r*map.cols+map.cols-1, r=>r*map.cols,
+  if(map.wrapX) scan(map.rows, r=>r*map.cols+map.cols-1, r=>r*map.cols, cid=>uncut.has(cid),
     (a,b)=>{ rects.push([-pad,a,pad*2,b-a],[W-pad,a,pad*2,b-a]); });
-  if(map.wrapY) scan(map.cols, c=>(map.rows-1)*map.cols+c, c=>c,
+  if(map.wrapY) scan(map.cols, c=>(map.rows-1)*map.cols+c, c=>c, ()=>true,
     (a,b)=>{ rects.push([a,-pad,b-a,pad*2],[a,H-pad,b-a,pad*2]); });
   map._seamMask = rects.length ? rects : null;
   return map._seamMask;
@@ -5414,11 +5528,12 @@ function positionPortraitControlStacks(){
   right.style.bottom = bottomPx;
 }
 
-// Map-native bounding box [x0,y0,x1,y1] of a territory's cells, cached on the territory object.
+// Map-native bounding box [x0,y0,x1,y1] of a territory's cells, cached on the territory object —
+// in shape space like its outline (x1 can be past the map's right edge, see unwrapCells()).
 function territoryBBox(map, t){
   if(t._bb) return t._bb;
   let minC=Infinity, maxC=-Infinity, minR=Infinity, maxR=-Infinity;
-  t.cells.forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
+  unwrapCells(t.cells, map.cols, map.wrapX).forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
   const cs = map.cellSize;
   t._bb = [minC*cs, minR*cs, (maxC+1)*cs, (maxR+1)*cs];
   return t._bb;
@@ -5571,7 +5686,9 @@ function drawGameCanvas(){
   // Everything is drawn in two layers, each once per tile: the base (fills/borders) for every
   // tile first, then the overlay (arrows/badges/labels) — so an arrow or badge spilling across a
   // tile boundary isn't painted over by the next tile's base fills.
-  const drawBase = ()=>{
+  // isCopy: this pass only fills in the overhang of territories across the right edge (single flat
+  // copy of a wrapX map, see paintScene()), so the one-off edge marks aren't drawn again.
+  const drawBase = (isCopy)=>{
   terrs.forEach(t=>{
     if(offView(t)) return;
     let color;
@@ -5588,7 +5705,8 @@ function drawGameCanvas(){
         const prevOwner = lastDrawnOwner[t.id];
         const fromColor = prevOwner!=null && game.players[prevOwner] ? playerOf(prevOwner).color : '#444';
         colorFades[t.id] = {from:fromColor, to:color, start:now};
-        spawnCaptureParticles(t.centroid.x, t.centroid.y, color);
+        const at = territoryAnchor(t);
+        spawnCaptureParticles(at.x, at.y, color);
       }
       lastDrawnOwner[t.id] = ownerId;
       const fade = colorFades[t.id];
@@ -5603,7 +5721,7 @@ function drawGameCanvas(){
     // landmass" look with no texture art needed. Radius is derived from cell count (roughly the
     // territory's own extent in grid units) so it scales sensibly from a 1-cell sliver up to a
     // large territory instead of using one fixed size for every shape.
-    const cx=t.centroid.x, cy=t.centroid.y;
+    const {x:cx, y:cy} = territoryShapeCenter(mapData, t);
     const radius = Math.max(mapData.cellSize*1.5, Math.sqrt(t.cells.length)*mapData.cellSize*0.85);
     const grad = ctx.createRadialGradient(cx,cy,0, cx,cy,radius);
     grad.addColorStop(0, shadeColor(color, 16));
@@ -5614,13 +5732,12 @@ function drawGameCanvas(){
     // right after fill() — only beginPath() would clear it). Bounded to this territory's own
     // cell bounding box rather than the whole canvas so it stays cheap on maps with many
     // territories.
-    let minC=Infinity,maxC=-Infinity,minR=Infinity,maxR=-Infinity;
-    t.cells.forEach(([c,r])=>{ if(c<minC)minC=c; if(c>maxC)maxC=c; if(r<minR)minR=r; if(r>maxR)maxR=r; });
+    const bb = territoryBBox(mapData, t);
     ctx.save();
     ctx.clip();
     ctx.globalAlpha = 0.06;
     ctx.fillStyle = getNoisePattern(ctx);
-    ctx.fillRect(minC*cs, minR*cs, (maxC-minC+1)*cs, (maxR-minR+1)*cs);
+    ctx.fillRect(bb[0], bb[1], bb[2]-bb[0], bb[3]-bb[1]);
     ctx.restore();
   });
 
@@ -5633,7 +5750,7 @@ function drawGameCanvas(){
       pathFromLoops(ctx, mine.flatMap(t=>getTerritoryBoundaryLoops(mapData, t.id)));
       ctx.clip();
       ctx.fillStyle = getStripePattern(ctx);
-      ctx.fillRect(0,0,nativeW,nativeH);
+      ctx.fillRect(0,0,nativeW*2,nativeH); // 2x: outlines across the right edge run past it
       ctx.restore();
     }
   }
@@ -5685,7 +5802,7 @@ function drawGameCanvas(){
   }
   ctx.restore();
   // Single fixed copy of a wrapping map: mark the stretches of edge that join each other.
-  if(!wrapping && mapIsWrapping()) drawWrapSeams(ctx, mapData, reducedMotion ? 0 : now);
+  if(!wrapping && mapIsWrapping() && !isCopy) drawWrapSeams(ctx, mapData, reducedMotion ? 0 : now);
   };
   // selection highlight — a slow pulsing glow instead of a static line, so the currently
   // selected territory/territories stay noticeable at a glance instead of blending into the
@@ -5701,10 +5818,10 @@ function drawGameCanvas(){
     canAttack(game.selectedFrom, game.selectedTo, currentPlayerId());
   const showFortifyLine = game.phase==='fortify' && game.selectedFrom!=null && game.selectedTo!=null && canFortifyNow(currentPlayer());
   // The arrow/line target, on the same side of the seam as the source on a wrapping map.
-  const selFromPos = game.selectedFrom!=null && mapData.territories[game.selectedFrom] ? mapData.territories[game.selectedFrom].centroid : null;
+  const selFromPos = game.selectedFrom!=null && mapData.territories[game.selectedFrom] ? territoryAnchor(mapData.territories[game.selectedFrom]) : null;
   const selToPos = (()=>{
     if(!selFromPos || game.selectedTo==null || !mapData.territories[game.selectedTo]) return null;
-    const to = mapData.territories[game.selectedTo].centroid, sh = wrapShift(selFromPos, to);
+    const to = territoryAnchor(mapData.territories[game.selectedTo]), sh = wrapShift(selFromPos, to);
     return {x:to.x+sh.x, y:to.y+sh.y};
   })();
   // The arrow/line as drawable segments: one, or — across the seam on a single fixed copy of the
@@ -5712,21 +5829,28 @@ function drawGameCanvas(){
   // canvas clips each half at its own edge; the tiled view gets the other half from the next tile.
   const flowSegs = !selToPos ? [] : [[selFromPos, selToPos]];
   if(selToPos && !wrapping && game.selectedTo!=null){
-    const to = mapData.territories[game.selectedTo].centroid;
+    const to = territoryAnchor(mapData.territories[game.selectedTo]);
     if(to.x!==selToPos.x || to.y!==selToPos.y) flowSegs.push([{x:selFromPos.x-(selToPos.x-to.x), y:selFromPos.y-(selToPos.y-to.y)}, to]);
   }
   // Expired particles dropped once per frame, before the per-tile drawing below.
   captureParticles = captureParticles.filter(pt=> now-pt.start<PARTICLE_MS);
+  // Single flat copy of a wrapX map: a territory across the right edge also needs its outline
+  // drawn one map-width to the left, where the rest of it shows (the base layer gets that from
+  // paintScene()'s extra pass; the overlay is drawn once, so the selection glow does it itself).
+  const flatShifts = id=> (!tileX && territoryOverhangs(mapData, mapData.territories[id])) ? [0, -nativeW] : [0];
   const drawOverlay = ()=>{
   [['selectedFrom','#fff'],['selectedTo','#f2b84b']].forEach(([key,col])=>{
     const id = game[key];
     if(id!=null && mapData.territories[id]){
-      pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, id));
-      ctx.save();
-      ctx.shadowColor = col; ctx.shadowBlur = 5+7*pulse;
-      ctx.strokeStyle=col; ctx.lineWidth=3+1.2*pulse;
-      ctx.stroke();
-      ctx.restore();
+      flatShifts(id).forEach(sx=>{
+        ctx.save();
+        ctx.translate(sx, 0);
+        pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, id));
+        ctx.shadowColor = col; ctx.shadowBlur = 5+7*pulse;
+        ctx.strokeStyle=col; ctx.lineWidth=3+1.2*pulse;
+        ctx.stroke();
+        ctx.restore();
+      });
     }
   });
   if(showArrow) flowSegs.forEach(([a,b])=> drawFlowLine(ctx, a, b, now, {rainbow:true, cycleMs:1350, gap:16}));
@@ -5738,7 +5862,10 @@ function drawGameCanvas(){
   // specially further down instead).
   Object.values(mapData.territories).forEach(t=>{
     if(t.cells.length===0) return;
-    if(offView(t)) return;
+    // culled by the badge's own position, not the territory's outline: across the right edge the
+    // anchor can sit one map-width left of the outline's piece (see territoryShapeCenter())
+    const at = territoryAnchor(t);
+    if(vis && (at.x < vis.x0-CULL_PAD || at.x > vis.x1+CULL_PAD || at.y < vis.y0-CULL_PAD || at.y > vis.y1+CULL_PAD)) return;
     if(attackAnim && (t.id===attackAnim.fromId || t.id===attackAnim.toId)) return;
     const realArmyCount = game.armies[t.id];
     if(realArmyCount===undefined) return;
@@ -5761,7 +5888,7 @@ function drawGameCanvas(){
       const isValidTo = t.id===game.selectedTo && game.selectedFrom!=null && canAttack(game.selectedFrom, t.id, currentPlayerId());
       if(isFrom || isValidTo) badgeScale = 1+0.3*pulse;
     }
-    drawBadgeWithLabel(ctx, t.centroid.x, t.centroid.y, armyCount, t.name, {scale:badgeScale});
+    drawBadgeWithLabel(ctx, at.x, at.y, armyCount, t.name, {scale:badgeScale});
   });
   if(attackAnim) drawAttackAnimBadges(ctx, now);
   if(showContinentsGame){
@@ -5801,11 +5928,17 @@ function drawGameCanvas(){
     ctx.fillStyle = OCEAN_COLOR;
     ctx.fillRect(0, 0, ew, eh);
     const xs = [], ys = [];
-    if(tileX){ for(let x=-mod(ox,nativeW); x<ew; x+=nativeW) xs.push(x); } else xs.push(-ox);
+    // Tiled wrapX: also the copy just left of the first visible one — territories across the
+    // right edge draw past it (shape space, see getTerritoryBoundaryLoops()), so that copy's
+    // overhang is what fills the strip at the left. Culling keeps it to those few territories.
+    if(tileX){ for(let x=-mod(ox,nativeW)-(mapData.wrapX ? nativeW : 0); x<ew; x+=nativeW) xs.push(x); } else xs.push(-ox);
     if(tileY){ for(let y=-mod(oy,nativeH); y<eh; y+=nativeH) ys.push(y); } else ys.push(-oy);
-    [drawBase, drawOverlay].forEach(layer=> ys.forEach(ty=> xs.forEach(tx=>{
+    // Single flat copy of a wrapX map: the base layer once more, one map-width to the left, to
+    // show the overhang of territories across the right edge at the left edge (isCopy).
+    const baseXs = (!tileX && mapData.wrapX) ? xs.concat([xs[0]-nativeW]) : xs;
+    [[drawBase, baseXs], [drawOverlay, xs]].forEach(([layer, lxs])=> ys.forEach(ty=> lxs.forEach((tx, i)=>{
       vis = {x0:-tx, y0:-ty, x1:-tx+ew, y1:-ty+eh};
-      ctx.save(); ctx.translate(tx, ty); layer(); ctx.restore();
+      ctx.save(); ctx.translate(tx, ty); layer(lxs!==xs && i>=xs.length); ctx.restore();
     })));
     vis = null;
     ctx.restore();
@@ -6058,7 +6191,7 @@ function positionFloatingAttackButtons(){
   if(wrap.hidden) return;
   const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
   if(!fromT || !toT){ hideFloatingAttackButtons(); return; }
-  const mid = wrapMidpoint(fromT.centroid, toT.centroid);
+  const mid = wrapMidpoint(territoryAnchor(fromT), territoryAnchor(toT));
   const pt = mapPointToScreen(mid.x, mid.y);
   // CSS transform (translate(-50%, calc(-100% - 14px))) handles centering horizontally and
   // sitting the box above this exact point — see style.css.
@@ -6089,7 +6222,7 @@ function positionFloatingFortifyButton(){
   if(wrap.hidden) return;
   const fromT = mapData.territories[game.selectedFrom], toT = mapData.territories[game.selectedTo];
   if(!fromT || !toT){ hideFloatingFortifyButton(); return; }
-  const mid = wrapMidpoint(fromT.centroid, toT.centroid);
+  const mid = wrapMidpoint(territoryAnchor(fromT), territoryAnchor(toT));
   const pt = mapPointToScreen(mid.x, mid.y);
   wrap.style.left = pt.x+'px';
   wrap.style.top = pt.y+'px';
@@ -6914,7 +7047,10 @@ function setMapWrap(on){
     mapData._quickPlay = true;
   } else {
     mapData.wrapX = on; mapData.wrapY = false;
+    // outlines/bboxes of territories across the edge are laid out differently with and without wrap
     delete mapData._seamMask;
+    mapData._terrBoundaryCache = {}; mapData._contBoundaryCache = {};
+    Object.values(mapData.territories).forEach(t=>{ delete t._bb; });
     recomputeGraph(mapData);
   }
 }

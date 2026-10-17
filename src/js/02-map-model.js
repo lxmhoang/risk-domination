@@ -46,9 +46,10 @@ function newMap(cols, rows, name){
     // World wrap (cylinder, like Civilization): wrapX joins the left edge to the right edge, so a
     // territory touching column 0 neighbors whatever touches column cols-1 on the same row.
     // wrapY is the same along the top/bottom — only ever set by rotateMapData90CW(), which turns
-    // a horizontal wrap into a vertical one. Adjacency is the only thing that actually changes
-    // (see recomputeGraph()); territories never straddle the seam (the generator grows them
-    // without wrapping), so badges/borders/hit-testing need no seam handling of their own.
+    // a horizontal wrap into a vertical one. On a wrapX map the generator treats the left/right
+    // edge like any other column, so territories, continents and lakes run across it; outlines and
+    // badge anchors are worked out on the shape laid out in one piece (see unwrapCells()).
+    // wrapY is adjacency-only (see recomputeGraph()) — wrapping maps are never rotated in play.
     wrapX: false,
     wrapY: false,
     _terrBoundaryCache: {}, // terrId -> smoothed pixel-space loops, see getTerritoryBoundaryLoops()
@@ -90,6 +91,39 @@ function mapFromPlainObject(obj){
 
 function cellIndex(map,c,r){ return r*map.cols + c; }
 function inBounds(map,c,r){ return c>=0 && c<map.cols && r>=0 && r<map.rows; }
+
+// ---- World wrap geometry (wrapX) ----
+// A wrapX map is a cylinder: column cols-1 sits right next to column 0, so there's no special
+// meridian — territories, continents and lakes run across the left/right edge like anywhere else.
+// Cells are always STORED in their canonical column [0,cols) (cellTerritory indexes, t.cells);
+// these helpers are for the geometry that needs a shape laid out in one piece.
+// Column offset dx taken the short way round on a wrapping axis.
+function wrapDelta(dx, size, wrap){
+  if(!wrap) return dx;
+  dx = ((dx%size)+size)%size;
+  return dx>size/2 ? dx-size : dx;
+}
+// A cell list laid out contiguously ("shape space"): on a wrapX map, a shape that touches both
+// the first and last column is cut at its widest run of empty columns instead of at the map
+// edge, and the columns left of that cut are shifted right by cols — so its cells span
+// [start, start+width) with start in [0,cols), possibly past the right edge. Cutting at a column
+// the shape doesn't use never separates two of its cells that touch, so the result is the same
+// shape, just in one piece. A shape using every column has no such cut and is returned as is.
+function unwrapCells(cells, cols, wrapX){
+  if(!wrapX || cells.length===0) return cells;
+  const used = new Uint8Array(cols);
+  for(const [c] of cells) used[c] = 1;
+  if(!used[0] || !used[cols-1]) return cells;
+  let bestLen = 0, bestEnd = -1, run = 0;
+  for(let c=0;c<cols;c++){
+    if(used[c]){ run = 0; continue; }
+    run++;
+    if(run>bestLen){ bestLen = run; bestEnd = c; }
+  }
+  if(bestLen===0) return cells;
+  const start = bestEnd+1;
+  return cells.map(([c,r])=> c<start ? [c+cols,r] : [c,r]);
+}
 
 function createTerritory(map, name){
   const id = map.nextTerrId++;
@@ -342,6 +376,7 @@ function traceAndSmoothCells(map, cellList, idFn){
 // since map.cellTerritory[r*cols+c] would otherwise silently alias into the wrong row/be
 // out-of-range for a negative or overflowing c/r.
 function territoryIdAt(map, c, r){
+  if(map.wrapX) c = ((c%map.cols)+map.cols)%map.cols; // shape-space columns can run past either edge
   if(c<0||r<0||c>=map.cols||r>=map.rows) return -1;
   return map.cellTerritory[cellIndex(map,c,r)];
 }
@@ -356,12 +391,18 @@ function continentIdAt(map, c, r){
 // cached until invalidateBoundaryCache() drops it (see paintCell() below). idFn is by TERRITORY
 // id here — see splitLoopIntoRuns() for why boundary simplification needs to know exactly which
 // neighboring territory (not just "outside") faces each edge.
+// On a wrapX map the loops are in shape space (see unwrapCells()): a territory across the left/
+// right edge comes out as one outline that runs past the right edge (x > cols*cellSize), and the
+// renderer draws the map's next copy (or, showing one copy, a copy shifted left by the map's
+// width) to show that part at the left edge. A shared border with a neighbor drawn on the other
+// side of the edge comes out the same curve shifted by exactly the map width — the simplification
+// is translation-invariant (douglasPeuckerOpen's tie-break only compares points within one run).
 function getTerritoryBoundaryLoops(map, terrId){
   const t = map.territories[terrId];
   if(!t || t.cells.length===0) return [];
   if(!map._terrBoundaryCache) map._terrBoundaryCache = {};
   if(map._terrBoundaryCache[terrId]) return map._terrBoundaryCache[terrId];
-  const loops = traceAndSmoothCells(map, t.cells, (c,r)=>territoryIdAt(map,c,r));
+  const loops = traceAndSmoothCells(map, unwrapCells(t.cells, map.cols, map.wrapX), (c,r)=>territoryIdAt(map,c,r));
   map._terrBoundaryCache[terrId] = loops;
   return loops;
 }
@@ -371,12 +412,20 @@ function getTerritoryBoundaryLoops(map, terrId){
 // CONTINENT id here (not territory id) so an internal territory-territory seam within the same
 // continent never looks like a "neighbor" to split a run on — only a genuinely different
 // neighboring continent (or empty space) does.
+// Shape space on a wrapX map, as for territories. A continent that reaches all the way round the
+// world has no column to cut it at, so it's traced as stored and its outline runs straight down
+// the map edge where it continues on the other side — those continents are listed in
+// map._contUncut for the renderer to mask that stretch out (seamOutlineMask, 06-render-game.js).
 function getContinentBoundaryLoops(map, contId){
   if(!map._contBoundaryCache) map._contBoundaryCache = {};
   if(map._contBoundaryCache[contId]) return map._contBoundaryCache[contId];
-  const cellList = [];
+  let cellList = [];
   Object.values(map.territories).forEach(t=>{ if(t.continentId===contId) cellList.push(...t.cells); });
-  const loops = cellList.length ? traceAndSmoothCells(map, cellList, (c,r)=>continentIdAt(map,c,r)) : [];
+  const shaped = unwrapCells(cellList, map.cols, map.wrapX);
+  if(!map._contUncut) map._contUncut = new Set();
+  if(map.wrapX && shaped===cellList && cellList.some(([c])=>c===0) && cellList.some(([c])=>c===map.cols-1)) map._contUncut.add(contId);
+  else map._contUncut.delete(contId);
+  const loops = shaped.length ? traceAndSmoothCells(map, shaped, (c,r)=>continentIdAt(map,c,r)) : [];
   map._contBoundaryCache[contId] = loops;
   return loops;
 }
@@ -386,6 +435,7 @@ function getContinentBoundaryLoops(map, contId){
 // enough to just drop that whole (much smaller) cache rather than track it precisely.
 function invalidateBoundaryCache(map, terrId){
   if(map._terrBoundaryCache) delete map._terrBoundaryCache[terrId];
+  if(map.territories[terrId]) delete map.territories[terrId]._bb; // renderer's bbox cache (territoryBBox)
   map._contBoundaryCache = {};
 }
 
@@ -455,10 +505,21 @@ function recomputeGraph(map){
   // "centroid" is the territory's anchor point — where its army badge sits and where attack/
   // fortify arrows start and end. It's the deepest cell (see territoryPoleCell), not the plain
   // average position, since the average of a concave territory can land on its edge or outside it.
+  // On a wrapX map it's the deepest cell of the whole territory laid out in one piece, folded back
+  // into the map's columns. A territory across the edge also gets flatAnchor: the deepest cell
+  // with the map edge counted as an edge — where its badge goes when the map is shown as ONE flat
+  // copy, so the badge sits whole inside the bigger of its two halves instead of being cut in two.
+  const cs = map.cellSize;
   Object.values(map.territories).forEach(t=>{
+    delete t.flatAnchor;
     if(t.cells.length===0){ t.centroid={x:-1,y:-1}; return; }
-    const [pc,pr] = territoryPoleCell(t.cells);
-    t.centroid = { x: (pc+0.5)*map.cellSize, y: (pr+0.5)*map.cellSize };
+    const shaped = unwrapCells(t.cells, map.cols, map.wrapX);
+    const [pc,pr] = territoryPoleCell(shaped);
+    t.centroid = { x: (pc%map.cols+0.5)*cs, y: (pr+0.5)*cs };
+    if(shaped!==t.cells){
+      const [fc,fr] = territoryPoleCell(t.cells);
+      t.flatAnchor = { x: (fc+0.5)*cs, y: (fr+0.5)*cs };
+    }
   });
 }
 
@@ -576,7 +637,8 @@ function bridgeComponentOut(map, compTerrIds){
   while(qi<queue.length && !target){
     const cur = queue[qi++];
     for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const nc=cur.c+dc, nr=cur.r+dr;
+      let nc=cur.c+dc; const nr=cur.r+dr;
+      if(map.wrapX) nc=(nc+cols)%cols;
       if(!inBounds(map,nc,nr)) continue;
       const idx = nr*cols+nc;
       if(visited.has(idx)) continue;
@@ -865,7 +927,7 @@ function territoryFitsBadges(map, cells){
   if(cells.length<3) return false;
   const rC = ARMY_BADGE_RADIUS/map.cellSize;
   const need = rC + BADGE_FIT_MARGIN_CELLS;
-  const e = territoryEDT(cells);
+  const e = territoryEDT(unwrapCells(cells, map.cols, map.wrapX));
   const need2 = need*need;
   const pts = [];
   let best2 = 0;
@@ -916,8 +978,12 @@ function territoryPoleCell(cells){
 // Smooth random field in [1-amp, 1+amp] (bilinear-interpolated coarse random grid) used as a
 // per-cell step cost, so Voronoi region boundaries wander organically instead of running in the
 // dead-straight lines a plain distance metric gives.
-function makeNoiseWeight(cols, rows, step, amp){
-  const gw = Math.ceil(cols/step)+2, gh = Math.ceil(rows/step)+2;
+// wrapX: the field repeats every `cols` columns (the coarse grid's columns wrap round, with the
+// step stretched slightly so a whole number of them fits), so it's continuous across the edge.
+function makeNoiseWeight(cols, rows, step, amp, wrapX){
+  const period = wrapX ? Math.max(1, Math.round(cols/step)) : 0;
+  const stepX = wrapX ? cols/period : step;
+  const gw = wrapX ? period : Math.ceil(cols/step)+2, gh = Math.ceil(rows/step)+2;
   const g = new Float64Array(gw*gh);
   for(let i=0;i<g.length;i++) g[i] = random()*2-1;
   const w = new Float64Array(cols*rows);
@@ -925,8 +991,9 @@ function makeNoiseWeight(cols, rows, step, amp){
   for(let r=0;r<rows;r++){
     const gy = r/step, y0 = Math.floor(gy), fy = smooth(gy-y0);
     for(let c=0;c<cols;c++){
-      const gx = c/step, x0 = Math.floor(gx), fx = smooth(gx-x0);
-      const a = g[y0*gw+x0], b = g[y0*gw+x0+1], cc = g[(y0+1)*gw+x0], d = g[(y0+1)*gw+x0+1];
+      const gx = c/stepX, x0 = Math.floor(gx), fx = smooth(gx-x0);
+      const x1 = wrapX ? (x0+1)%gw : x0+1;
+      const a = g[y0*gw+x0], b = g[y0*gw+x1], cc = g[(y0+1)*gw+x0], d = g[(y0+1)*gw+x1];
       const val = (a*(1-fx)+b*fx)*(1-fy) + (cc*(1-fx)+d*fx)*fy;
       w[r*cols+c] = 1 + amp*val;
     }
@@ -942,10 +1009,10 @@ const NB_LEN = [1,1,1,1,Math.SQRT2,Math.SQRT2,Math.SQRT2,Math.SQRT2];
 // Diagonal steps only where both cells they cut past are in the mask too. `offsets` (optional,
 // per seed) gives a seed a head start — an additively-weighted Voronoi, which is how the
 // generator lets a too-small region claim more land from its neighbors. Returns Int32Array
-// labels (-1 = unreachable from every seed).
+// labels (-1 = unreachable from every seed). wrapX: paths run across the left/right edge.
 // Called dozens of times per generated map, so the heap is inlined over typed arrays rather than
 // going through a generic heap object — this loop is most of the generator's run time.
-function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets){
+function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets, wrapX){
   const n = cols*rows;
   const dist = new Float64Array(n).fill(Infinity);
   const label = new Int32Array(n).fill(-1);
@@ -981,7 +1048,8 @@ function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets){
     if(d>dist[idx]) continue;
     const c = idx%cols, r = (idx/cols)|0, w0 = weight[idx], lab = label[idx];
     for(let k=0;k<8;k++){
-      const nc=c+NB_DX[k], nr=r+NB_DY[k];
+      let nc=c+NB_DX[k]; const nr=r+NB_DY[k];
+      if(wrapX){ if(nc<0) nc+=cols; else if(nc>=cols) nc-=cols; }
       if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
       const nidx = nr*cols+nc;
       if(!mask[nidx]) continue;
@@ -995,7 +1063,7 @@ function weightedVoronoi(cols, rows, mask, seedIdxs, weight, offsets){
 
 // Greedy farthest-point sampling of k cells out of `cellIdxs` (flat indices) — spreads seeds
 // evenly over the land instead of leaving 2 of them side by side.
-function farthestPointSeeds(cols, cellIdxs, k){
+function farthestPointSeeds(cols, cellIdxs, k, wrapX){
   if(cellIdxs.length===0) return [];
   const minD = new Float64Array(cellIdxs.length).fill(Infinity);
   const seeds = [];
@@ -1005,7 +1073,7 @@ function farthestPointSeeds(cols, cellIdxs, k){
     const sc = s%cols, sr = (s/cols)|0;
     let bi = -1, bd = -1;
     for(let i=0;i<cellIdxs.length;i++){
-      const idx = cellIdxs[i], dd = (idx%cols-sc)**2 + (((idx/cols)|0)-sr)**2;
+      const idx = cellIdxs[i], dd = wrapDelta(idx%cols-sc, cols, wrapX)**2 + (((idx/cols)|0)-sr)**2;
       if(dd<minD[i]) minD[i] = dd;
       if(minD[i]>bd){ bd = minD[i]; bi = i; }
     }
@@ -1017,15 +1085,18 @@ function farthestPointSeeds(cols, cellIdxs, k){
 
 // One Lloyd step: move every seed to the cell of its own region nearest that region's average
 // position (staying on a real cell of the region, so it never lands in water).
-function lloydMoveSeeds(cols, cellIdxs, label, seeds){
+// Columns are averaged as offsets from the region's own seed, taken the short way round on a
+// wrapX map — so a region across the left/right edge averages to its middle, not the map's.
+function lloydMoveSeeds(cols, cellIdxs, label, seeds, wrapX){
   const k = seeds.length;
   const sx = new Float64Array(k), sy = new Float64Array(k), cnt = new Float64Array(k);
-  for(const idx of cellIdxs){ const l = label[idx]; if(l<0) continue; sx[l]+=idx%cols; sy[l]+=(idx/cols)|0; cnt[l]++; }
+  const refC = seeds.map(s=> s%cols);
+  for(const idx of cellIdxs){ const l = label[idx]; if(l<0) continue; sx[l]+=wrapDelta(idx%cols-refC[l], cols, wrapX); sy[l]+=(idx/cols)|0; cnt[l]++; }
   const bestD = new Float64Array(k).fill(Infinity);
   const moved = seeds.slice();
   for(const idx of cellIdxs){
     const l = label[idx]; if(l<0 || cnt[l]===0) continue;
-    const dd = (idx%cols - sx[l]/cnt[l])**2 + (((idx/cols)|0) - sy[l]/cnt[l])**2;
+    const dd = wrapDelta(idx%cols - refC[l] - sx[l]/cnt[l], cols, wrapX)**2 + (((idx/cols)|0) - sy[l]/cnt[l])**2;
     if(dd<bestD[l]){ bestD[l]=dd; moved[l]=idx; }
   }
   return moved;
@@ -1033,11 +1104,11 @@ function lloydMoveSeeds(cols, cellIdxs, label, seeds){
 
 // Lloyd relaxation: repeatedly partition, then recenter every seed in its region. A few rounds
 // turn an uneven first partition into compact, roughly equal-area regions. Returns the labels.
-function relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, rounds){
-  let label = weightedVoronoi(cols, rows, mask, seeds, weight);
+function relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, rounds, wrapX){
+  let label = weightedVoronoi(cols, rows, mask, seeds, weight, null, wrapX);
   for(let it=0; it<rounds; it++){
-    seeds = lloydMoveSeeds(cols, cellIdxs, label, seeds);
-    label = weightedVoronoi(cols, rows, mask, seeds, weight);
+    seeds = lloydMoveSeeds(cols, cellIdxs, label, seeds, wrapX);
+    label = weightedVoronoi(cols, rows, mask, seeds, weight, null, wrapX);
   }
   return label;
 }
@@ -1048,17 +1119,17 @@ function relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, rounds){
 // (typically squeezed against the coast) grow into their roomier neighbors instead of being
 // merged away. Whatever still fails after this is handled by repairUnfitTerritories().
 function balancedFitPartition(map, mask, landIdxs, k, weight){
-  const {cols, rows} = map;
-  let seeds = farthestPointSeeds(cols, landIdxs, k);
+  const {cols, rows, wrapX} = map;
+  let seeds = farthestPointSeeds(cols, landIdxs, k, wrapX);
   const offsets = new Float64Array(seeds.length);
   // Most regions don't change between balancing rounds (only the ones next to a growing region
   // do) — a cheap signature of each region's cells skips re-checking the unchanged ones.
   const lastSig = new Array(seeds.length).fill(null), lastFit = new Array(seeds.length).fill(false);
   let label = null;
   for(let it=0; it<25; it++){
-    label = weightedVoronoi(cols, rows, mask, seeds, weight, offsets);
-    if(it<5){ seeds = lloydMoveSeeds(cols, landIdxs, label, seeds); continue; }
-    enforceConnectedRegions(cols, rows, landIdxs, label);
+    label = weightedVoronoi(cols, rows, mask, seeds, weight, offsets, wrapX);
+    if(it<5){ seeds = lloydMoveSeeds(cols, landIdxs, label, seeds, wrapX); continue; }
+    enforceConnectedRegions(cols, rows, landIdxs, label, wrapX);
     const cellsOf = seeds.map(()=>[]), sig = seeds.map(()=>0);
     for(const idx of landIdxs){
       const l=label[idx]; if(l<0) continue;
@@ -1074,15 +1145,15 @@ function balancedFitPartition(map, mask, landIdxs, k, weight){
     });
     if(!anyFail) return label;
   }
-  enforceConnectedRegions(cols, rows, landIdxs, label);
+  enforceConnectedRegions(cols, rows, landIdxs, label, wrapX);
   return label;
 }
 
 // A region can come out of the partition in more than one 4-connected piece (two regions
 // pinching through a diagonal gap, say) — the game's adjacency is 4-directional, so each region
 // keeps only its biggest piece and every smaller stray piece is handed to whichever other region
-// borders it most.
-function enforceConnectedRegions(cols, rows, cellIdxs, label){
+// borders it most. wrapX: cells either side of the left/right edge touch.
+function enforceConnectedRegions(cols, rows, cellIdxs, label, wrapX){
   for(let pass=0; pass<10; pass++){
     const comp = new Int32Array(cols*rows).fill(-1);
     const comps = [];
@@ -1093,7 +1164,8 @@ function enforceConnectedRegions(cols, rows, cellIdxs, label){
       for(let qi=0; qi<cells.length; qi++){
         const idx=cells[qi], c=idx%cols, r=(idx/cols)|0;
         for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const nc=c+dc, nr=r+dr;
+          let nc=c+dc; const nr=r+dr;
+          if(wrapX) nc=(nc+cols)%cols;
           if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
           const nidx=nr*cols+nc;
           if(comp[nidx]===-1 && label[nidx]===l){ comp[nidx]=id; cells.push(nidx); }
@@ -1110,7 +1182,8 @@ function enforceConnectedRegions(cols, rows, cellIdxs, label){
       for(const idx of cp.cells){
         const c=idx%cols, r=(idx/cols)|0;
         for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const nc=c+dc, nr=r+dr;
+          let nc=c+dc; const nr=r+dr;
+          if(wrapX) nc=(nc+cols)%cols;
           if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
           const nl = label[nr*cols+nc];
           if(nl>=0 && nl!==cp.l) counts[nl]=(counts[nl]||0)+1;
@@ -1131,7 +1204,8 @@ function territoryBorderCounts(map, t){
   const counts = {};
   for(const [c,r] of t.cells){
     for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const nc=c+dc, nr=r+dr;
+      let nc=c+dc; const nr=r+dr;
+      if(map.wrapX) nc=(nc+map.cols)%map.cols;
       if(!inBounds(map,nc,nr)) continue;
       const o = map.cellTerritory[cellIndex(map,nc,nr)];
       if(o!==-1 && o!==t.id) counts[o]=(counts[o]||0)+1;
@@ -1169,15 +1243,15 @@ function repairUnfitTerritories(map, water){
 // Tries to split `t` into 2 compact halves (2-seed relaxed partition inside it, a few different
 // random starts). Returns the two cell lists only if BOTH halves still fit 3 badges, else null.
 function trySplitTerritory(map, t, weight){
-  const {cols, rows} = map;
+  const {cols, rows, wrapX} = map;
   const cellIdxs = t.cells.map(([c,r])=> r*cols+c);
   const mask = new Uint8Array(cols*rows);
   cellIdxs.forEach(i=> mask[i]=1);
   for(let attempt=0; attempt<2; attempt++){
-    const seeds = farthestPointSeeds(cols, cellIdxs, 2);
+    const seeds = farthestPointSeeds(cols, cellIdxs, 2, wrapX);
     if(seeds.length<2) return null;
-    const label = relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, 4);
-    enforceConnectedRegions(cols, rows, cellIdxs, label);
+    const label = relaxedPartition(cols, rows, mask, cellIdxs, seeds, weight, 4, wrapX);
+    enforceConnectedRegions(cols, rows, cellIdxs, label, wrapX);
     const halves = [[],[]];
     for(const idx of cellIdxs){ const l=label[idx]; if(l>=0) halves[l].push([idx%cols,(idx/cols)|0]); }
     if(halves[0].length+halves[1].length!==cellIdxs.length || !halves[0].length || !halves[1].length) continue;
@@ -1274,7 +1348,7 @@ function generateTerritoryLayout(cols, rows, numTerr, name, waterRatio, waterSpr
   const targetTerr = Math.max(1, Math.min(numTerr, Math.floor(landIdxs.length/minCellsPerFitTerritory(map))));
   const mask = new Uint8Array(cols*rows);
   landIdxs.forEach(i=> mask[i]=1);
-  const weight = makeNoiseWeight(cols, rows, 10, 0.45);
+  const weight = makeNoiseWeight(cols, rows, 10, 0.45, wrapX);
   const label = balancedFitPartition(map, mask, landIdxs, targetTerr, weight);
 
   const byLabel = {};
@@ -1297,7 +1371,8 @@ function generateTerritoryLayout(cols, rows, numTerr, name, waterRatio, waterSpr
       const idx=q[qi], c=idx%cols, r=(idx/cols)|0;
       t.cells.push([c,r]);
       for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const nc=c+dc, nr=r+dr;
+        let nc=c+dc; const nr=r+dr;
+        if(wrapX) nc=(nc+cols)%cols;
         if(nc<0||nc>=cols||nr<0||nr>=rows) continue;
         const nidx=nr*cols+nc;
         if(mask[nidx] && map.cellTerritory[nidx]===-1){ map.cellTerritory[nidx]=t.id; q.push(nidx); }
@@ -1407,6 +1482,7 @@ function enforceMinContinentSize(map, minSize){
 function pickSpreadSeeds(map, ids, k){
   const pool = shuffle(ids.slice());
   const chosen = [pool.pop()];
+  const W = map.cols*map.cellSize;
   while(chosen.length<k && pool.length){
     let bestIdx=0, bestDist=-1;
     for(let i=0;i<pool.length;i++){
@@ -1414,7 +1490,7 @@ function pickSpreadSeeds(map, ids, k){
       let minD = Infinity;
       for(const cid of chosen){
         const cc = map.territories[cid].centroid;
-        const d = (c.x-cc.x)**2 + (c.y-cc.y)**2;
+        const d = wrapDelta(c.x-cc.x, W, map.wrapX)**2 + (c.y-cc.y)**2;
         if(d<minD) minD = d;
       }
       if(minD>bestDist){ bestDist=minD; bestIdx=i; }
