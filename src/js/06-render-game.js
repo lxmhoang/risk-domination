@@ -1607,8 +1607,8 @@ function openFortifyModal(fromId, toId){
 // enough of it to read its icon; later cards stack on top (z-index) so the overlap reads as a
 // physical fan rather than random draw order. When the hand forms a tradeable combo, the
 // container gets a gold outline and a badge showing the army value trading it in would pay —
-// all valid combos pay the same amount (see tradeInValue()), so there's no "best" combo to pick
-// between, any one found is already the best available.
+// findTradeCombo() already picks the best-paying combo (they only differ under the fixed rule,
+// see tradeInValue()).
 function renderCardsHandView(){
   const wrap = $('btnCardsModal');
   const viewer = game.players[0];
@@ -1627,7 +1627,7 @@ function renderCardsHandView(){
     wrap.appendChild(mini);
   });
   if(combo){
-    const value = tradeInValue(game.tradeRule, game.tradeCount+1, (viewer.personalTradeCount||0)+1);
+    const value = tradeInValue(game.tradeRule, game.tradeCount, viewer.personalTradeCount||0, combo.map(i=>cards[i]));
     const badge = el('span','ov-badge trade-badge', String(value));
     wrap.appendChild(badge);
   }

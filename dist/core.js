@@ -1829,23 +1829,27 @@ function standardStartingArmies(numPlayers){
 const CARD_TYPES = ['infantry','cavalry','artillery'];
 const CARD_ICON = {infantry:'🪖', cavalry:'🐎', artillery:'💣'};
 
-// Three trade-bonus rules a game can be started with (see game.tradeRule, chosen in setup):
-//  - fixed:       classic escalating table, but it PLATEAUS at the last table value forever
-//                 once reached — no reason to ever hold cards, every trade from then on pays
-//                 exactly the same.
-// The table (tradeValues), the progressive step and the exponential base/growth are from the config.
-//  - progressive: the table keeps climbing forever (+5 per trade) based on a count SHARED by
-//                 all players — trading later (after opponents have also traded) pays more, so
-//                 holding cards is a real (if risky) strategy. This is the game's original/
-//                 default behavior.
-//  - exponential: value compounds ~1.3x per trade, but tracked PER PLAYER instead of globally —
-//                 an opponent trading a lot doesn't help or hurt you; only your OWN trade count
-//                 matters, so the earlier and more often YOU personally trade, the faster your
-//                 own trades ramp up.
-function tradeInValue(rule, tradeCount, personalTradeCount){
+// Three trade-bonus rules a game can be started with (see game.tradeRule, chosen in setup),
+// as in the board game / Risk apps:
+//  - fixed:       the reward depends only on WHAT you trade, never on how many trades happened:
+//                 3 infantry = 4, 3 cavalry = 6, 3 artillery = 8, one of each = 10
+//                 (tradeFixedValues in the config).
+//  - progressive: a count SHARED by all players — each trade (by anyone) moves the next one up
+//                 the table 4, 6, 8, 10, 12, 15 (tradeValues), then +5 per trade (tradeProgressiveStep)
+//                 forever. Trading later pays more, so holding cards is a real (if risky)
+//                 strategy. This is the game's original/default behavior.
+//  - exponential: starts at 4 and compounds x1.3 per trade (4, 5, 7, 9, 11, …), but tracked PER
+//                 PLAYER — an opponent trading a lot doesn't help or hurt you; only your OWN trade
+//                 count matters.
+// tradeCount / personalTradeCount are the trades made BEFORE this one (0 for the first);
+// cards is the 3 card types being traded (only the fixed rule looks at them).
+function tradeInValue(rule, tradeCount, personalTradeCount, cards){
   const C = RUNTIME_CONFIG, table = C.tradeValues;
   if(rule==='exponential') return Math.round(C.tradeExpBase*Math.pow(C.tradeExpGrowth, personalTradeCount));
-  if(rule==='fixed') return table[Math.min(tradeCount, table.length-1)];
+  if(rule==='fixed'){
+    const F = C.tradeFixedValues;
+    return new Set(cards).size===1 ? F[cards[0]] : F.mixed;
+  }
   // progressive (default)
   if(tradeCount < table.length) return table[tradeCount];
   return table[table.length-1] + (tradeCount-table.length+1)*C.tradeProgressiveStep;
@@ -2892,7 +2896,7 @@ function aiTryTradeCards(p){
   // on which trade rule is active (see tradeInValue() for what each rule means):
   //  - progressive: the shared global count only goes up, so a LATER trade always pays MORE —
   //    holding is a real (if risky, since forced at 5 cards) strategy, so hold fairly often.
-  //  - fixed: value plateaus at a fixed cap, so once there, waiting gains nothing — trade ASAP.
+  //  - fixed: the reward depends only on the set traded, so waiting gains nothing — trade ASAP.
   //  - exponential: only the player's OWN trade count matters, and it compounds — the sooner
   //    (and more often) this AI personally trades, the faster ITS OWN future trades ramp up, so
   //    trade ASAP rather than sitting on cards that aren't growing in value by waiting.
@@ -2906,23 +2910,27 @@ function aiTryTradeCards(p){
   }
 }
 
+// The valid combo that pays the most (only the fixed rule pays differently per set; under the
+// other rules every valid combo is worth the same, so the first one found stays).
 function findTradeCombo(cards){
-  if(cards.length<3) return null;
+  let best = null, bestValue = -1;
   for(let i=0;i<cards.length;i++) for(let j=i+1;j<cards.length;j++) for(let k=j+1;k<cards.length;k++){
     const set=[cards[i],cards[j],cards[k]];
     const uniq = new Set(set);
-    if(uniq.size===1 || uniq.size===3) return [i,j,k];
+    if(uniq.size!==1 && uniq.size!==3) continue;
+    const value = tradeInValue(game.tradeRule, 0, 0, set);
+    if(value>bestValue){ best=[i,j,k]; bestValue=value; }
   }
-  return null;
+  return best;
 }
 
 function tradeCards(p, indices){
   const idxSorted = indices.slice().sort((a,b)=>b-a);
   const removed = idxSorted.map(i=>p.cards[i]);
   idxSorted.forEach(i=> p.cards.splice(i,1));
+  const value = tradeInValue(game.tradeRule, game.tradeCount, p.personalTradeCount||0, removed);
   game.tradeCount++;
   p.personalTradeCount = (p.personalTradeCount||0)+1;
-  const value = tradeInValue(game.tradeRule, game.tradeCount, p.personalTradeCount);
   p.totalReinforced += value;
   if(game.phase==='reinforce' && currentPlayerId()===p.id){
     game.reinforceRemaining += value;

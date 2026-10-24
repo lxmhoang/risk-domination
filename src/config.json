@@ -37,9 +37,14 @@
     8,
     10,
     12,
-    15,
-    20
+    15
   ],
+  "tradeFixedValues": {
+    "infantry": 4,
+    "cavalry": 6,
+    "artillery": 8,
+    "mixed": 10
+  },
   "tradeProgressiveStep": 5,
   "tradeExpBase": 4,
   "tradeExpGrowth": 1.3,

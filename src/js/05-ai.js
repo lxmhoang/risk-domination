@@ -509,7 +509,7 @@ function aiTryTradeCards(p){
   // on which trade rule is active (see tradeInValue() for what each rule means):
   //  - progressive: the shared global count only goes up, so a LATER trade always pays MORE —
   //    holding is a real (if risky, since forced at 5 cards) strategy, so hold fairly often.
-  //  - fixed: value plateaus at a fixed cap, so once there, waiting gains nothing — trade ASAP.
+  //  - fixed: the reward depends only on the set traded, so waiting gains nothing — trade ASAP.
   //  - exponential: only the player's OWN trade count matters, and it compounds — the sooner
   //    (and more often) this AI personally trades, the faster ITS OWN future trades ramp up, so
   //    trade ASAP rather than sitting on cards that aren't growing in value by waiting.
@@ -523,23 +523,27 @@ function aiTryTradeCards(p){
   }
 }
 
+// The valid combo that pays the most (only the fixed rule pays differently per set; under the
+// other rules every valid combo is worth the same, so the first one found stays).
 function findTradeCombo(cards){
-  if(cards.length<3) return null;
+  let best = null, bestValue = -1;
   for(let i=0;i<cards.length;i++) for(let j=i+1;j<cards.length;j++) for(let k=j+1;k<cards.length;k++){
     const set=[cards[i],cards[j],cards[k]];
     const uniq = new Set(set);
-    if(uniq.size===1 || uniq.size===3) return [i,j,k];
+    if(uniq.size!==1 && uniq.size!==3) continue;
+    const value = tradeInValue(game.tradeRule, 0, 0, set);
+    if(value>bestValue){ best=[i,j,k]; bestValue=value; }
   }
-  return null;
+  return best;
 }
 
 function tradeCards(p, indices){
   const idxSorted = indices.slice().sort((a,b)=>b-a);
   const removed = idxSorted.map(i=>p.cards[i]);
   idxSorted.forEach(i=> p.cards.splice(i,1));
+  const value = tradeInValue(game.tradeRule, game.tradeCount, p.personalTradeCount||0, removed);
   game.tradeCount++;
   p.personalTradeCount = (p.personalTradeCount||0)+1;
-  const value = tradeInValue(game.tradeRule, game.tradeCount, p.personalTradeCount);
   p.totalReinforced += value;
   if(game.phase==='reinforce' && currentPlayerId()===p.id){
     game.reinforceRemaining += value;

@@ -28,7 +28,7 @@ function openCardsModal(forced){
   function updatePreview(){
     const idxs = canTradeThisPhase ? comboIfValid() : null;
     previewEl.textContent = idxs
-      ? `Đổi 3 thẻ này sẽ nhận ${tradeInValue(game.tradeRule, game.tradeCount+1, (p.personalTradeCount||0)+1)} quân.`
+      ? `Đổi 3 thẻ này sẽ nhận ${tradeInValue(game.tradeRule, game.tradeCount, p.personalTradeCount||0, idxs.map(i=>p.cards[i]))} quân.`
       : '';
     // Only worth showing the button once the current selection is actually tradeable —
     // otherwise it'd just alert() the same thing back at the player on every click.

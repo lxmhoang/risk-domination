@@ -38,7 +38,7 @@ const GROUPS = [
   { title:'Thẻ bài & tăng viện', fields:{
     cardAwardEvent: {kind:'enum', label:'Phát thẻ', options:[
       ['on_capture','khi chiếm được lãnh thổ'], ['on_kill','khi diệt được ít nhất 1 quân địch'], ['on_turn_end','hết lượt là có']]},
-    tradeValues: {kind:'list', label:'Bảng đổi thẻ', hint:'Số quân nhận được ở lần đổi thứ 1, 2, 3… (cách nhau bởi dấu phẩy)', min:1, max:1000, maxLength:30},
+    tradeValues: {kind:'list', label:'Bảng đổi thẻ (luật leo thang)', hint:'Số quân nhận được ở lần đổi thứ 1, 2, 3… của cả ván (cách nhau bởi dấu phẩy)', min:1, max:1000, maxLength:30},
     tradeProgressiveStep: num('Luỹ tiến: hết bảng thì + … mỗi lần', 0, 50, 1),
     tradeExpBase: num('Theo cá nhân: số quân lần đổi đầu', 1, 50, 1),
     tradeExpGrowth: num('Theo cá nhân: hệ số nhân mỗi lần', 1, 3, 0.05),
