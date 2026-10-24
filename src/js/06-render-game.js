@@ -551,6 +551,48 @@ function drawWrapSeams(ctx, map, now){
   ctx.restore();
 }
 
+// Sea lanes (map.links): territories that are neighbors across the water. Each lane runs between
+// the closest pair of cells of its two territories — the two shores — as a slightly bowed dotted
+// line, found once per map (cached on the map) since it never changes during a game.
+function seaLinkEnds(map){
+  if(map._linkEnds) return map._linkEnds;
+  const cs = map.cellSize;
+  map._linkEnds = (map.links||[]).map(([a,b])=>{
+    const A = map.territories[a], B = map.territories[b];
+    if(!A || !B || !A.cells.length || !B.cells.length) return null;
+    let best = Infinity, pa = null, pb = null;
+    for(const ca of A.cells) for(const cb of B.cells){
+      const d = (ca[0]-cb[0])*(ca[0]-cb[0]) + (ca[1]-cb[1])*(ca[1]-cb[1]);
+      if(d<best){ best = d; pa = ca; pb = cb; }
+    }
+    return {x1:(pa[0]+0.5)*cs, y1:(pa[1]+0.5)*cs, x2:(pb[0]+0.5)*cs, y2:(pb[1]+0.5)*cs};
+  }).filter(Boolean);
+  return map._linkEnds;
+}
+function drawSeaLinks(ctx, map, now){
+  const ends = seaLinkEnds(map);
+  if(!ends.length) return;
+  ctx.save();
+  ctx.lineCap = 'round';
+  const curve = (e)=>{
+    const mx = (e.x1+e.x2)/2, my = (e.y1+e.y2)/2, dx = e.x2-e.x1, dy = e.y2-e.y1;
+    ctx.beginPath(); ctx.moveTo(e.x1,e.y1);
+    ctx.quadraticCurveTo(mx-dy*0.12, my+dx*0.12, e.x2, e.y2);
+  };
+  ends.forEach(e=>{ curve(e); ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(8,10,18,0.55)'; ctx.stroke(); });
+  ctx.setLineDash([2,7]);
+  ctx.lineDashOffset = -((now||0)/80)%9; // slow crawl, like the wrap-seam marks
+  ends.forEach(e=>{ curve(e); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.stroke(); });
+  ctx.setLineDash([]);
+  ends.forEach(e=>{
+    [[e.x1,e.y1],[e.x2,e.y2]].forEach(([x,y])=>{
+      ctx.beginPath(); ctx.arc(x,y,3.6,0,Math.PI*2);
+      ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(8,10,18,0.8)'; ctx.stroke();
+    });
+  });
+  ctx.restore();
+}
+
 function drawFlowLine(ctx, from, to, now, opts){
   opts = opts || {};
   const gap = opts.gap!=null ? opts.gap : 16;
@@ -1004,6 +1046,7 @@ function drawGameCanvas(){
     });
   }
   ctx.restore();
+  drawSeaLinks(ctx, mapData, reducedMotion ? 0 : now);
   // Single fixed copy of a wrapping map: mark the stretches of edge that join each other.
   if(!wrapping && mapIsWrapping() && !isCopy) drawWrapSeams(ctx, mapData, reducedMotion ? 0 : now);
   };

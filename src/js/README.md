@@ -39,6 +39,12 @@ split at the same logical boundaries the code already had.
 - **07-cards-modal.js** — Risk card trade-in modal.
 - **07b-game-ui.js** — browser-only flow around the rules: capture-move dialog, save/load
   to file, "play again".
+- **07c-map-gallery.js** — the setup screen's map picker: "Ngẫu nhiên" plus every map in
+  `MAP_GALLERY`. The gallery is `src/maps/*.json` (same plain-object format as the editor's export),
+  inlined by `build.js` like `config.json`; add a map by dropping a file there. A map may carry
+  `links` — `[terrIdA, terrIdB]` sea lanes: neighbors across water, drawn as dotted lines
+  (`drawSeaLinks()` in 06-render-game.js, graph in `recomputeGraph()`). `test/maps-test.js` checks
+  every gallery map is connected and playable.
 - **08-wiring.js** — DOM event listeners, screen navigation, app entry point, and the
   `window.__debug` testing hooks.
 

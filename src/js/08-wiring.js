@@ -149,6 +149,8 @@ let aiNamePool = [];
 
 function renderSetupMapInfo(){
   $('toggleMapWrap').checked = !!mapData.wrapX;
+  // a gallery map has its own fixed shape: nothing to join or split at the left/right edges
+  $('toggleMapWrap').closest('.setup-row').hidden = !!mapData._galleryId;
   if(setupForOnline){ $('setupMapInfo').textContent = '🌐 Ván online: bản đồ do máy chủ tạo khi bắt đầu.'; return; }
   $('setupMapInfo').textContent = `Bản đồ: "${mapData.name}" — ${Object.keys(mapData.territories).length} lãnh thổ, ${Object.keys(mapData.continents).length} châu lục${mapData.wrapX ? ', global' : ''}.`;
   $('toggleMapWrap').checked = !!mapData.wrapX;
@@ -179,10 +181,12 @@ $('editorMapWrap').addEventListener('change', (e)=>{
 });
 function goToSetup(online){
   setupForOnline = !!online;
+  setupCustomMap = (mapData._quickPlay || mapData._galleryId) ? null : mapData;
   // watching AIs play each other is an offline-only mode
   $('toggleSpectatorMode').checked = false;
   $('toggleSpectatorMode').closest('.setup-row').hidden = setupForOnline;
   renderSetupMapInfo();
+  renderMapGallery(); // (offline only — an online game's map is made by the server)
   aiNamePool = shuffle(AI_NAME_POOL);
   renderPlayerConfigList();
   showScreen('screen-setup');

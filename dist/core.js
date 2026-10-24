@@ -214,6 +214,10 @@ function newMap(cols, rows, name){
     // wrapY is adjacency-only (see recomputeGraph()) — wrapping maps are never rotated in play.
     wrapX: false,
     wrapY: false,
+    // Sea lanes: [terrIdA, terrIdB] pairs of territories that count as neighbors although water
+    // separates them (drawn as dotted lines in the game, see drawSeaLinks()). Only maps made by
+    // hand (the gallery's) have any; the generator joins islands with land bridges instead.
+    links: [],
     _terrBoundaryCache: {}, // terrId -> smoothed pixel-space loops, see getTerritoryBoundaryLoops()
     _contBoundaryCache: {}, // contId -> smoothed pixel-space loops, see getContinentBoundaryLoops()
   };
@@ -230,6 +234,7 @@ function mapToPlainObject(map){
     continents: Object.values(map.continents).map(c=>({id:c.id,name:c.name,color:c.color,bonus:c.bonus})),
     nextTerrId: map.nextTerrId, nextContId: map.nextContId,
     wrapX: !!map.wrapX, wrapY: !!map.wrapY,
+    links: (map.links||[]).map(l=>[l[0],l[1]]),
   };
 }
 function mapFromPlainObject(obj){
@@ -240,6 +245,7 @@ function mapFromPlainObject(obj){
   (obj.territories||[]).forEach(t=>{
     map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
   });
+  map.links = (obj.links||[]).filter(l=> map.territories[l[0]] && map.territories[l[1]]).map(l=>[l[0],l[1]]);
   (obj.continents||[]).forEach(c=>{ map.continents[c.id] = {id:c.id,name:c.name,color:c.color,bonus:c.bonus}; });
   for(let r=0;r<map.rows;r++) for(let c=0;c<map.cols;c++){
     const id = map.cellTerritory[cellIndex(map,c,r)];
@@ -664,6 +670,11 @@ function recomputeGraph(map){
   };
   if(map.wrapX && map.cols>2) for(let r=0;r<map.rows;r++) linkAcrossSeam(cellIndex(map,map.cols-1,r), cellIndex(map,0,r));
   if(map.wrapY && map.rows>2) for(let c=0;c<map.cols;c++) linkAcrossSeam(cellIndex(map,c,map.rows-1), cellIndex(map,c,0));
+  // Sea lanes join territories the grid doesn't put side by side.
+  (map.links||[]).forEach(([a,b])=>{
+    if(a===b || !map.territories[a] || !map.territories[b]) return;
+    map.territories[a].neighbors.add(b); map.territories[b].neighbors.add(a);
+  });
   // "centroid" is the territory's anchor point — where its army badge sits and where attack/
   // fortify arrows start and end. It's the deepest cell (see territoryPoleCell), not the plain
   // average position, since the average of a concave territory can land on its edge or outside it.
@@ -720,6 +731,7 @@ function rotateMapData90CW(map){
   }
   rotated.nextTerrId = map.nextTerrId;
   rotated.nextContId = map.nextContId;
+  rotated.links = (map.links||[]).map(l=>[l[0],l[1]]);
   recomputeGraph(rotated);
   return rotated;
 }

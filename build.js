@@ -31,6 +31,15 @@ const body = read(path.join(SRC, 'body.html'));
 const config = JSON.parse(read(path.join(SRC, 'config.json')));
 const configScript = `/* ---- src/config.json ---- */\nconst GAME_CONFIG = ${JSON.stringify(config, null, 2)};`;
 
+// src/maps/*.json are the maps of the setup screen's gallery (made from the same plain-object
+// format as the editor's export, see mapToPlainObject()). Inlined the same way as config.json.
+const MAPS_DIR = path.join(SRC, 'maps');
+const galleryMaps = fs.existsSync(MAPS_DIR)
+  ? fs.readdirSync(MAPS_DIR).filter(f => f.endsWith('.json')).sort()
+      .map(f => Object.assign({ id: f.replace(/\.json$/, '') }, JSON.parse(read(path.join(MAPS_DIR, f)))))
+  : [];
+const galleryScript = `/* ---- src/maps/*.json ---- */\nconst MAP_GALLERY = ${JSON.stringify(galleryMaps)};`;
+
 // JS modules are concatenated in filename order (01-, 02-, ... prefixes make the
 // dependency order explicit and stable — see src/js/README.md for what each does).
 const jsFiles = fs.readdirSync(JS_DIR).filter(f => f.endsWith('.js')).sort();
@@ -106,7 +115,7 @@ ${exportsSrc}
 `;
 }
 
-const script = [configScript].concat(jsFiles.map(f => {
+const script = [configScript, galleryScript].concat(jsFiles.map(f => {
   const content = read(path.join(JS_DIR, f)).replace(/\s+$/, '');
   return `/* ---- src/js/${f} ---- */\n${content}`;
 })).join('\n\n');
