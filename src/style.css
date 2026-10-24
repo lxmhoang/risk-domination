@@ -281,7 +281,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
    horizontal scrollbar ever appears, without needing to clip anything since nothing actually
    exceeds this width. */
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:146px;overflow-y:auto;overflow-x:hidden;}
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:196px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);
   max-height:none;white-space:nowrap;
@@ -372,42 +372,49 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #reinforceCounter{font-size:13px;color:var(--warn);font-weight:700;}
 
-#playerList{display:flex;flex-direction:column;gap:4px;}
+/* Player flags. .player-flag is the wrapper (the glow is a drop-shadow on it — a filter on the
+   clipped .player-card itself would be cut off by the clip-path); .player-card is the flag: the
+   player's color (--pc), with a triangle cut out of one short edge (right edge in landscape,
+   bottom edge in portrait — see the media block further down). */
+#playerList{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+.player-flag{flex-shrink:0;transition:transform .2s ease;}
 .player-card{
-  width:132px;flex-shrink:0;
-  background:rgba(10,14,24,.75);backdrop-filter:blur(4px);border:2px solid var(--border);
-  border-radius:8px;padding:5px 7px;
+  display:flex;align-items:center;gap:8px;
+  padding:5px 20px 5px 6px;min-height:46px;box-sizing:border-box;
+  background:linear-gradient(160deg,rgba(255,255,255,.22),rgba(0,0,0,.3)),var(--pc,#555);
+  border-radius:8px 0 0 8px;
+  clip-path:polygon(0 0,100% 0,calc(100% - 13px) 50%,100% 100%,0 100%);
 }
-/* Shifted right (not scaled — scaling up overflowed the fixed-width column and forced a
-   horizontal scrollbar) so it reads as "this is whose turn it is" at a glance. Fixed card width
-   above + #gamePlayerListWrap's extra 14px of room is what makes this shift fit without either
-   clipping or a scrollbar — see that rule's comment. */
-.player-card.active-turn{
-  border-color:#2f7dff;animation:activeTurnGlow 1.8s ease-in-out infinite;
-  transform:translateX(14px);position:relative;z-index:2;
+.player-flag.active-turn{
+  transform:translateX(10px);position:relative;z-index:2;
+  filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px rgba(47,125,255,.9));
+  animation:activeTurnGlow 1.8s ease-in-out infinite;
 }
 @keyframes activeTurnGlow{
-  0%,100%{box-shadow:0 0 8px rgba(47,125,255,.45);}
-  50%{box-shadow:0 0 16px rgba(47,125,255,.8);}
+  0%,100%{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 6px rgba(47,125,255,.6));}
+  50%{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 13px rgba(47,125,255,1));}
 }
-.pcard-bar{height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;margin:3px 0;}
-.pcard-bar-fill{height:100%;border-radius:2px;transition:width .4s ease;}
-.player-card .pline1{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-bottom:2px;}
+.pf-avatar{
+  position:relative;flex-shrink:0;width:38px;height:38px;border-radius:50%;
+  border:3px solid #fff;background:#222;box-shadow:0 1px 4px rgba(0,0,0,.5);
+}
+.pf-avatar svg{display:block;width:100%;height:100%;border-radius:50%;}
+.crown-icon{position:absolute;top:-9px;right:-7px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
+.pf-stats{display:flex;align-items:center;gap:5px;min-width:0;}
+.pf-stat{
+  display:inline-flex;align-items:center;gap:1px;padding:2px 5px;border-radius:9px;
+  background:rgba(10,14,24,.62);color:#fff;font-size:12px;line-height:1.2;white-space:nowrap;
+}
+.pf-stat b{font-weight:800;}
+.pf-stat i{font-style:normal;font-size:11px;}
+.player-flag.eliminated{opacity:.4;filter:grayscale(1);}
 /* Unscoped (not .player-card .pname-badge) so #turnInfoRow's copy of the current player's name
-   (see renderTopbar() in 06-render-game.js) can reuse the exact same look — same color-filled
-   pill + white text as the player list, just reused in a second spot. */
+   (see renderTopbar() in 06-render-game.js) can reuse the same color-filled pill + white text. */
 .pname-badge{
   color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
   text-shadow:0 1px 2px rgba(0,0,0,.5);
 }
-.player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
-.crown-icon{margin-left:auto;font-size:13px;flex-shrink:0;}
-.player-card .pline2{display:flex;gap:8px;font-size:10px;color:#fff;}
-/* The player list is always a narrow column now (not just on mobile) — icon+number reads fine
-   on its own, the word after it doesn't fit and isn't needed. */
-.stat-label{display:none;}
-.player-card.eliminated{opacity:.35;}
 
 /* Floats over the map rather than sharing grid/flex space with anything — rarely looked at, so
    it's a toggle (#btnToggleLog, in the top bar) on every screen size, collapsed by default (see
@@ -447,17 +454,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 @media (orientation:portrait){
   #gamePlayerListWrap{
     left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
-    overflow-x:hidden;overflow-y:visible;max-height:none;
+    overflow:visible;max-height:none;
   }
-  /* 2-column grid instead of a flex row — every card stretches to exactly half the available
-     width (minus the gap) and fills it edge to edge, 2 per row, instead of a fixed landscape
-     width that left a ragged, not-quite-2-per-row wrap. Same gap as the landscape column
-     (padding logic untouched, just reflowed into a grid). */
-  #playerList{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
-  .player-card{width:auto;}
-  /* The landscape shift (see that rule's own comment) assumes stacking vertically in a column —
-     sideways in a horizontal row would just make the active card visually jump, so skip it here. */
-  .player-card.active-turn{transform:none;}
+  /* One row of vertical flags spread evenly along the top: the avatar on top, the three numbers
+     stacked under it, the triangle cut out of the bottom edge. */
+  #playerList{flex-direction:row;justify-content:space-around;align-items:flex-start;gap:4px;}
+  .player-flag{flex:1 1 0;min-width:0;max-width:72px;}
+  .player-card{
+    flex-direction:column;gap:5px;padding:6px 3px 20px;min-height:0;
+    border-radius:8px 8px 0 0;
+    clip-path:polygon(0 0,100% 0,100% 100%,50% calc(100% - 13px),0 100%);
+  }
+  .pf-stats{flex-direction:column;gap:3px;}
+  .pf-stat{font-size:clamp(10px,3vw,12px);padding:1px 4px;}
+  /* The landscape shift sideways makes no sense for a row of flags — lift the active one instead. */
+  .player-flag.active-turn{transform:translateY(3px);}
 
   /* Portrait: #gameControlsBand takes no part in layout itself (display:contents) — its two
      children size/position independently, each bottom-anchored to its own screen edge (exact
@@ -641,7 +652,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    modal pop-in, dice pop, active-turn glow pulse) for anyone who's asked their OS to reduce
    motion — none of them carry information the game depends on, so removing them is safe. */
 @media (prefers-reduced-motion: reduce){
-  .screen.active, .modal-overlay, .modal, #gameOverOverlay, .die, .player-card.active-turn{
+  .screen.active, .modal-overlay, .modal, #gameOverOverlay, .die, .player-flag.active-turn{
     animation:none !important;
   }
   #turnIntroOverlay, #turnIntroOverlay.show, #turnIntroCard, #turnIntroOverlay.show #turnIntroCard{

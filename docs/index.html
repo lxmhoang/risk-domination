@@ -293,7 +293,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
    horizontal scrollbar ever appears, without needing to clip anything since nothing actually
    exceeds this width. */
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:146px;overflow-y:auto;overflow-x:hidden;}
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:196px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);
   max-height:none;white-space:nowrap;
@@ -384,42 +384,49 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 }
 #reinforceCounter{font-size:13px;color:var(--warn);font-weight:700;}
 
-#playerList{display:flex;flex-direction:column;gap:4px;}
+/* Player flags. .player-flag is the wrapper (the glow is a drop-shadow on it — a filter on the
+   clipped .player-card itself would be cut off by the clip-path); .player-card is the flag: the
+   player's color (--pc), with a triangle cut out of one short edge (right edge in landscape,
+   bottom edge in portrait — see the media block further down). */
+#playerList{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+.player-flag{flex-shrink:0;transition:transform .2s ease;}
 .player-card{
-  width:132px;flex-shrink:0;
-  background:rgba(10,14,24,.75);backdrop-filter:blur(4px);border:2px solid var(--border);
-  border-radius:8px;padding:5px 7px;
+  display:flex;align-items:center;gap:8px;
+  padding:5px 20px 5px 6px;min-height:46px;box-sizing:border-box;
+  background:linear-gradient(160deg,rgba(255,255,255,.22),rgba(0,0,0,.3)),var(--pc,#555);
+  border-radius:8px 0 0 8px;
+  clip-path:polygon(0 0,100% 0,calc(100% - 13px) 50%,100% 100%,0 100%);
 }
-/* Shifted right (not scaled — scaling up overflowed the fixed-width column and forced a
-   horizontal scrollbar) so it reads as "this is whose turn it is" at a glance. Fixed card width
-   above + #gamePlayerListWrap's extra 14px of room is what makes this shift fit without either
-   clipping or a scrollbar — see that rule's comment. */
-.player-card.active-turn{
-  border-color:#2f7dff;animation:activeTurnGlow 1.8s ease-in-out infinite;
-  transform:translateX(14px);position:relative;z-index:2;
+.player-flag.active-turn{
+  transform:translateX(10px);position:relative;z-index:2;
+  filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px rgba(47,125,255,.9));
+  animation:activeTurnGlow 1.8s ease-in-out infinite;
 }
 @keyframes activeTurnGlow{
-  0%,100%{box-shadow:0 0 8px rgba(47,125,255,.45);}
-  50%{box-shadow:0 0 16px rgba(47,125,255,.8);}
+  0%,100%{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 6px rgba(47,125,255,.6));}
+  50%{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 13px rgba(47,125,255,1));}
 }
-.pcard-bar{height:4px;background:rgba(255,255,255,.12);border-radius:2px;overflow:hidden;margin:3px 0;}
-.pcard-bar-fill{height:100%;border-radius:2px;transition:width .4s ease;}
-.player-card .pline1{display:flex;align-items:center;justify-content:flex-start;gap:6px;margin-bottom:2px;}
+.pf-avatar{
+  position:relative;flex-shrink:0;width:38px;height:38px;border-radius:50%;
+  border:3px solid #fff;background:#222;box-shadow:0 1px 4px rgba(0,0,0,.5);
+}
+.pf-avatar svg{display:block;width:100%;height:100%;border-radius:50%;}
+.crown-icon{position:absolute;top:-9px;right:-7px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
+.pf-stats{display:flex;align-items:center;gap:5px;min-width:0;}
+.pf-stat{
+  display:inline-flex;align-items:center;gap:1px;padding:2px 5px;border-radius:9px;
+  background:rgba(10,14,24,.62);color:#fff;font-size:12px;line-height:1.2;white-space:nowrap;
+}
+.pf-stat b{font-weight:800;}
+.pf-stat i{font-style:normal;font-size:11px;}
+.player-flag.eliminated{opacity:.4;filter:grayscale(1);}
 /* Unscoped (not .player-card .pname-badge) so #turnInfoRow's copy of the current player's name
-   (see renderTopbar() in 06-render-game.js) can reuse the exact same look — same color-filled
-   pill + white text as the player list, just reused in a second spot. */
+   (see renderTopbar() in 06-render-game.js) can reuse the same color-filled pill + white text. */
 .pname-badge{
   color:#fff;font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
   text-shadow:0 1px 2px rgba(0,0,0,.5);
 }
-.player-card .pline1 .stat-item{font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
-.crown-icon{margin-left:auto;font-size:13px;flex-shrink:0;}
-.player-card .pline2{display:flex;gap:8px;font-size:10px;color:#fff;}
-/* The player list is always a narrow column now (not just on mobile) — icon+number reads fine
-   on its own, the word after it doesn't fit and isn't needed. */
-.stat-label{display:none;}
-.player-card.eliminated{opacity:.35;}
 
 /* Floats over the map rather than sharing grid/flex space with anything — rarely looked at, so
    it's a toggle (#btnToggleLog, in the top bar) on every screen size, collapsed by default (see
@@ -459,17 +466,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 @media (orientation:portrait){
   #gamePlayerListWrap{
     left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
-    overflow-x:hidden;overflow-y:visible;max-height:none;
+    overflow:visible;max-height:none;
   }
-  /* 2-column grid instead of a flex row — every card stretches to exactly half the available
-     width (minus the gap) and fills it edge to edge, 2 per row, instead of a fixed landscape
-     width that left a ragged, not-quite-2-per-row wrap. Same gap as the landscape column
-     (padding logic untouched, just reflowed into a grid). */
-  #playerList{display:grid;grid-template-columns:1fr 1fr;gap:4px;}
-  .player-card{width:auto;}
-  /* The landscape shift (see that rule's own comment) assumes stacking vertically in a column —
-     sideways in a horizontal row would just make the active card visually jump, so skip it here. */
-  .player-card.active-turn{transform:none;}
+  /* One row of vertical flags spread evenly along the top: the avatar on top, the three numbers
+     stacked under it, the triangle cut out of the bottom edge. */
+  #playerList{flex-direction:row;justify-content:space-around;align-items:flex-start;gap:4px;}
+  .player-flag{flex:1 1 0;min-width:0;max-width:72px;}
+  .player-card{
+    flex-direction:column;gap:5px;padding:6px 3px 20px;min-height:0;
+    border-radius:8px 8px 0 0;
+    clip-path:polygon(0 0,100% 0,100% 100%,50% calc(100% - 13px),0 100%);
+  }
+  .pf-stats{flex-direction:column;gap:3px;}
+  .pf-stat{font-size:clamp(10px,3vw,12px);padding:1px 4px;}
+  /* The landscape shift sideways makes no sense for a row of flags — lift the active one instead. */
+  .player-flag.active-turn{transform:translateY(3px);}
 
   /* Portrait: #gameControlsBand takes no part in layout itself (display:contents) — its two
      children size/position independently, each bottom-anchored to its own screen edge (exact
@@ -653,7 +664,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    modal pop-in, dice pop, active-turn glow pulse) for anyone who's asked their OS to reduce
    motion — none of them carry information the game depends on, so removing them is safe. */
 @media (prefers-reduced-motion: reduce){
-  .screen.active, .modal-overlay, .modal, #gameOverOverlay, .die, .player-card.active-turn{
+  .screen.active, .modal-overlay, .modal, #gameOverOverlay, .die, .player-flag.active-turn{
     animation:none !important;
   }
   #turnIntroOverlay, #turnIntroOverlay.show, #turnIntroCard, #turnIntroOverlay.show #turnIntroCard{
@@ -6070,6 +6081,10 @@ function drawGameCanvas(){
   if(game.phase==='fortify') positionFloatingFortifyButton();
 }
 
+// Each player is a small flag in their color — an avatar, then three numbers (armies on the map,
+// armies they would get at the start of their next turn, territories held). Landscape: flags are
+// horizontal, stacked in a column down the left; portrait: vertical flags spread in one row along
+// the top (see the style.css rules for .player-card and #playerList).
 function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
   // Shown in turn order (whoever goes first at the top), not game.players' fixed id order —
@@ -6081,46 +6096,29 @@ function renderPlayerList(){
   // doing rather than introducing a separate "who's ahead" notion.
   const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
   byTurnOrder.forEach(p=>{
-    const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
+    const flagWrap = el('div','player-flag'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
+    const card = el('div','player-card');
+    card.style.setProperty('--pc', p.color);
+    card.title = p.name+(p.isHuman?' (Bạn)':'');
     const mine = ownedTerritories(p.id);
     const totalArmies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
-    const contsHeld = Object.values(mapData.continents).filter(cont=>{
-      const ct = Object.values(mapData.territories).filter(t=>t.continentId===cont.id).map(t=>t.id);
-      return ct.length>0 && ct.every(id=>game.owner[id]===p.id);
-    }).length;
-    // Line 1: the player's own color, now as a filled name badge (white text) instead of a
-    // separate dot, plus army count — the two things you actually glance at mid-game. Line 2:
-    // the rest (territories/continents/cards), kept to icon+number only, no text label — this
-    // list has to stay short enough that ~6 players fit on a short landscape phone screen with
-    // no scrolling.
-    const line1 = el('div','pline1');
-    const nameBadge = el('span','pname-badge', p.name+(p.isHuman?' (Bạn)':''));
-    nameBadge.style.background = p.color;
-    line1.appendChild(nameBadge);
-    line1.appendChild(el('span','stat-item', `⚔️ ${totalArmies}`));
+    const avatar = el('div','pf-avatar', avatarSvg(p.id));
     if(p.id===allianceLeaderId){
       const crown = el('span','crown-icon', '👑');
       crown.title = 'Đang dẫn đầu — các AI khác đang liên minh chống lại';
-      line1.appendChild(crown);
+      avatar.appendChild(crown);
     }
-    // Power-share bar: this player's share of the whole table's power (the same evaluatePlayerPower()
-    // the AI uses — armies, territories and reinforcements, weighted from the config), so the bar
-    // reads as "how strong they are relative to everyone" at a glance. Width is a plain CSS
-    // transition off a changed inline style, so it animates smoothly on its own.
-    const powerOf = pl=> pl.alive ? evaluatePlayerPower(pl.id) : 0;
-    const totalPower = game.players.reduce((s,pl)=> s+powerOf(pl), 0);
-    const pct = totalPower>0 ? Math.round(powerOf(p)/totalPower*100) : 0;
-    const bar = el('div','pcard-bar');
-    const fill = el('div','pcard-bar-fill');
-    fill.style.width = pct+'%';
-    fill.style.background = p.color;
-    bar.appendChild(fill);
-    const line2 = el('div','pline2');
-    [['🗺️',mine.length],['🌍',contsHeld],['🃏',p.cards.length]].forEach(([icon,val])=>{
-      line2.appendChild(el('span','stat-item', `${icon} ${val}`));
+    const stats = el('div','pf-stats');
+    [[totalArmies,'🪖','Quân đang có'],
+     [(p.alive ? computeReinforcements(p.id) : 0)+'+','🪖','Quân nhận được ở lượt tới (nếu không có gì thay đổi)'],
+     [mine.length,'🗺️','Số lãnh thổ đang giữ']].forEach(([val,icon,tip])=>{
+      const row = el('span','pf-stat', `<b>${val}</b><i>${icon}</i>`);
+      row.title = tip;
+      stats.appendChild(row);
     });
-    card.appendChild(line1); card.appendChild(bar); card.appendChild(line2);
-    wrap.appendChild(card);
+    card.appendChild(avatar); card.appendChild(stats);
+    flagWrap.appendChild(card);
+    wrap.appendChild(flagWrap);
   });
 }
 
@@ -6625,6 +6623,84 @@ function gameCanvasClick(evt){
     renderGame();
     return;
   }
+}
+
+/* ---- src/js/06b-avatars.js ---- */
+/* =========================================================================
+   PLAYER AVATARS — a set of 12 small cartoon faces (inline SVG, drawn for this game)
+   ---------------------------------------------------------------------
+   Shown in the player cards (renderPlayerList() in 06-render-game.js). A player's avatar is
+   AVATARS[id % 12], so it stays the same for the whole match; player 0 (you) is the general.
+   Each is a 64x64 picture with its own background — the player's color goes around it as a ring.
+   ========================================================================= */
+const _eye = (x,y,r)=> `<circle cx="${x}" cy="${y}" r="${r||3.2}" fill="#fff"/><circle cx="${x}" cy="${y+0.4}" r="${(r||3.2)*0.52}" fill="#1b1b2b"/>`;
+const AVATARS = [
+  // general
+  `<rect width="64" height="64" fill="#6c757d"/><circle cx="32" cy="38" r="17" fill="#f1c9a0"/>
+   <path d="M6 24 Q32 2 58 24 Q50 30 44 27 Q32 20 20 27 Q14 30 6 24z" fill="#1d3557"/><path d="M6 24 Q32 2 58 24" fill="none" stroke="#e9b949" stroke-width="2.5"/>
+   <circle cx="32" cy="13" r="3" fill="#e63946"/>${_eye(25,38)}${_eye(39,38)}
+   <path d="M22 47 Q32 43 42 47 Q32 51 22 47z" fill="#5a3a22"/><path d="M26 52 Q32 55 38 52" fill="none" stroke="#b5654a" stroke-width="2" stroke-linecap="round"/>`,
+  // lion
+  `<rect width="64" height="64" fill="#ffd166"/><circle cx="32" cy="35" r="26" fill="#b8631a"/><circle cx="32" cy="36" r="17" fill="#f4a63c"/>
+   <circle cx="19" cy="22" r="5" fill="#f4a63c"/><circle cx="45" cy="22" r="5" fill="#f4a63c"/>
+   <ellipse cx="32" cy="43" rx="9" ry="6.5" fill="#fbd38d"/><path d="M28.5 38.5h7l-3.5 4z" fill="#3b2418"/>${_eye(25,32)}${_eye(39,32)}
+   <path d="M32 42.5v3M28 46q4 2 8 0" fill="none" stroke="#3b2418" stroke-width="1.6" stroke-linecap="round"/>`,
+  // fox
+  `<rect width="64" height="64" fill="#bde0fe"/><path d="M10 6l15 17-17 7z" fill="#d9480f"/><path d="M54 6L39 23l17 7z" fill="#d9480f"/>
+   <path d="M9 27Q32 19 55 27L49 47Q32 61 15 47z" fill="#f28c28"/><path d="M19 37Q32 31 45 37Q40 55 32 57Q24 55 19 37z" fill="#fff"/>
+   <circle cx="32" cy="50" r="3.2" fill="#222"/>${_eye(23,34,3)}${_eye(41,34,3)}`,
+  // wolf
+  `<rect width="64" height="64" fill="#cfd8dc"/><path d="M11 5l14 19-17 6z" fill="#546e7a"/><path d="M53 5L39 24l17 6z" fill="#546e7a"/>
+   <path d="M10 27Q32 17 54 27L49 47Q32 60 15 47z" fill="#78909c"/><path d="M21 40Q32 34 43 40Q39 54 32 56Q25 54 21 40z" fill="#cfd8dc"/>
+   <path d="M29 47h6l-3 4z" fill="#1b1b2b"/><circle cx="23" cy="34" r="3.4" fill="#ffd54a"/><circle cx="41" cy="34" r="3.4" fill="#ffd54a"/>
+   <path d="M23 31.5v5M41 31.5v5" stroke="#1b1b2b" stroke-width="1.6"/>`,
+  // bear
+  `<rect width="64" height="64" fill="#c7f9cc"/><circle cx="14" cy="16" r="8" fill="#6f4518"/><circle cx="50" cy="16" r="8" fill="#6f4518"/>
+   <circle cx="14" cy="16" r="4" fill="#c58c52"/><circle cx="50" cy="16" r="4" fill="#c58c52"/><circle cx="32" cy="37" r="21" fill="#8d5524"/>
+   <ellipse cx="32" cy="45" rx="10" ry="8" fill="#e0b184"/><ellipse cx="32" cy="41" rx="4" ry="3" fill="#2b1a0e"/>${_eye(23,33)}${_eye(41,33)}
+   <path d="M32 44v3M28 48q4 2.5 8 0" fill="none" stroke="#2b1a0e" stroke-width="1.6" stroke-linecap="round"/>`,
+  // panda
+  `<rect width="64" height="64" fill="#e0fbfc"/><circle cx="14" cy="16" r="8" fill="#1d1d28"/><circle cx="50" cy="16" r="8" fill="#1d1d28"/>
+   <circle cx="32" cy="37" r="21" fill="#fff"/><ellipse cx="23" cy="34" rx="6" ry="8" fill="#1d1d28" transform="rotate(20 23 34)"/>
+   <ellipse cx="41" cy="34" rx="6" ry="8" fill="#1d1d28" transform="rotate(-20 41 34)"/><circle cx="23.5" cy="34" r="2.4" fill="#fff"/><circle cx="40.5" cy="34" r="2.4" fill="#fff"/>
+   <ellipse cx="32" cy="44" rx="4" ry="3" fill="#1d1d28"/><path d="M32 47v2M28 50q4 2.5 8 0" fill="none" stroke="#1d1d28" stroke-width="1.6" stroke-linecap="round"/>`,
+  // owl
+  `<rect width="64" height="64" fill="#b5838d"/><path d="M12 8l10 12H10z M52 8L42 20h12z" fill="#6b4226"/><ellipse cx="32" cy="38" rx="21" ry="22" fill="#8d5a2b"/>
+   <ellipse cx="32" cy="46" rx="12" ry="12" fill="#e7c9a0"/><circle cx="22" cy="31" r="10" fill="#f6e7c1"/><circle cx="42" cy="31" r="10" fill="#f6e7c1"/>
+   <circle cx="22" cy="31" r="6" fill="#f4a100"/><circle cx="42" cy="31" r="6" fill="#f4a100"/><circle cx="22" cy="31" r="3" fill="#111"/><circle cx="42" cy="31" r="3" fill="#111"/>
+   <path d="M28 38h8l-4 8z" fill="#e8590c"/>`,
+  // cat
+  `<rect width="64" height="64" fill="#ffe5ec"/><path d="M10 6l5 22 14-9z" fill="#e0833b"/><path d="M54 6l-5 22-14-9z" fill="#e0833b"/>
+   <path d="M13 12l3 12 7-4z M51 12l-3 12-7-4z" fill="#ffb3c1"/><ellipse cx="32" cy="38" rx="22" ry="19" fill="#f4a261"/>
+   <path d="M32 19v8M24 21l2 6M40 21l-2 6" stroke="#c76a2a" stroke-width="2.2" stroke-linecap="round"/>${_eye(23,36)}${_eye(41,36)}
+   <path d="M29 42h6l-3 3.5z" fill="#e5567d"/><path d="M32 45.5v2.5M27 49q5 2 5-1.5 0 3.5 5 1.5" fill="none" stroke="#5a2d12" stroke-width="1.5" stroke-linecap="round"/>
+   <path d="M8 40l11 2M8 46l11-2M56 40l-11 2M56 46l-11-2" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>`,
+  // bull
+  `<rect width="64" height="64" fill="#ffd6a5"/><path d="M12 28Q0 24 4 8Q10 18 20 22z" fill="#f8f4e3" stroke="#bfae7d" stroke-width="1.2"/>
+   <path d="M52 28Q64 24 60 8Q54 18 44 22z" fill="#f8f4e3" stroke="#bfae7d" stroke-width="1.2"/><ellipse cx="10" cy="32" rx="6" ry="4" fill="#5c3b20"/><ellipse cx="54" cy="32" rx="6" ry="4" fill="#5c3b20"/>
+   <path d="M15 20Q32 12 49 20L46 46Q32 54 18 46z" fill="#6b4226"/><ellipse cx="32" cy="46" rx="13" ry="10" fill="#f0a9a0"/>
+   <ellipse cx="27" cy="46" rx="2.2" ry="3" fill="#7a2e2e"/><ellipse cx="37" cy="46" rx="2.2" ry="3" fill="#7a2e2e"/>${_eye(23,33,3)}${_eye(41,33,3)}
+   <path d="M20 29l7 3M44 29l-7 3" stroke="#2b1a0e" stroke-width="2" stroke-linecap="round"/><circle cx="32" cy="54" r="3.5" fill="none" stroke="#e9b949" stroke-width="1.8"/>`,
+  // boar
+  `<rect width="64" height="64" fill="#caffbf"/><path d="M10 10l12 9-13 8z M54 10L42 19l13 8z" fill="#4a3a30"/><path d="M12 25Q32 15 52 25L49 47Q32 58 15 47z" fill="#6d5a4d"/>
+   <ellipse cx="32" cy="45" rx="13" ry="10" fill="#d99a8c"/><ellipse cx="27.5" cy="45" rx="2.2" ry="3" fill="#6e3030"/><ellipse cx="36.5" cy="45" rx="2.2" ry="3" fill="#6e3030"/>
+   <path d="M19 50Q14 46 16 38Q20 44 23 48z M45 50Q50 46 48 38Q44 44 41 48z" fill="#fffbe6" stroke="#c9b98a" stroke-width="1"/>${_eye(23,33,3)}${_eye(41,33,3)}
+   <path d="M19 29l7 2M45 29l-7 2" stroke="#1b1b1b" stroke-width="2" stroke-linecap="round"/>`,
+  // eagle
+  `<rect width="64" height="64" fill="#a0c4ff"/><path d="M6 64Q10 44 32 42Q54 44 58 64z" fill="#6b4226"/><path d="M20 62q12-8 24 0" fill="none" stroke="#fff" stroke-width="3"/>
+   <path d="M14 30Q16 8 32 8Q48 8 50 30Q46 44 32 46Q18 44 14 30z" fill="#fafafa"/><path d="M13 29Q22 22 32 24Q42 22 51 29" fill="none" stroke="#ddd" stroke-width="2"/>
+   <path d="M24 31Q32 28 40 31L32 52Q26 44 24 31z" fill="#f2b705"/><path d="M32 52L28 41h8z" fill="#d68c00"/>
+   <circle cx="23" cy="26" r="3.6" fill="#fff"/><circle cx="41" cy="26" r="3.6" fill="#fff"/><circle cx="23.5" cy="26.5" r="2" fill="#111"/><circle cx="40.5" cy="26.5" r="2" fill="#111"/>
+   <path d="M17 20l9 4M47 20l-9 4" stroke="#6b4226" stroke-width="2.4" stroke-linecap="round"/>`,
+  // robot
+  `<rect width="64" height="64" fill="#adb5bd"/><path d="M32 4v9" stroke="#495057" stroke-width="3"/><circle cx="32" cy="5" r="3.5" fill="#e63946"/>
+   <rect x="11" y="13" width="42" height="40" rx="9" fill="#ced4da" stroke="#868e96" stroke-width="2"/><rect x="16" y="23" width="32" height="14" rx="7" fill="#212529"/>
+   <circle cx="25" cy="30" r="4.4" fill="#22d3ee"/><circle cx="39" cy="30" r="4.4" fill="#22d3ee"/><circle cx="26" cy="29" r="1.4" fill="#fff"/><circle cx="40" cy="29" r="1.4" fill="#fff"/>
+   <path d="M22 45h20M26 45v4M32 45v4M38 45v4" stroke="#495057" stroke-width="2.2" stroke-linecap="round"/><rect x="6" y="26" width="5" height="12" rx="2" fill="#868e96"/><rect x="53" y="26" width="5" height="12" rx="2" fill="#868e96"/>`,
+];
+function avatarSvg(id){
+  const art = AVATARS[id % AVATARS.length];
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">${art}</svg>`;
 }
 
 /* ---- src/js/07-cards-modal.js ---- */

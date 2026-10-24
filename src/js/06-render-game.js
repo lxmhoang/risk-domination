@@ -1232,6 +1232,10 @@ function drawGameCanvas(){
   if(game.phase==='fortify') positionFloatingFortifyButton();
 }
 
+// Each player is a small flag in their color — an avatar, then three numbers (armies on the map,
+// armies they would get at the start of their next turn, territories held). Landscape: flags are
+// horizontal, stacked in a column down the left; portrait: vertical flags spread in one row along
+// the top (see the style.css rules for .player-card and #playerList).
 function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
   // Shown in turn order (whoever goes first at the top), not game.players' fixed id order —
@@ -1243,46 +1247,29 @@ function renderPlayerList(){
   // doing rather than introducing a separate "who's ahead" notion.
   const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
   byTurnOrder.forEach(p=>{
-    const card = el('div','player-card'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
+    const flagWrap = el('div','player-flag'+(p.id===currentPlayerId()&&!game.over?' active-turn':'')+(!p.alive?' eliminated':''));
+    const card = el('div','player-card');
+    card.style.setProperty('--pc', p.color);
+    card.title = p.name+(p.isHuman?' (Bạn)':'');
     const mine = ownedTerritories(p.id);
     const totalArmies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
-    const contsHeld = Object.values(mapData.continents).filter(cont=>{
-      const ct = Object.values(mapData.territories).filter(t=>t.continentId===cont.id).map(t=>t.id);
-      return ct.length>0 && ct.every(id=>game.owner[id]===p.id);
-    }).length;
-    // Line 1: the player's own color, now as a filled name badge (white text) instead of a
-    // separate dot, plus army count — the two things you actually glance at mid-game. Line 2:
-    // the rest (territories/continents/cards), kept to icon+number only, no text label — this
-    // list has to stay short enough that ~6 players fit on a short landscape phone screen with
-    // no scrolling.
-    const line1 = el('div','pline1');
-    const nameBadge = el('span','pname-badge', p.name+(p.isHuman?' (Bạn)':''));
-    nameBadge.style.background = p.color;
-    line1.appendChild(nameBadge);
-    line1.appendChild(el('span','stat-item', `⚔️ ${totalArmies}`));
+    const avatar = el('div','pf-avatar', avatarSvg(p.id));
     if(p.id===allianceLeaderId){
       const crown = el('span','crown-icon', '👑');
       crown.title = 'Đang dẫn đầu — các AI khác đang liên minh chống lại';
-      line1.appendChild(crown);
+      avatar.appendChild(crown);
     }
-    // Power-share bar: this player's share of the whole table's power (the same evaluatePlayerPower()
-    // the AI uses — armies, territories and reinforcements, weighted from the config), so the bar
-    // reads as "how strong they are relative to everyone" at a glance. Width is a plain CSS
-    // transition off a changed inline style, so it animates smoothly on its own.
-    const powerOf = pl=> pl.alive ? evaluatePlayerPower(pl.id) : 0;
-    const totalPower = game.players.reduce((s,pl)=> s+powerOf(pl), 0);
-    const pct = totalPower>0 ? Math.round(powerOf(p)/totalPower*100) : 0;
-    const bar = el('div','pcard-bar');
-    const fill = el('div','pcard-bar-fill');
-    fill.style.width = pct+'%';
-    fill.style.background = p.color;
-    bar.appendChild(fill);
-    const line2 = el('div','pline2');
-    [['🗺️',mine.length],['🌍',contsHeld],['🃏',p.cards.length]].forEach(([icon,val])=>{
-      line2.appendChild(el('span','stat-item', `${icon} ${val}`));
+    const stats = el('div','pf-stats');
+    [[totalArmies,'🪖','Quân đang có'],
+     [(p.alive ? computeReinforcements(p.id) : 0)+'+','🪖','Quân nhận được ở lượt tới (nếu không có gì thay đổi)'],
+     [mine.length,'🗺️','Số lãnh thổ đang giữ']].forEach(([val,icon,tip])=>{
+      const row = el('span','pf-stat', `<b>${val}</b><i>${icon}</i>`);
+      row.title = tip;
+      stats.appendChild(row);
     });
-    card.appendChild(line1); card.appendChild(bar); card.appendChild(line2);
-    wrap.appendChild(card);
+    card.appendChild(avatar); card.appendChild(stats);
+    flagWrap.appendChild(card);
+    wrap.appendChild(flagWrap);
   });
 }
 
