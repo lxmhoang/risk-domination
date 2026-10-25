@@ -6,7 +6,7 @@
 Object.assign(host, {
   renderGame, renderCombatLog, setActionHint, showDice, showTurnIntro, openCardsModal,
   showGameOver, startAttackAnim,
-  onGameInit(){ leaveOnlineGame(); gameZoom = 1; resetRenderAnimState(); },
+  onGameInit(){ leaveOnlineGame(); gameZoom = 1; playerListExpanded = false; resetRenderAnimState(); },
 });
 
 // A clicked <button> keeps keyboard focus afterward (standard browser behavior) — left alone,
@@ -367,6 +367,7 @@ $('btnStartGame').addEventListener('click', ()=>{
   showScreen('screen-game');
   maybeRotateMapForPortrait();
   renderGame();
+  applyInitialGameZoom();
   if(RUNTIME_CONFIG.manualInitialPlacement){
     setupPlaceNext();
   } else {
@@ -457,6 +458,15 @@ $('gameCanvas').addEventListener('pointerdown', (e)=>{
   pendingPlacement = { terrId, startX:e.clientX, startY:e.clientY, pointerId:e.pointerId };
   pendingPlacement.confirmTimer = setTimeout(()=> commitPendingPlacement(true), PLACEMENT_CONFIRM_MS);
 });
+// Mouse hover names the territory under the pointer (names are otherwise only drawn where they fit,
+// see labelFits() in 06-render-game.js). Touch has no hover — a tap selects, which names it too.
+$('gameCanvas').addEventListener('pointermove', (e)=>{
+  if(e.pointerType!=='mouse' || !game) return;
+  const id = getTerritoryFromCanvasEvent($('gameCanvas'), e);
+  const next = id===-1 ? null : id;
+  if(next!==hoverTerrId){ hoverTerrId = next; renderGame(); }
+});
+$('gameCanvas').addEventListener('pointerleave', ()=>{ if(hoverTerrId!=null){ hoverTerrId = null; if(game) renderGame(); } });
 $('gameCanvas').addEventListener('pointermove', (e)=>{
   if(!pendingPlacement || e.pointerId!==pendingPlacement.pointerId) return;
   const dx=e.clientX-pendingPlacement.startX, dy=e.clientY-pendingPlacement.startY;
@@ -470,6 +480,12 @@ $('gameCanvas').addEventListener('pointerup', (e)=>{
   $('gameCanvas').addEventListener(evtName, ()=>{ cancelPendingPlacement(); stopSetupHold(); })
 );
 $('btnCardsModal').addEventListener('click', ()=> openCardsModal(false));
+// Tapping any player flag expands/collapses them all together (see renderPlayerList()).
+$('playerList').addEventListener('click', (e)=>{
+  if(!game || !e.target.closest('.player-flag')) return;
+  playerListExpanded = !playerListExpanded;
+  renderGame();
+});
 $('btnSaveGame').addEventListener('click', ()=>{ if(!isOnlineGame()) exportGameJSON(); }); // an online game is saved on the server
 
 // Dragging/pinching to pan moves #gameCanvasWrap's scroll position directly (see below) without

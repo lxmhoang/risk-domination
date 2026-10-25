@@ -32,6 +32,8 @@ function replaySameGame(){
   game.players.forEach(p=>{ game.pool[p.id] = 0; });
   showScreen('screen-game');
   maybeRotateMapForPortrait();
+  renderGame();
+  applyInitialGameZoom();
   beginReinforcePhase();
 }
 
@@ -181,6 +183,7 @@ function importGameJSON(obj){
   showScreen('screen-game');
   maybeRotateMapForPortrait();
   renderGame();
+  applyInitialGameZoom();
   renderCombatLog();
   if(game.over) return;
   // If it was an AI's turn (or still mid initial placement) when saved, nothing is scheduled

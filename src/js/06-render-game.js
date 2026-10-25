@@ -48,8 +48,43 @@ function lerpColor(hexA, hexB, t){
 // about the same size on a phone as on a desktop monitor at their normal viewing distances), so a
 // CSS-px floor is a floor on how big the number actually looks. Capped so a tiny map can't turn
 // badges into giant discs covering their neighbors.
-const MIN_BADGE_NUMBER_CSS_PX = 12, BADGE_NUMBER_NATIVE_PX = 12, MAX_BADGE_BOOST = 2.2;
+const MIN_BADGE_NUMBER_CSS_PX = 8, BADGE_NUMBER_NATIVE_PX = 12, MAX_BADGE_BOOST = 2.2;
 let badgeBoost = 1;
+// Territory names: drawn at a fixed on-screen size (LABEL_CSS_PX), so their size in map px
+// shrinks as the map is zoomed in — set each frame by drawGameCanvas() along with badgeBoost.
+// A name is only shown where it fits inside its territory under the badge (see labelFits()), on
+// the selected territories, and on the one under the mouse — on a crowded map at fit zoom that
+// leaves just the big territories named, and zooming in brings the rest in one by one.
+const LABEL_CSS_PX = 10;
+let labelNativePx = 11;
+let hoverTerrId = null;
+// How far a territory's deepest point is from its edge, in map px (cached on the territory —
+// a rotated map is a new object, so it gets its own).
+function territoryClearance(map, t){
+  if(t._clear!=null) return t._clear;
+  const e = territoryEDT(unwrapCells(t.cells, map.cols, map.wrapX));
+  let best = 0;
+  for(let i=0;i<e.d2.length;i++) if(e.d2[i]>best) best = e.d2[i];
+  t._clear = Math.sqrt(best)*map.cellSize;
+  return t._clear;
+}
+// The biggest badgeBoost this map can take before badges spill over their territories: set by
+// its narrow territories (the 10th percentile of clearance, so one sliver alone doesn't shrink
+// every badge on the map). Cached per map object.
+function mapBadgeBoostCap(map){
+  if(map._badgeCap!=null) return map._badgeCap;
+  const cl = Object.values(map.territories).filter(t=>t.cells.length).map(t=>territoryClearance(map, t)).sort((a,b)=>a-b);
+  const p10 = cl.length ? cl[Math.floor(cl.length*0.1)] : ARMY_BADGE_RADIUS*MAX_BADGE_BOOST;
+  map._badgeCap = clamp(p10/(ARMY_BADGE_RADIUS+2), 0.6, MAX_BADGE_BOOST);
+  return map._badgeCap;
+}
+function labelFits(ctx, t, name){
+  const clear = territoryClearance(mapData, t);
+  const below = ARMY_BADGE_RADIUS*badgeBoost + labelNativePx*1.5; // badge + gap + text
+  if(clear < below) return false;
+  ctx.font = 'bold '+labelNativePx+'px sans-serif';
+  return ctx.measureText(name).width/2 <= clear*1.15;
+}
 function drawArmyBadge(ctx, x, y, count, opts){
   opts = opts || {};
   const scale = (opts.scale || 1)*badgeBoost;
@@ -197,11 +232,12 @@ function updateAttackAnim(now){
 // can reuse it without duplicating the name-label line.
 function drawBadgeWithLabel(ctx, x, y, count, name, opts){
   drawArmyBadge(ctx, x, y, count, opts);
+  if(!name) return;
   // Dark outline under white text so the name reads the same on any territory color.
-  ctx.font='bold 11px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  ctx.lineJoin='round'; ctx.lineWidth=3; ctx.strokeStyle='rgba(8,10,18,0.85)';
-  // just below the badge, however big badgeBoost made it (25 = default radius 13 + 12 gap)
-  const ly = y + ARMY_BADGE_RADIUS*badgeBoost + 12;
+  ctx.font='bold '+labelNativePx+'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.lineJoin='round'; ctx.lineWidth=labelNativePx*0.28; ctx.strokeStyle='rgba(8,10,18,0.85)';
+  // just below the badge, however big badgeBoost made it
+  const ly = y + ARMY_BADGE_RADIUS*badgeBoost + labelNativePx*1.1;
   ctx.strokeText(name, x, ly);
   ctx.fillStyle='#fff';
   ctx.fillText(name, x, ly);
@@ -748,6 +784,26 @@ function maybeRotateMapForPortrait(){
 // the rotation itself, since the map's whole aspect ratio just changed and whatever the player
 // had zoomed/panned to almost certainly doesn't line up with the new framing anymore. Called from
 // the existing debounced resize listener in 08-wiring.js (only while the game screen is active).
+// Map px -> CSS px scale of the last frame at zoom 1 (set by drawGameCanvas()).
+let lastFitScale = 1;
+// Called right after a game's first frame: when this map's badges can't grow enough to stay
+// readable at the fit-everything zoom (a crowded map on a small screen — see mapBadgeBoostCap()),
+// open zoomed in just enough, centered on the viewing player's own territories, and let them pan.
+function applyInitialGameZoom(){
+  const cap = mapBadgeBoostCap(mapData);
+  const need = MIN_BADGE_NUMBER_CSS_PX/(BADGE_NUMBER_NATIVE_PX*lastFitScale);
+  if(need<=cap) return;
+  setGameZoom(Math.min(need/cap, 3));
+  const mine = Object.values(mapData.territories).filter(t=>game.owner[t.id]===0);
+  const focus = mine.length && !spectatorMode ? mine : Object.values(mapData.territories);
+  if(wrapTiled() || !focus.length) return;
+  const x = focus.reduce((s,t)=>s+territoryAnchor(t).x,0)/focus.length;
+  const y = focus.reduce((s,t)=>s+territoryAnchor(t).y,0)/focus.length;
+  const wrap = $('gameCanvasWrap'), wr = wrap.getBoundingClientRect(), pt = mapPointToScreen(x, y);
+  wrap.scrollLeft += pt.x-(wr.left+wrap.clientWidth/2);
+  wrap.scrollTop += pt.y-(wr.top+wrap.clientHeight/2);
+}
+
 function handleGameOrientationResize(){
   const nowPortrait = isPortraitLayout();
   if(lastAdaptedPortraitLayout!==null && nowPortrait!==lastAdaptedPortraitLayout){
@@ -755,6 +811,9 @@ function handleGameOrientationResize(){
     gameZoom = 1;
     const wrap = $('gameCanvasWrap');
     wrap.scrollLeft = 0; wrap.scrollTop = 0;
+    renderGame();
+    applyInitialGameZoom();
+    return;
   }
   renderGame();
 }
@@ -800,13 +859,19 @@ function drawGameCanvas(){
   const margin = 16;
   const portrait = isPortraitLayout();
   let topH, leftW, rightW;
+  // The player list is measured collapsed: expanding it lays the flags over the map instead of
+  // shrinking the map every time someone taps it (collapsedPlayerListSize is kept up to date below).
+  if(!playerListExpanded){
+    const r = $('gamePlayerListWrap').getBoundingClientRect();
+    collapsedPlayerListSize = {w:r.width, h:r.height};
+  }
   if(portrait){
-    topH = $('gamePlayerListWrap').getBoundingClientRect().height;
+    topH = collapsedPlayerListSize.h;
     leftW = $('gameControlsLeft').getBoundingClientRect().width;
     rightW = $('gameControlsRight').getBoundingClientRect().width;
   } else {
     topH = 0;
-    leftW = $('gamePlayerListWrap').getBoundingClientRect().width;
+    leftW = collapsedPlayerListSize.w;
     rightW = $('gameControlsBand').getBoundingClientRect().width;
   }
   const bottomH = $('gameTurnInfo').getBoundingClientRect().height;
@@ -814,7 +879,14 @@ function drawGameCanvas(){
   const availH = Math.max(50, wrap.clientHeight-topH-bottomH-margin*3);
   const fitScale = Math.min(availW/nativeW, availH/nativeH);
   const displayScale = fitScale*gameZoom;
-  badgeBoost = clamp(MIN_BADGE_NUMBER_CSS_PX/(BADGE_NUMBER_NATIVE_PX*displayScale), 1, MAX_BADGE_BOOST);
+  lastFitScale = fitScale;
+  // Badges grow back up to stay readable when the map is shown small, but never past what this
+  // map's narrow territories have room for (mapBadgeBoostCap) — past that, the game opens zoomed
+  // in instead (applyInitialGameZoom()).
+  const boostCap = mapBadgeBoostCap(mapData);
+  badgeBoost = clamp(MIN_BADGE_NUMBER_CSS_PX/(BADGE_NUMBER_NATIVE_PX*displayScale), Math.min(1, boostCap), boostCap);
+  labelNativePx = LABEL_CSS_PX/displayScale;
+  const cssPx = 1/displayScale; // one on-screen CSS px, in map px — line widths below use it
   // cssW/cssH: the map's actual on-screen (CSS pixel / layout) size — used for the style.width/
   // height below and every margin/centering calc, since those all reason in CSS-pixel layout
   // space regardless of the device's pixel density.
@@ -969,8 +1041,8 @@ function drawGameCanvas(){
     const {x:cx, y:cy} = territoryShapeCenter(mapData, t);
     const radius = Math.max(mapData.cellSize*1.5, Math.sqrt(t.cells.length)*mapData.cellSize*0.85);
     const grad = ctx.createRadialGradient(cx,cy,0, cx,cy,radius);
-    grad.addColorStop(0, shadeColor(color, 16));
-    grad.addColorStop(1, shadeColor(color, -10));
+    grad.addColorStop(0, shadeColor(color, 4));
+    grad.addColorStop(1, shadeColor(color, -20));
     ctx.fillStyle = grad;
     ctx.fill();
     // Subtle grain texture on top, clipped to this same territory shape (path is still current
@@ -1006,7 +1078,7 @@ function drawGameCanvas(){
   terrs.forEach(t=>{
     if(offView(t)) return;
     pathFromLoops(ctx, getTerritoryBoundaryLoops(mapData, t.id));
-    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(8,10,18,0.85)';
+    ctx.lineWidth = Math.max(1.5, 1.6*cssPx); ctx.strokeStyle = 'rgba(8,10,18,0.92)';
     ctx.stroke();
   });
   ctx.save();
@@ -1016,7 +1088,9 @@ function drawGameCanvas(){
       const loops = getContinentBoundaryLoops(mapData, cont.id);
       if(loops.length===0) return;
       pathFromLoops(ctx, loops);
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = Math.max(5, 4.5*cssPx); ctx.strokeStyle = 'rgba(8,10,18,0.9)';
+      ctx.stroke();
+      ctx.lineWidth = Math.max(2, 1.8*cssPx); ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     });
   } else {
@@ -1035,13 +1109,12 @@ function drawGameCanvas(){
       if(loops.length===0) return;
       const ownerId = game.owner[contTerrs[0].id];
       const heldByOnePlayer = ownerId!==undefined && contTerrs.every(t=>game.owner[t.id]===ownerId);
-      if(heldByOnePlayer){
-        pathFromLoops(ctx, loops);
-        ctx.lineWidth = 7; ctx.strokeStyle = playerOf(ownerId).color;
-        ctx.stroke();
-      }
       pathFromLoops(ctx, loops);
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      // dark underlay: continent edges read thicker than the territory borders inside them
+      ctx.lineWidth = Math.max(5, 4.5*cssPx); ctx.strokeStyle = heldByOnePlayer ? playerOf(ownerId).color : 'rgba(8,10,18,0.9)';
+      if(heldByOnePlayer) ctx.lineWidth = Math.max(7, 7*cssPx);
+      ctx.stroke();
+      ctx.lineWidth = Math.max(2, 1.8*cssPx); ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.stroke();
     });
   }
@@ -1134,7 +1207,8 @@ function drawGameCanvas(){
       const isValidTo = t.id===game.selectedTo && game.selectedFrom!=null && canAttack(game.selectedFrom, t.id, currentPlayerId());
       if(isFrom || isValidTo) badgeScale = 1+0.3*pulse;
     }
-    drawBadgeWithLabel(ctx, at.x, at.y, armyCount, t.name, {scale:badgeScale});
+    const named = t.id===hoverTerrId || t.id===game.selectedFrom || t.id===game.selectedTo || labelFits(ctx, t, t.name);
+    drawBadgeWithLabel(ctx, at.x, at.y, armyCount, named ? t.name : null, {scale:badgeScale});
   });
   if(attackAnim) drawAttackAnimBadges(ctx, now);
   if(showContinentsGame){
@@ -1232,12 +1306,20 @@ function drawGameCanvas(){
   if(game.phase==='fortify') positionFloatingFortifyButton();
 }
 
-// Each player is a small flag in their color — an avatar, then three numbers (armies on the map,
-// armies they would get at the start of their next turn, territories held). Landscape: flags are
-// horizontal, stacked in a column down the left; portrait: vertical flags spread in one row along
-// the top (see the style.css rules for .player-card and #playerList).
+// Each player is a small flag in their color. Collapsed (the default at the start of a game) it
+// is just the avatar; tapping any flag expands them all to show the numbers — armies on the map,
+// armies they'd get at the start of their next turn, territories held — and tapping again folds
+// them back (see the #playerList click handler in 08-wiring.js). An eliminated player's flag
+// stays collapsed under a white veil. Landscape: horizontal flags stacked down the left, armies
+// and next-turn armies sharing one chip ("45 | 6+ 🪖"); portrait: vertical flags spread in one
+// row along the top, one number per row (see the style.css rules for .player-card / #playerList).
+let playerListExpanded = false;
+let collapsedPlayerListSize = {w:0, h:0};
+// Thin outline map pin — the territory count's icon (an emoji 🗺️ was unreadable at this size).
+const TERR_ICON_SVG = '<svg class="pf-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.5s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0c0 5-6.5 11.2-6.5 11.2z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="10.2" r="2.3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
 function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
+  wrap.classList.toggle('expanded', playerListExpanded);
   // Shown in turn order (whoever goes first at the top), not game.players' fixed id order —
   // game.turnOrder itself never changes after being shuffled once at game start, only turnIdx
   // advances through it, so this ordering stays stable for the whole match.
@@ -1251,23 +1333,26 @@ function renderPlayerList(){
     const card = el('div','player-card');
     card.style.setProperty('--pc', p.color);
     card.title = p.name+(p.isHuman?' (Bạn)':'');
-    const mine = ownedTerritories(p.id);
-    const totalArmies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
     const avatar = el('div','pf-avatar', avatarSvg(p.id));
     if(p.id===allianceLeaderId){
       const crown = el('span','crown-icon', '👑');
       crown.title = 'Đang dẫn đầu — các AI khác đang liên minh chống lại';
       avatar.appendChild(crown);
     }
-    const stats = el('div','pf-stats');
-    [[totalArmies,'🪖','Quân đang có'],
-     [(p.alive ? computeReinforcements(p.id) : 0)+'+','🪖','Quân nhận được ở lượt tới (nếu không có gì thay đổi)'],
-     [mine.length,'🗺️','Số lãnh thổ đang giữ']].forEach(([val,icon,tip])=>{
-      const row = el('span','pf-stat', `<b>${val}</b><i>${icon}</i>`);
-      row.title = tip;
-      stats.appendChild(row);
-    });
-    card.appendChild(avatar); card.appendChild(stats);
+    card.appendChild(avatar);
+    if(p.alive){
+      const mine = ownedTerritories(p.id);
+      const armies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
+      const next = computeReinforcements(p.id)+'+';
+      const stat = (cls, html, tip)=>{ const s = el('span','pf-stat '+cls, html); s.title = tip; return s; };
+      const stats = el('div','pf-stats');
+      // landscape: one chip for both army numbers; portrait: one row each (only one set shows)
+      stats.appendChild(stat('pf-land', `<b>${armies}</b><span class="pf-sep">|</span><b>${next}</b><i>🪖</i>`, 'Quân đang có | quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
+      stats.appendChild(stat('pf-port', `<b>${armies}</b><i>🪖</i>`, 'Quân đang có'));
+      stats.appendChild(stat('pf-port', `<b>${next}</b><i>🪖</i>`, 'Quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
+      stats.appendChild(stat('', `<b>${mine.length}</b>${TERR_ICON_SVG}`, 'Số lãnh thổ đang giữ'));
+      card.appendChild(stats);
+    }
     flagWrap.appendChild(card);
     wrap.appendChild(flagWrap);
   });

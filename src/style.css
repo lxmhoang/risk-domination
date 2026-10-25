@@ -281,7 +281,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
    horizontal scrollbar ever appears, without needing to clip anything since nothing actually
    exceeds this width. */
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:196px;overflow-y:auto;overflow-x:hidden;}
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:auto;max-width:230px;padding-right:12px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);
   max-height:none;white-space:nowrap;
@@ -402,12 +402,21 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 .crown-icon{position:absolute;top:-9px;right:-7px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
 .pf-stats{display:flex;align-items:center;gap:5px;min-width:0;}
 .pf-stat{
-  display:inline-flex;align-items:center;gap:1px;padding:2px 5px;border-radius:9px;
+  display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:9px;
   background:rgba(10,14,24,.62);color:#fff;font-size:12px;line-height:1.2;white-space:nowrap;
 }
-.pf-stat b{font-weight:800;}
+.pf-stat b{font-weight:500;letter-spacing:.2px;}
 .pf-stat i{font-style:normal;font-size:11px;}
-.player-flag.eliminated{opacity:.4;filter:grayscale(1);}
+.pf-sep{opacity:.55;margin:0 2px;font-weight:300;}
+.pf-pin{width:13px;height:13px;margin-left:1px;flex-shrink:0;}
+.pf-port{display:none;}
+/* Collapsed (default): just the avatar on a short flag; the numbers only show while expanded. */
+#playerList:not(.expanded) .pf-stats{display:none;}
+#playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding-right:18px;}
+.player-flag{cursor:pointer;}
+/* Eliminated: always collapsed (renderPlayerList() gives it no numbers), under a white veil. */
+.player-card{position:relative;}
+.player-flag.eliminated .player-card::after{content:'';position:absolute;inset:0;background:rgba(255,255,255,.6);}
 /* Unscoped (not .player-card .pname-badge) so #turnInfoRow's copy of the current player's name
    (see renderTopbar() in 06-render-game.js) can reuse the same color-filled pill + white text. */
 .pname-badge{
@@ -454,7 +463,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 @media (orientation:portrait){
   #gamePlayerListWrap{
     left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
-    overflow:visible;max-height:none;
+    overflow:visible;max-height:none;padding-right:0;
   }
   /* One row of vertical flags spread evenly along the top: the avatar on top, the three numbers
      stacked under it, the triangle cut out of the bottom edge. */
@@ -466,6 +475,9 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     clip-path:polygon(0 0,100% 0,100% 100%,50% calc(100% - 13px),0 100%);
   }
   .pf-stats{flex-direction:column;gap:3px;}
+  .pf-land{display:none;}
+  .pf-port{display:inline-flex;}
+  #playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding:6px 3px 18px;}
   .pf-stat{font-size:clamp(10px,3vw,12px);padding:1px 4px;}
   /* The landscape shift sideways makes no sense for a row of flags — lift the active one instead. */
   .player-flag.active-turn{transform:translateY(3px);}

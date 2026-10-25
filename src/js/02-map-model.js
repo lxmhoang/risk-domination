@@ -75,10 +75,19 @@ function mapToPlainObject(map){
     links: (map.links||[]).map(l=>[l[0],l[1]]),
   };
 }
+// A hand-made map file (src/maps/) may store its cells run-length encoded instead, as
+// cellTerritoryRLE: [id, count, id, count, …] — a 469x347 map is ~0.5MB as a plain array.
+function plainCellTerritory(obj){
+  if(obj.cellTerritory) return obj.cellTerritory;
+  const rle = obj.cellTerritoryRLE || [], out = new Array(obj.cols*obj.rows);
+  let k = 0;
+  for(let i=0;i<rle.length;i+=2) for(let n=0;n<rle[i+1];n++) out[k++] = rle[i];
+  return out;
+}
 function mapFromPlainObject(obj){
   const map = newMap(obj.cols, obj.rows, obj.name);
   map.cellSize = obj.cellSize || map.cellSize;
-  map.cellTerritory = new Int16Array(obj.cellTerritory);
+  map.cellTerritory = new Int16Array(plainCellTerritory(obj));
   map.wrapX = !!obj.wrapX; map.wrapY = !!obj.wrapY; // older saves/maps have neither -> no wrap
   (obj.territories||[]).forEach(t=>{
     map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};

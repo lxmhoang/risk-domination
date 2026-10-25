@@ -17,8 +17,9 @@ function drawMapThumb(canvas, entry){
   const small = document.createElement('canvas');
   small.width = entry.cols; small.height = entry.rows;
   const sctx = small.getContext('2d'), img = sctx.createImageData(entry.cols, entry.rows);
-  for(let i=0;i<entry.cellTerritory.length;i++){
-    const col = terrColor[entry.cellTerritory[i]];
+  const cells = plainCellTerritory(entry);
+  for(let i=0;i<cells.length;i++){
+    const col = terrColor[cells[i]];
     const hex = col ? parseInt(col.slice(1),16) : 0x0d3550;
     img.data[i*4] = hex>>16; img.data[i*4+1] = (hex>>8)&255; img.data[i*4+2] = hex&255; img.data[i*4+3] = 255;
   }

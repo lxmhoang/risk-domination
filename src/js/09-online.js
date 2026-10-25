@@ -103,6 +103,7 @@ function showOnlineGame(id, version, map, state, log){
   showScreen('screen-game');
   maybeRotateMapForPortrait();
   renderGame();
+  applyInitialGameZoom();
   renderCombatLog();
 }
 

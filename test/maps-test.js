@@ -23,7 +23,7 @@ function check(file){
   const map = core.mapFromPlainObject(obj);
   core.mapData = map;
   const terrs = Object.values(map.territories);
-  if(obj.cellTerritory.length!==obj.cols*obj.rows) problems.push('cellTerritory length != cols*rows');
+  if(core.plainCellTerritory(obj).length!==obj.cols*obj.rows) problems.push('cellTerritory length != cols*rows');
   terrs.forEach(t=>{
     if(t.cells.length===0) problems.push(`${t.name}: no cells`);
     if(!map.continents[t.continentId]) problems.push(`${t.name}: no continent`);
