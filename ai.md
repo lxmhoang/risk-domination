@@ -274,7 +274,14 @@ power top-1 ≥ tổng power của tất cả người còn lại × 0.6
 power top-1 ≥ power người thứ nhì               × 1.2
 ```
 
-Khi có leader, mọi AI khác bị **khoá cứng**: lượt đó chỉ được tấn công đất của leader.
+Người đạt ngưỡng không chỉ là "leader" mà còn bị gán nhãn **kẻ thù chung**
+(`game.commonEnemy = {id, startPower}`, cập nhật bởi `updateCommonEnemy()`). Liên minh bám theo
+nhãn chứ không theo trạng thái leader: kẻ thù chung vẫn bị đánh dù đã tụt dưới ngưỡng leader, và
+trong lúc đó một leader khác không bị hội đồng. Nhãn chỉ gỡ khi người đó bị loại hoặc sức mạnh
+< `allianceReleaseFraction` (mặc định 1/3, chỉnh ở trang admin) × sức mạnh lúc bị gán nhãn; sau đó
+mới tìm leader hiện tại để gán nhãn mới. Trên thẻ người chơi, kẻ thù chung có dấu 🎯.
+
+Khi có kẻ thù chung, mọi AI khác bị **khoá cứng**: lượt đó chỉ được tấn công đất của leader.
 Nếu không có ô nào giáp leader thì không tấn công gì. Quân dự phòng cũng chỉ tính trước
 đất của leader. Leader thì chơi bình thường.
 

@@ -1918,6 +1918,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
     log: [],
     over: false,
     allianceEnabled: !!allianceEnabled,
+    commonEnemy: null, // {id, startPower}: the alliance's current target, see updateCommonEnemy() in 05-ai.js
     biggestBattle: null, // set by recordBattleStat(), shown on the end-game summary screen
   };
   logMsg('info', 'Ván chơi bắt đầu! '+players.length+' người chơi trên bản đồ "'+mapData.name+'".');
@@ -2241,6 +2242,7 @@ function endTurn(){
     if(game.turnIdx===0) game.roundNumber++; // wrapped back to the start of turnOrder = a new round
   } while(!isAlive(currentPlayerId()));
   if(game.over) return;
+  if(game.allianceEnabled) updateCommonEnemy(); // keep the mark current for the UI too
   startReinforce();
 }
 
@@ -2455,10 +2457,12 @@ function runAction(pid, action){
       the same difficulty still play distinctly from each other.
    5. ALLIANCE (optional, game.allianceEnabled): when on, and one player has
       pulled CLEARLY ahead of the field (findAllianceLeader() — margin-gated,
-      not just "whoever's highest this turn"), every OTHER AI is reluctant to
-      fight fellow non-leaders and instead prefers piling onto the leader — a
-      loose "gang up on the leader" dynamic instead of every AI treating all
-      rivals the same. The leader itself is exempt and just plays normally.
+      not just "whoever's highest this turn"), that player is marked as the
+      common enemy (updateCommonEnemy()) and every OTHER AI is reluctant to
+      fight fellow non-leaders and instead piles onto them — and keeps doing so
+      until their power falls below a fraction of what it was when marked, even
+      if they're no longer the leader. The target itself is exempt and just
+      plays normally.
    ========================================================================= */
 
 // Labels only — the numbers behind each personality (threshold shift, reserve multiplier, kill/
@@ -2582,6 +2586,28 @@ function findAllianceLeader(){
   if(top.power < restTotal*RUNTIME_CONFIG.allianceLeaderVsField) return null;
   if(top.power < rest[0].power*RUNTIME_CONFIG.allianceLeaderMargin) return null;
   return top.id;
+}
+
+// The alliance's actual target — "kẻ thù chung" (common enemy). Being the leader only gets a
+// player MARKED (game.commonEnemy = {id, startPower}); from then on the gang-up follows the mark,
+// not the leader status: it keeps going after the mark's player even once they've dropped below
+// the leader thresholds, and a different player who becomes the leader meanwhile is left alone.
+// The mark comes off when its player is eliminated or their power falls below
+// allianceReleaseFraction (1/3) of what it was when they were marked — only then is the leader
+// looked for again, and whoever it is becomes the new common enemy. Returns the target's id or
+// null. Called from every AI decision (and at the start of each turn, see startReinforce()), so
+// the mark stays current; it lives in game so a saved game / the UI see the same thing.
+function updateCommonEnemy(){
+  const ce = game.commonEnemy;
+  if(ce){
+    const pl = game.players[ce.id];
+    if(pl && pl.alive && evaluatePlayerPower(ce.id) >= ce.startPower*RUNTIME_CONFIG.allianceReleaseFraction) return ce.id;
+    game.commonEnemy = null;
+  }
+  const leaderId = findAllianceLeader();
+  if(leaderId==null) return null;
+  game.commonEnemy = { id:leaderId, startPower:evaluatePlayerPower(leaderId) };
+  return leaderId;
 }
 
 function difficultyProfile(diff, personality){
@@ -2801,7 +2827,7 @@ function pickAIReinforceTarget(pid, mine, intent){
   // other AI into "attack only the leader" this turn, a border facing a fellow non-leader isn't
   // a real threat (they won't attack it either) — so new reinforcements shouldn't be pulled
   // toward defending it. Only borders facing the leader still count as under threat.
-  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
+  const allianceLeaderId = game.allianceEnabled ? updateCommonEnemy() : null;
   const mustOnlyDefendAgainstLeader = allianceLeaderId!=null && pid!==allianceLeaderId;
   // This turn's single-minded focus, if it has one: the gang-up leader (forced on every other
   // AI), or — for the leader itself, or anyone else not under that lock — a kill_weak intent's
@@ -3049,7 +3075,7 @@ function aiAttackStep(pid, intent){
   opponents.forEach(pl=>{ const pw = evaluatePlayerPower(pl.id); if(pw>leaderPower){ leaderPower=pw; leaderId=pl.id; } });
   // Only computed when the setting is on — findAllianceLeader() scans every alive player
   // (self included) and requires a real margin over the runner-up (see its own comment).
-  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
+  const allianceLeaderId = game.allianceEnabled ? updateCommonEnemy() : null;
   const iAmAllianceLeader = pid!=null && pid===allianceLeaderId;
   // Hard gang-up: once there's a runaway leader, every other AI attacks ONLY the leader's
   // territories this turn — no picking on a fellow underdog instead, no falling back to
@@ -3272,7 +3298,7 @@ function aiFortifyStep(pid, intent){
   // also this turn's fortify front, not just this turn's attack target, so troops actually pile
   // up where the AI is allowed to strike instead of wherever pickAITurnIntent's unrelated
   // continent/kill_weak/defend logic happened to land independently of the alliance rule.
-  const allianceLeaderId = game.allianceEnabled ? findAllianceLeader() : null;
+  const allianceLeaderId = game.allianceEnabled ? updateCommonEnemy() : null;
   const mustOnlyAttackLeader = allianceLeaderId!=null && pid!==allianceLeaderId;
   // move armies from every safe interior territory to the front
   const mine = ownedTerritories(pid);
@@ -3470,6 +3496,7 @@ return {
   captureRatio,
   captureRatioThreshold,
   findAllianceLeader,
+  updateCommonEnemy,
   difficultyProfile,
   difficultyThreshold,
   evaluatePlayerPower,

@@ -85,6 +85,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
     log: [],
     over: false,
     allianceEnabled: !!allianceEnabled,
+    commonEnemy: null, // {id, startPower}: the alliance's current target, see updateCommonEnemy() in 05-ai.js
     biggestBattle: null, // set by recordBattleStat(), shown on the end-game summary screen
   };
   logMsg('info', 'Ván chơi bắt đầu! '+players.length+' người chơi trên bản đồ "'+mapData.name+'".');
@@ -408,5 +409,6 @@ function endTurn(){
     if(game.turnIdx===0) game.roundNumber++; // wrapped back to the start of turnOrder = a new round
   } while(!isAlive(currentPlayerId()));
   if(game.over) return;
+  if(game.allianceEnabled) updateCommonEnemy(); // keep the mark current for the UI too
   startReinforce();
 }

@@ -1336,8 +1336,13 @@ function renderPlayerList(){
     const avatar = el('div','pf-avatar', avatarSvg(p.id));
     if(p.id===allianceLeaderId){
       const crown = el('span','crown-icon', '👑');
-      crown.title = 'Đang dẫn đầu — các AI khác đang liên minh chống lại';
+      crown.title = 'Đang dẫn đầu';
       avatar.appendChild(crown);
+    }
+    if(game.allianceEnabled && game.commonEnemy && game.commonEnemy.id===p.id && p.alive){
+      const mark = el('span','enemy-icon', '🎯');
+      mark.title = 'Kẻ thù chung — các AI khác đang liên minh chống lại';
+      avatar.appendChild(mark);
     }
     card.appendChild(avatar);
     if(p.alive){

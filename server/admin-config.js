@@ -31,6 +31,7 @@ const GROUPS = [
   { title:'Liên minh & sức mạnh', fields:{
     allianceLeaderVsField: num('Leader khi sức mạnh ≥ … × tổng những người còn lại', 0, 5, 0.05),
     allianceLeaderMargin: num('… và ≥ … × người đứng thứ 2', 1, 5, 0.05),
+    allianceReleaseFraction: num('Kẻ thù chung hết bị đánh khi sức mạnh < … × lúc bị gán nhãn', 0.05, 1, 0.01),
     powerWeightArmies: num('Sức mạnh: trọng số quân', 0, 20, 0.5),
     powerWeightTerritories: num('Sức mạnh: trọng số lãnh thổ', 0, 20, 0.5),
     powerWeightReinforcements: num('Sức mạnh: trọng số tăng viện/lượt', 0, 50, 0.5),

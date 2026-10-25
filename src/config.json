@@ -28,6 +28,7 @@
   "persOpportunistContinentBonus": 0.9,
   "allianceLeaderVsField": 0.6,
   "allianceLeaderMargin": 1.2,
+  "allianceReleaseFraction": 0.3333,
   "powerWeightArmies": 2,
   "powerWeightTerritories": 1,
   "powerWeightReinforcements": 6,
