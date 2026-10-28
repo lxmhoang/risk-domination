@@ -1,12 +1,8 @@
 # Thảo luận: nâng cấp AI theo hướng "1 chiến lược tổng thể/lượt" + thang trigger/đối sách
 
-Ghi lại nguyên trạng thảo luận (2026-09 → chốt 2026-10) để lục lại sau. **Đã implement**
-(2026-10) trong `src/js/05-ai.js` — xem [`ai.md`](ai.md) mục 4 cho mô tả theo code thật.
-File này giữ lại làm lịch sử thảo luận/thiết kế, không còn là "đề xuất chưa làm" nữa.
-Vài điểm tài liệu này còn mơ hồ đã được code-time quyết cụ thể hơn khi cài — xem ghi chú
-`/* * */` trong `TRIGGER_LEAN`/`RESPONSE_LEAN` ở 05-ai.js và mục 10 "Giới hạn đã biết"
-trong ai.md (đặc biệt: mood dùng chung 1 roll cho mọi intent khiến AI thụ động hơn hẳn ở
-test thực đo, chưa được tinh chỉnh lại).
+Ghi lại thảo luận (2026-09 → 2026-10). **Đã implement** trong `src/js/05-ai.js`; mô tả
+đúng theo code ở [`ai.md`](ai.md). Xem mục "Trạng thái implement" cuối file cho những chỗ
+code đơn giản hoá hoặc chưa làm.
 
 ## Bối cảnh
 
@@ -16,7 +12,7 @@ chạy 1 lần đầu lượt, chọn 1 trong 4 ý định (`finish_continent`, 
 `expand`) theo thứ tự ưu tiên cố định, rồi truyền xuống cả 3 bước reinforce/attack/
 fortify để chúng cộng điểm ưu tiên theo đúng ý định đã chọn thay vì tính độc lập.
 
-## Đề xuất mở rộng (chưa làm)
+## Đề xuất mở rộng (đã làm — xem "Trạng thái implement")
 
 ### Tỷ lệ quân số (dùng chung cho mọi chỗ ước lượng tấn công bên dưới)
 
@@ -53,23 +49,18 @@ không" nữa, mà có **2 thang riêng**:
    trigger KHÓ/CHẶT hơn (chỉ làm khi chắc ăn).
 2. **Thang đối sách** — sau khi trigger, chọn cách thực thi nặng/nhẹ khác nhau.
 
-Level nào được dùng phụ thuộc `personality` của AI đó (thiên hướng cố định — "Personality
-lean" ghi ở mỗi intent dưới đây chỉ là mức AI đó hay "chạm" nhất, không phải mức duy
-nhất có thể ra) **+ 1 lần roll "mood" random mỗi lượt** để tạo đa dạng lối chơi giữa các
-lượt dù cùng 1 AI/personality. Mood gồm **2 thuộc tính độc lập**, roll chung 1 lần nhưng
-không liên quan tới nhau:
+Level nào được dùng phụ thuộc `personality` của AI đó (thiên hướng cố định) **+ 1 lần
+roll "mood" random mỗi lượt** để tạo đa dạng lối chơi giữa các lượt dù cùng 1
+AI/personality. Mood gồm **2 thuộc tính độc lập**, roll chung 1 lần nhưng không liên
+quan tới nhau:
 
-- **mood.trigger** — chọn level của **thang trigger**, áp lên TẤT CẢ intent trong lượt.
-- **mood.response** — chọn level của **thang đối sách**, áp lên TẤT CẢ intent trong lượt.
-
-Cách roll: **random thôi**, không có công thức lệch ±N cố định — mỗi thuộc tính random
-giữa các level hợp lệ, lệch theo trọng số "lean" của personality (lean của AI đó ra nhiều
-hơn, nhưng level khác vẫn có thể ra). Không cần công thức toán chính xác hơn lúc này.
+- **mood.trigger** — lệch level của **thang trigger**, áp lên TẤT CẢ intent trong lượt.
+- **mood.response** — lệch level của **thang đối sách**, áp lên TẤT CẢ intent trong lượt.
 
 Tức là đối sách (response) KHÔNG suy ra từ việc trigger-level nào vừa khớp/nghiêm trọng
 tới đâu — nó là 1 roll riêng, độc lập hoàn toàn với trigger. 1 lượt "trigger dễ nổi nóng"
-(mood.trigger ra mức dễ kích hoạt) hoàn toàn có thể đi cùng 1 "đối sách nhẹ nhàng"
-(mood.response ra Response A) trong cùng 1 lượt, và ngược lại.
+(mood.trigger lệch về phía dễ kích hoạt) hoàn toàn có thể đi cùng 1 "đối sách nhẹ nhàng"
+(mood.response lệch về phía Response A) trong cùng 1 lượt, và ngược lại.
 
 ### Intent mới: `stay_survival`
 
@@ -111,14 +102,25 @@ opportunist/balanced → Level 3. Personality lean (response): turtle → hay ch
 
 ### `finish_continent`
 
+**Cập nhật 2026-10-28:** không còn đòi "thiếu đúng 1 ô" — thiếu bao nhiêu ô cũng được, miễn
+đủ mạnh để chiếm hết các ô còn thiếu. "Đủ mạnh" đo bằng **Lực trên lục địa** (dùng chung
+với `attempt_continent`):
 
-- **Level 4 — Thận trọng**: thiếu đúng 1 ô, giáp biên, VÀ Tỷ lệ quân số (mục trên) ở mức
-  Cẩn thận, VÀ sau khi chiếm vẫn đủ quân giữ TRỌN đường biên mới của châu lục (kiểm tra
-  kiểu `reserveFor` cho từng biên mới, không chỉ riêng ô vừa chiếm).
-- **Level 3 — Bình thường**: thiếu đúng 1 ô, giáp biên, VÀ Tỷ lệ quân số ở mức Cẩn thận —
-  nhưng KHÔNG kiểm tra khả năng giữ cả châu lục sau đó.
-- **Level 2 — Bất cẩn (hành vi hiện tại)**: thiếu đúng 1 ô, giáp biên, VÀ Tỷ lệ quân số ở
-  mức Cẩn thận → đánh luôn.
+```
+A = quân của tôi trong lục địa
+  + quân ở ô ngoài lục địa có đường fortify tới (trừ ô thuộc lục địa khác đã chiếm trọn
+    mà đang giáp player khác), mỗi ô chừa 1
+  + quân tăng viện lượt này
+B = tổng quân địch trên các ô còn thiếu
+ratio = A/B ≥ mức Cẩn thận
+```
+
+"Giáp biên" = ít nhất 1 ô còn thiếu giáp ô của tôi.
+
+- **Level 4 — Thận trọng**: ratio đạt, giáp biên, VÀ sau khi chiếm hết vẫn đủ quân giữ
+  TRỌN đường biên mới của châu lục.
+- **Level 3 — Bình thường**: ratio đạt, giáp biên — KHÔNG kiểm tra giữ châu lục sau đó.
+- **Level 2 — Bất cẩn**: như Level 3.
 - **Level 1 — Mù mờ**: bỏ qua, không màng hoàn tất châu lục lượt này.
 
 Đối sách:
@@ -169,11 +171,33 @@ loại. Nếu `stay_survival` đã trigger thì `defend` coi như vô nghĩa lư
 - **Response A — Gia cố nhẹ (hành vi hiện tại)**: bonus +1.0, phạt tấn công nơi khác
   giữ nguyên −0.3.
 
-Personality lean (trigger): turtle → hay chạm Level 3; balanced → hay chạm Level 2;
-rusher → hay chạm Level 1. Personality lean (response): turtle → hay chạm Response B;
-balanced/rusher → hay chạm Response A.
+Personality lean: turtle → Level 3/Response B; balanced → Level 2/Response A; rusher →
+Level 1.
 
-### `expand` (mặc định/fallback — luôn có thể trigger)
+### Intent mới: `attempt_continent` — "âm mưu chiếm lục địa" (2026-10-28)
+
+Fallback thay cho `expand` (trigger luôn có thể xảy ra, không có thang trigger/đối sách).
+
+1. **Chọn lục địa**: trong các lục địa tôi có ≥1 ô mà chưa chiếm trọn, chọn lục địa có
+   Lực trên lục địa (mục `finish_continent`) cao nhất — tức áp đảo nhất. Khi ratio đủ cao
+   thì lượt sau nó tự "chín" thành `finish_continent`.
+2. **Tăng viện**: dồn hết vào 1 ô trong lục địa, ưu tiên ô giáp ô địch ít quân nhất trong
+   lục địa (để đánh nếu cần).
+3. **Tấn công** — bảo toàn lực lượng ở lục địa mục tiêu, chỉ cố kiếm 1 lá bài:
+   - Dùng quân ở ô KHÔNG đi tới được lục địa, đánh "hú hoạ" 1 ô có tỉ lệ thắng cao nhất,
+     đánh tới khi chiếm được hoặc hết quân (quân này vô dụng cho kế hoạch nên liều được).
+   - Không được thì đánh 1 ô của player khác trong lục địa, ưu tiên ô ít quân nhất, dừng khi
+     tỉ lệ dưới ngưỡng tấn công thường của độ khó — mong các ô nhiều quân hơn của player
+     khác trong lục địa bỏ đi hoặc đánh lẫn nhau.
+   - Chiếm được 1 ô là thôi tấn công.
+4. **Fortify**: dồn quân mọi ô ngoài lục địa có đường tới lục địa (cả ô đang giáp địch,
+   chừa 1) vào lục địa, ưu tiên ô giáp player khác — KHÔNG động vào ô của lục địa cũ đã
+   chiếm trọn mà đang giáp player khác.
+
+### `expand` — TẠM TẮT (2026-10-28)
+
+Chỉ còn là lưới an toàn khi không có lục địa nào để `attempt_continent` (mọi lục địa tôi
+có mặt đều đã chiếm trọn). Thiết kế cũ giữ nguyên dưới đây.
 
 - **Level 3 — Cơ hội nhất**: quét tất cả biên, chọn cặp có tỉ lệ thắng tốt nhất cho tôi
   (dễ ăn nhất), bất kể có phải biên yếu hay không.
@@ -185,14 +209,13 @@ balanced/rusher → hay chạm Response A.
   tốt.
 - **Response A — Thăm dò**: giới hạn tối đa 1-2 trận lượt này dù vẫn còn mục tiêu ngon.
 
-Personality lean (trigger): rusher → hay chạm Level 3; turtle → hay chạm Level 1;
-balanced/opportunist → hay chạm Level 2. Personality lean (response): rusher → hay chạm
-Response B; turtle/balanced/opportunist → hay chạm Response A.
+Personality lean: rusher → Level 3/Response B; turtle → Level 1/Response A; balanced/
+opportunist → Level 2/Response A.
 
 ## Đã chốt với user (2026-10)
 
 1. ✅ Thứ tự ưu tiên: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak` >
-   `defend` > `expand`.
+   `defend` > `attempt_continent` (từ 2026-10-28, thay `expand` — giờ chỉ là lưới an toàn).
 2. ✅ Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng
    từng intent) — nhưng mood gồm **2 thuộc tính độc lập** (`mood.trigger`,
    `mood.response`), mỗi thuộc tính lệch level của đúng 1 thang (trigger hoặc đối sách),
@@ -207,16 +230,25 @@ Response B; turtle/balanced/opportunist → hay chạm Response A.
    1.15), nhưng B vẫn là tổng quân TOÀN BẢN ĐỒ của tôi (không phải quân ở 1 Tỉnh biên như
    công thức chung) — công thức A/B riêng của `stay_survival`, chỉ mượn chung *3 con số
    ngưỡng + nguồn config*, không mượn định nghĩa A/B.
-6. ✅ Đã viết lại "Personality lean" của `finish_continent`/`kill_weak`/`defend`/`expand`
-   thành 2 dòng riêng (trigger lean / response lean) cho đồng bộ với `stay_survival`,
-   thay cho 1 cặp (level, response) cố định như bản nháp cũ.
-7. ✅ Cách roll mood: **random thôi**, không có công thức lệch ±N cố định. Mỗi lượt
-   `mood.trigger`/`mood.response` random giữa các level hợp lệ, lệch theo trọng số
-   "lean" của personality — không cần công thức toán chi tiết hơn ở giai đoạn thảo luận
-   này, để lúc code mới quyết cách random cụ thể (uniform có trọng số, hay cách khác).
 
-## Giả định còn treo, cần user xác nhận trước khi code
+6. ✅ Mood: random có trọng số (mức personality "hay chạm" nặng gấp 3), không có công
+   thức lệch ±N.
+7. ✅ (2026-10-28) `finish_continent` cho phép thiếu nhiều ô; thêm `attempt_continent`,
+   tắt `expand`. Đã chốt: đo "đủ mạnh" bằng Lực trên lục địa; ứng viên chỉ là lục địa có
+   ≥1 ô của tôi; trận hú hoạ đánh liều, trận trong lục địa giữ ngưỡng; fortify dồn mọi ô
+   ngoài lục địa trừ ô lục địa cũ đã chiếm trọn đang giáp player khác.
 
-Hiện không còn câu hỏi treo nào — phần "Đề xuất mở rộng" ở trên coi như đã chốt đủ để
-bắt đầu code. Cách random có trọng số cụ thể (mục 7) để ngỏ cho lúc code, không chặn lại
-việc bắt đầu.
+## Trạng thái implement
+
+Đã làm hết, trừ các chỗ đơn giản hoá / chưa làm sau:
+
+- `stay_survival`: phần "quân bên thứ 3 phải bị vượt qua" **chưa cài** (chưa có công thức).
+- `kill_weak` Level 2: điều kiện "không làm `usable` tụt dưới mức stay_survival cần"
+  **chưa cài** — Level 2 hiện giống Level 3.
+- `kill_weak` Level 4: "đủ ít để kết liễu trong 1-2 lượt" ước lượng thô bằng tổng quân
+  của họ ≤ `myPower × 0.5`.
+- `finish_continent` Level 2 và 3 giống nhau.
+- `expand` (giờ chỉ là lưới an toàn): Level 2 và 3 chỉ khác ở ô dồn quân, không khác ở
+  chọn mục tiêu tấn công.
+- Vài ô trong bảng personality lean không được chốt rõ → mặc định theo `balanced`
+  (đánh dấu `/* * */` trong code).

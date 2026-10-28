@@ -77,8 +77,8 @@ chọn ý định lượt (mục 4), đặt quân, đổi bài hay fortify — c
 
 ([05-ai.js:231](src/js/05-ai.js#L231), thiết kế đầy đủ ở
 [`ai-strategy-discussion.md`](ai-strategy-discussion.md)) Chạy 1 lần đầu lượt, chọn **1
-chiến dịch duy nhất**. Mỗi intent (trừ `expand`, luôn có sẵn làm phương án cuối) có 2
-thang riêng:
+chiến dịch duy nhất**. Mỗi intent (trừ 2 phương án cuối `attempt_continent` và `expand`)
+có 2 thang riêng:
 
 - **Thang trigger** (1-4 hoặc 1-3 tuỳ intent) — intent này CÓ được chọn lượt này không,
   và với điều kiện nào. Level 1 luôn là "bỏ qua hẳn".
@@ -96,28 +96,69 @@ Vài ô trong 2 bảng này không được tài liệu thảo luận chốt rõ
 Intent được xét theo thứ tự cố định, khớp cái đầu tiên thì dừng:
 
 1. **`stay_survival`** — ưu tiên số 1, xem riêng dưới đây.
-2. **`finish_continent`** — thiếu đúng 1 lãnh thổ để chiếm trọn 1 châu lục, lãnh thổ đó
-   giáp đất mình, VÀ "Tỷ lệ quân số" (xem định nghĩa dưới) tại đó ≥ ngưỡng `aiEasyThreshold`.
-   Level 4 còn đòi thêm: sau khi chiếm vẫn giữ được TRỌN đường biên mới của châu lục
+2. **`finish_continent`** — châu lục mình có ≥1 ô nhưng chưa trọn, thiếu **bao nhiêu ô
+   cũng được**, miễn "Lực trên lục địa" (`continentForce`, xem dưới) ≥ ngưỡng
+   `aiEasyThreshold` và ít nhất 1 ô còn thiếu giáp đất mình. Nhiều châu lục cùng đạt thì lấy
+   tỉ lệ cao nhất. Level 4 còn đòi thêm: sau khi chiếm hết vẫn giữ được TRỌN đường biên mới
    (`canHoldContinentBorders`, kiểm tra thô — so quân hiện có với địch mạnh nhất giáp mỗi
-   biên, không mô phỏng fortify thật).
+   biên, ô vừa chiếm tính 1 quân, không mô phỏng fortify thật).
 3. **`kill_weak`** — có đối thủ còn ≤2 lãnh thổ (≤3 ở Level 4) và giáp đất mình. Level 4
    còn đòi tổng quân của họ đủ ít so với sức mạnh của tôi (`myPower×0.5` — ước lượng thô,
    không mô phỏng chiến đấu thật).
 4. **`defend`** — biên bị áp đảo nặng nhất của mình thua láng giềng địch mạnh nhất ≥1
    (Level 3) hoặc ≥2 (Level 2) quân, **và** mình yếu hơn đối thủ mạnh nhất.
-5. **`expand`** — luôn trả về, không gate. Level 3 ("Cơ hội nhất") đổi tiêu điểm từ "biên
-   yếu nhất của mình" sang "cặp (biên của tôi, láng giềng địch) có tỉ lệ quân/quân tốt
-   nhất" — ước lượng thô, `aiAttackStep` vẫn tính lại đầy đủ (reserve, vùng, …) trước khi
-   thực đánh. Level 1 ("Rụt rè") không chủ động tấn công — `aiAttackStep` bỏ qua thẳng
-   sang fortify.
+5. **`attempt_continent`** ("âm mưu chiếm lục địa") — phương án cuối, không có thang
+   trigger/đối sách: chọn châu lục có "Lực trên lục địa" cao nhất trong các châu lục mình có
+   ≥1 ô mà chưa trọn. Cách thực thi xem riêng dưới đây.
+6. **`expand`** — **tạm tắt**: chỉ còn là lưới an toàn khi không có châu lục nào để âm mưu
+   (mọi châu lục mình có mặt đều đã chiếm trọn). Level 3 ("Cơ hội nhất") đổi tiêu điểm từ
+   "biên yếu nhất của mình" sang "cặp (biên của tôi, láng giềng địch) có tỉ lệ quân/quân
+   tốt nhất". Level 1 ("Rụt rè") không chủ động tấn công.
 
 Ý định được tính lại từ đầu mỗi lượt (kể cả roll mood); AI không nhớ lượt trước mình định
 làm gì.
 
+### "Lực trên lục địa" — `continentForce(pid, contId)`
+
+Dùng chung cho `finish_continent` (đủ mạnh để chiếm hết các ô còn thiếu chưa) và
+`attempt_continent` (châu lục nào mình áp đảo nhất) — nên khi 1 châu lục đang "âm mưu" có tỉ
+lệ đủ cao thì lượt sau nó tự chín thành `finish_continent`.
+
+```
+A = quân của mình trong châu lục
+  + quân ở các ô ngoài châu lục có đường fortify tới (nối liền qua đất mình),
+    TRỪ ô được bảo vệ (thuộc châu lục khác đã chiếm trọn và đang giáp player khác)
+    (mỗi ô chừa 1 quân)
+  + quân tăng viện lượt này
+B = tổng quân địch trên các ô còn thiếu của châu lục
+ratio = A / B
+```
+
+### `attempt_continent` — 4 bước
+
+1. **Chọn châu lục** — `continentForce` cao nhất (trên).
+2. **Tăng viện** — dồn **toàn bộ** quân tăng viện vào 1 ô trong châu lục: ô mạnh nhất của mình
+   giáp ô địch **ít quân nhất** trong châu lục (`attemptContinentStaging`). Không có ô nào
+   như vậy thì ô mạnh nhất trong châu lục đang giáp địch, rồi ô mạnh nhất bất kỳ. Khoá liên
+   minh (mục 7c) vẫn được ưu tiên hơn.
+3. **Tấn công** (`attemptContinentAttack`) — giữ lực lượng cho châu lục, chỉ cố kiếm 1 lá bài:
+   - a. **Hú hoạ**: dùng quân ở ô **không** có đường tới châu lục (vô dụng cho kế hoạch),
+     đánh 1 ô địch có tỉ lệ tốt nhất, đánh tới khi chiếm được hoặc hết quân (không xét ngưỡng).
+   - b. Không chiếm được (hoặc không có ô nào như vậy) → đánh ô địch **ít quân nhất** trong
+     châu lục từ ô mạnh nhất của mình giáp nó, dừng khi tỉ lệ xuống dưới `baseThreshold`
+     của độ khó — mong các ô nhiều quân của player khác trong châu lục bỏ đi hoặc đánh lẫn
+     nhau.
+   - Mỗi trận chỉ nhắm 1 ô; chiếm được 1 ô là thôi tấn công lượt đó.
+4. **Fortify** — dồn quân từ **mọi** ô ngoài châu lục có đường tới châu lục (kể cả ô đang
+   giáp địch, chừa 1 quân) vào châu lục, trừ ô được bảo vệ (như trong công thức A). Đích: ô
+   tập kết của bước 2 trước, rồi các ô trong châu lục giáp địch. Sau đó hậu phương còn lại
+   chạy fortify thường (mục 8).
+
 ### "Tỷ lệ quân số" — `captureRatio(pid, terrId)`
 
-Dùng chung cho `finish_continent` (và tương tự, công thức riêng, cho `stay_survival`):
+Định nghĩa gốc của tài liệu thảo luận, cho 1 Tỉnh. Hiện code còn giữ hàm `captureRatio`
+nhưng `finish_continent` đã chuyển sang `continentForce` (trên); `stay_survival` dùng công
+thức riêng cùng tinh thần:
 
 ```
 A = tổng quân của mình ở các láng giềng của Tỉnh đó (KHÔNG trừ quân dự phòng — khác
@@ -193,6 +234,7 @@ bất kể điểm, nên toàn bộ quân dồn vào đó:
 - Ý định là `stay_survival` → mục tiêu là `focusTerrId` (biên bị đe doạ nhất) — thắng
   tuyệt đối trước cả các override khác dưới đây, bất kể đối sách nào được chọn.
 - Ý định là `kill_weak` → mục tiêu là đối thủ đang bị nhắm.
+- Ý định là `attempt_continent` → ô tập kết trong châu lục (mục 4, bước 2).
 - Liên minh đang kích hoạt (mục 7c) → mục tiêu là người dẫn đầu; lúc này quân địch
   không phải của người dẫn đầu cũng không được tính là mối đe doạ.
 
@@ -219,6 +261,7 @@ hoặc chạy đường riêng, không qua vòng lặp chấm điểm bên dư�
 - `stay_survival`, đối sách Đánh rỉa (1) ở 2 chế độ còn lại → `staySurvivalNibble()`, xem
   mục 4.
 - `expand`, Level 1 ("Rụt rè") → bỏ qua tấn công, sang fortify ngay.
+- `attempt_continent` → `attemptContinentAttack()`, xem mục 4 bước 3.
 
 Các trường hợp còn lại chạy vòng lặp chấm điểm như sau:
 
@@ -320,8 +363,9 @@ quân). Phần còn lại ở nguyên ô xuất phát. Người chơi thì đư�
 - Nguồn: **mọi** ô hậu phương (toàn bộ láng giềng là đất mình) có >1 quân.
 - Đích: các ô biên, xếp ô thuộc mặt trận của ý định lên trước, rồi lấy ô **đầu tiên** có
   đường nối qua đất mình (`pathExistsOwned`).
+- `attempt_continent` chạy thêm 1 lượt dồn quân riêng trước (mục 4, bước 4).
 - Mặt trận của ý định: biên bị đe doạ (`stay_survival`), châu lục đang theo đuổi
-  (`finish_continent`), ô giáp đối thủ đang bị nhắm (`kill_weak`), hoặc `focusTerrId`
+  (`finish_continent` / `attempt_continent`), ô giáp đối thủ đang bị nhắm (`kill_weak`), hoặc `focusTerrId`
   (`defend` / `expand`). Khi liên minh kích hoạt thì là mọi ô giáp leader, thay cho ý
   định.
 - Lượng chuyển mỗi nguồn → đích phụ thuộc đối sách của `finish_continent`:

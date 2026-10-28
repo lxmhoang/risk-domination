@@ -2421,7 +2421,8 @@ function runAction(pid, action){
    0. TURN INTENT (see pickAITurnIntent()): before touching any armies, the
       AI looks at the WHOLE board once and commits to a single campaign for
       the turn — finish a continent, kill off a crippled opponent, brace a
-      threatened border, or just push at its weakest front. Reinforce,
+      threatened border, or quietly build up on the continent it dominates
+      most (attempt_continent). Reinforce,
       attack AND fortify then all read that same intent and bias their
       scoring toward it, instead of each step re-deciding "what matters"
       from scratch in isolation. This is the one part of the AI that
@@ -2540,7 +2541,8 @@ function pickResponse(intentType, personality, levels, mood){
 
 // ---------------------------------------------------------------------
 // TỶ LỆ QUÂN SỐ ("capture ratio" — xem ai-strategy-discussion.md): dùng chung cho mọi chỗ
-// ước lượng "có đánh chiếm được 1 Tỉnh không" bên dưới (finish_continent, …). A = tổng
+// ước lượng "có đánh chiếm được 1 Tỉnh không" (finish_continent giờ dùng continentForce() cho
+// cả lục địa thay vì hàm này). A = tổng
 // quân của mình ở các láng giềng của Tỉnh đó, B = quân địch tại đó. A KHÔNG trừ quân dự
 // phòng cho láng giềng địch khác (khác reserveFor() ở aiAttackStep) — đã quyết đánh thì
 // không giữ phần nào lại để phòng thủ nữa.
@@ -2688,15 +2690,83 @@ function evaluateStaySurvival(pid, mood){
 // `newTerrId` — dùng cho finish_continent Level 4. Đơn giản hoá: so quân hiện có ở mỗi
 // lãnh thổ biên châu lục với quân địch mạnh nhất giáp nó (không mô phỏng chuyển quân
 // fortify thật, vì lúc trigger chưa biết fortify sẽ đổ bao nhiêu).
-function canHoldContinentBorders(pid, contId, newTerrId){
-  const contTerrs = Object.values(mapData.territories).filter(t=>t.continentId===contId);
-  return contTerrs.every(t=>{
-    const enemyNb = [...t.neighbors].filter(n=> n!==newTerrId && game.owner[n]!==pid);
+// `newTerrIds` = mọi ô còn thiếu (finish_continent giờ cho phép thiếu nhiều ô).
+function canHoldContinentBorders(pid, contId, newTerrIds){
+  const isNew = id=> newTerrIds.includes(id);
+  return continentTerritories(contId).every(t=>{
+    const enemyNb = [...t.neighbors].filter(n=> !isNew(n) && game.owner[n]!==pid);
     if(!enemyNb.length) return true;
     const maxEnemy = Math.max(...enemyNb.map(n=>game.armies[n]));
-    const myArmies = t.id===newTerrId ? 1 : (game.armies[t.id]||0); // ô vừa chiếm: quân tối thiểu doBattle chuyển qua
+    const myArmies = isNew(t.id) ? 1 : (game.armies[t.id]||0); // ô vừa chiếm: quân tối thiểu doBattle chuyển qua
     return myArmies>=maxEnemy;
   });
+}
+
+// ---------------------------------------------------------------------
+// LỰC TRÊN 1 LỤC ĐỊA — dùng chung cho finish_continent ("đủ mạnh để chiếm hết các ô còn
+// thiếu chưa") và attempt_continent ("lục địa nào mình áp đảo nhất"), nên khi tỉ lệ của 1
+// lục địa đang "âm mưu" lên đủ cao thì lượt sau nó tự chín thành finish_continent.
+function continentTerritories(contId){
+  return Object.values(mapData.territories).filter(t=>t.continentId===contId);
+}
+function ownsWholeContinent(pid, contId){
+  return continentTerritories(contId).every(t=>game.owner[t.id]===pid);
+}
+// Ô của 1 lục địa mình đã chiếm trọn VÀ đang giáp player khác — không rút quân khỏi đây để
+// đi lo lục địa khác (giữ điểm thưởng đang có).
+function isProtectedHolding(pid, id){
+  const t = mapData.territories[id];
+  if(t.continentId==null) return false;
+  if(![...t.neighbors].some(n=>game.owner[n]!==pid)) return false;
+  return ownsWholeContinent(pid, t.continentId);
+}
+// Mọi ô của tôi nối liền (qua ô của tôi) với 1 trong các ô `startIds` — tức là quân ở đó có
+// đường fortify tới.
+function ownedComponentFrom(pid, startIds){
+  const seen = new Set(startIds), queue = [...startIds];
+  while(queue.length){
+    const id = queue.shift();
+    mapData.territories[id].neighbors.forEach(n=>{
+      if(!seen.has(n) && game.owner[n]===pid){ seen.add(n); queue.push(n); }
+    });
+  }
+  return seen;
+}
+// A = quân của tôi trong lục địa + quân ngoài lục địa có đường fortify tới (trừ ô được bảo vệ,
+// mỗi ô chừa 1) + quân tăng viện lượt này; B = tổng quân địch trên các ô còn thiếu.
+// null nếu tôi chưa có ô nào ở đó hoặc đã chiếm trọn.
+function continentForce(pid, contId){
+  const contTerrs = continentTerritories(contId);
+  const mineIn = contTerrs.filter(t=>game.owner[t.id]===pid).map(t=>t.id);
+  const missing = contTerrs.filter(t=>game.owner[t.id]!==pid).map(t=>t.id);
+  if(!mineIn.length || !missing.length) return null;
+  let A = (game.phase==='reinforce' && currentPlayerId()===pid) ? (game.reinforceRemaining||0) : 0;
+  ownedComponentFrom(pid, mineIn).forEach(id=>{
+    if(mapData.territories[id].continentId!==contId && isProtectedHolding(pid, id)) return;
+    A += Math.max(0, (game.armies[id]||0)-1);
+  });
+  const B = missing.reduce((s,id)=> s+(game.armies[id]||0), 0);
+  return {ratio: A/Math.max(1,B), missing};
+}
+// Ô tập kết của attempt_continent: ô địch YẾU NHẤT trong lục địa mà 1 ô của tôi trong lục địa
+// giáp được (targetId), và ô mạnh nhất của tôi trong lục địa giáp nó (stagingId). Không có ô
+// địch nào như vậy → ô mạnh nhất của tôi trong lục địa đang giáp địch, rồi ô mạnh nhất bất kỳ.
+function attemptContinentStaging(pid, contId){
+  const contTerrs = continentTerritories(contId);
+  const mineIn = contTerrs.filter(t=>game.owner[t.id]===pid).map(t=>t.id);
+  const strongest = ids=> ids.reduce((b,id)=> (b==null || game.armies[id]>game.armies[b]) ? id : b, null);
+  let targetId = null;
+  contTerrs.forEach(t=>{
+    if(game.owner[t.id]===pid) return;
+    if(![...t.neighbors].some(n=>mineIn.includes(n))) return;
+    if(targetId==null || game.armies[t.id]<game.armies[targetId]) targetId = t.id;
+  });
+  if(targetId!=null){
+    const nb = [...mapData.territories[targetId].neighbors];
+    return {targetId, stagingId: strongest(mineIn.filter(id=>nb.includes(id)))};
+  }
+  const facing = mineIn.filter(id=>[...mapData.territories[id].neighbors].some(n=>game.owner[n]!==pid));
+  return {targetId:null, stagingId: strongest(facing.length ? facing : mineIn)};
 }
 
 // ---------------------------------------------------------------------
@@ -2715,20 +2785,23 @@ function canHoldContinentBorders(pid, contId, newTerrId){
 // campaign per turn, not several at once):
 //   0. stay_survival    — about to be wiped out at some border: don't even
 //      think about finishing a continent while the house is on fire.
-//   1. finish_continent — one territory away from completing a continent,
-//      and that missing territory already borders one of mine (i.e. it's
-//      actually reachable this turn, not just "close" on the map).
+//   1. finish_continent — strong enough to take EVERY territory still missing
+//      from a continent (continentForce(): my armies there + armies that can
+//      fortify in + this turn's reinforcements, vs the enemy armies on the
+//      missing territories), and at least one missing territory borders mine.
 //   2. kill_weak        — a live opponent down to a few territories exists
 //      and borders one of mine (finishing them off steals their whole hand).
 //   3. defend           — my worst-outgunned border is badly threatened and
 //      I'm not the strongest player on the board (can't afford to ignore it
 //      to go adventuring elsewhere).
-//   4. expand           — no urgent campaign: fall back to pushing at my
-//      weakest local front (same territory `defend` would have picked, just
-//      without the "danger" framing), or the best-odds front instead on a
-//      more opportunistic trigger level (see below).
+//   4. attempt_continent — no urgent campaign: pick the continent where I'm
+//      most dominant (same continentForce() ratio), pile reinforcements and
+//      fortify moves into it, and only nibble for a card while it ripens into
+//      finish_continent on a later turn.
+//   5. expand           — disabled for now; only a safety net when there's no
+//      continent left to scheme on (every continent I'm in is already mine).
 //
-// Each intent (except expand, always available as the fallback) now has its
+// Each intent (except attempt_continent/expand, the fallbacks) now has its
 // own TRIGGER level (does it even fire this turn?) and RESPONSE level (how
 // hard to lean into it once it does) — see the TRIGGER_LEAN/RESPONSE_LEAN
 // tables and ai-strategy-discussion.md. `mood` is rolled ONCE per turn here
@@ -2746,19 +2819,27 @@ function pickAITurnIntent(pid){
   const survival = evaluateStaySurvival(pid, mood);
   if(survival) return survival;
 
+  // Lục địa tôi có ≥1 ô mà chưa chiếm trọn — ứng viên của cả finish_continent lẫn attempt_continent.
+  const continentIds = [...new Set(mine.map(id=>mapData.territories[id].continentId).filter(c=>c!=null))];
+  const forces = continentIds.map(contId=>({contId, force:continentForce(pid, contId)})).filter(x=>x.force);
+
+  // finish_continent: thiếu bao nhiêu ô cũng được, miễn tổng lực (continentForce) ≥ ngưỡng Cẩn
+  // thận và ít nhất 1 ô còn thiếu giáp ô của tôi. Nhiều lục địa cùng đạt → lấy tỉ lệ cao nhất.
   const contLevel = pickTriggerLevel('finish_continent', p.personality, [1,2,3,4], mood);
   if(contLevel>1){
-    const continentIds = new Set(mine.map(id=>mapData.territories[id].continentId).filter(c=>c!=null));
-    for(const contId of continentIds){
-      const contTerrs = Object.values(mapData.territories).filter(t=>t.continentId===contId);
-      const missing = contTerrs.filter(t=>game.owner[t.id]!==pid);
-      if(missing.length!==1) continue;
-      const missingId = missing[0].id;
-      if(![...missing[0].neighbors].some(n=>game.owner[n]===pid)) continue;
-      if(captureRatio(pid, missingId) < captureRatioThreshold('canThan')) continue;
-      if(contLevel>=4 && !canHoldContinentBorders(pid, contId, missingId)) continue;
+    let best = null;
+    forces.forEach(({contId, force})=>{
+      const frontier = force.missing.filter(id=>[...mapData.territories[id].neighbors].some(n=>game.owner[n]===pid));
+      if(!frontier.length) return;
+      if(force.ratio < captureRatioThreshold('canThan')) return;
+      if(contLevel>=4 && !canHoldContinentBorders(pid, contId, force.missing)) return;
+      if(best && force.ratio<=best.ratio) return;
+      const focus = frontier.reduce((b,id)=> (b==null || game.armies[id]<game.armies[b]) ? id : b, null);
+      best = {contId, ratio:force.ratio, focus};
+    });
+    if(best){
       const response = pickResponse('finish_continent', p.personality, ['A','B'], mood);
-      return {type:'finish_continent', level:contLevel, response, continentId:contId, focusTerrId:missingId};
+      return {type:'finish_continent', level:contLevel, response, continentId:best.contId, focusTerrId:best.focus};
     }
   }
 
@@ -2801,6 +2882,16 @@ function pickAITurnIntent(pid){
     return {type:'defend', level:defendLevel, response, focusTerrId:worstBorder};
   }
 
+  // attempt_continent ("âm mưu chiếm lục địa") — fallback thay cho expand: chọn lục địa tôi áp
+  // đảo nhất (cùng chỉ số continentForce với finish_continent), dồn quân vào đó và chờ nó chín.
+  // Không có thang trigger/đối sách riêng.
+  if(forces.length){
+    const best = forces.reduce((b,x)=> (!b || x.force.ratio>b.force.ratio) ? x : b, null);
+    return {type:'attempt_continent', continentId:best.contId};
+  }
+
+  // expand — tạm tắt, chỉ còn là lưới an toàn khi không có lục địa nào để âm mưu (mọi lục địa
+  // tôi có mặt đều đã chiếm trọn).
   const expandLevel = pickTriggerLevel('expand', p.personality, [1,2,3], mood);
   const expandResponse = pickResponse('expand', p.personality, ['A','B'], mood);
   let expandFocus = worstBorder;
@@ -2841,6 +2932,12 @@ function pickAIReinforceTarget(pid, mine, intent){
   // wiped out always wins outright over any other reinforcement plan this turn.
   const focusTerrIdOverride = (intent && intent.type==='stay_survival') ? intent.focusTerrId : null;
   if(focusTerrIdOverride!=null && mine.includes(focusTerrIdOverride)) return focusTerrIdOverride;
+  // attempt_continent bước 2: dồn hết tăng viện vào 1 ô trong lục địa mục tiêu, ưu tiên ô giáp ô
+  // địch yếu nhất trong lục địa (để bước 3 đánh được nếu cần). Khoá liên minh vẫn được ưu tiên hơn.
+  if(intent && intent.type==='attempt_continent' && !mustOnlyDefendAgainstLeader){
+    const s = attemptContinentStaging(pid, intent.continentId);
+    if(s.stagingId!=null) return s.stagingId;
+  }
   let best=null, bestScore=-Infinity;
   let bestFocus=null, bestFocusScore=-Infinity;
   mine.forEach(id=>{
@@ -2889,6 +2986,10 @@ function describeAITurnIntent(intent){
     case 'finish_continent': {
       const c = mapData.continents[intent.continentId];
       return 'muốn hoàn tất châu lục '+(c?c.name:'');
+    }
+    case 'attempt_continent': {
+      const c = mapData.continents[intent.continentId];
+      return 'âm mưu chiếm châu lục '+(c?c.name:'');
     }
     case 'kill_weak': {
       const target = game.players[intent.targetPlayerId];
@@ -3046,6 +3147,91 @@ function staySurvivalNibble(pid, intent){
   }, aiDelay(260));
 }
 
+// 1 trận đánh của AI từ `from` vào `to`: chỉ mục tiêu 1 nhịp, rồi đánh liên tục (log gộp 1
+// dòng, có animation như executeAttack ở aiAttackStep) cho tới khi chiếm được, hết quân, hoặc
+// keepGoing() trả false. Xong thì gọi onDone(captured).
+function aiStrike(pid, from, to, keepGoing, onDone){
+  const p = game.players[pid];
+  game.selectedFrom = from; game.selectedTo = to;
+  host.renderGame();
+  aiSchedule(()=>{
+    if(game.over) return;
+    const fromName = mapData.territories[from].name, toName = mapData.territories[to].name;
+    const defenderId = game.owner[to], defP = game.players[defenderId];
+    const fromCountBefore = game.armies[from], toCountBefore = game.armies[to];
+    let rounds=0, attLoss=0, defLoss=0, captured=false, lastRes=null;
+    while(rounds<5000 && game.armies[from]>=2 && keepGoing()){
+      lastRes = doBattle(from, to, {silent:true});
+      rounds++; attLoss += lastRes.attLoss; defLoss += lastRes.defLoss;
+      recordBattleStat(p.name, defP.name, fromName, toName, attLoss+defLoss);
+      if(lastRes.captured){ captured=true; break; }
+    }
+    function finish(){
+      game.selectedFrom=null; game.selectedTo=null;
+      if(game.over) return;
+      aiSchedule(()=> onDone(captured), 80);
+    }
+    if(!rounds){ host.renderGame(); finish(); return; }
+    const roundsLabel = rounds>1 ? ` (${rounds} hiệp)` : '';
+    logMsg('attack', `${p.name} tấn công ${toName} từ ${fromName}${roundsLabel}: mất ${attLoss}, đối phương mất ${defLoss}.`, [pid, defenderId]);
+    host.showDice(lastRes.ad, lastRes.dd, lastRes.results);
+    if(captured) logMsg('capture', `${p.name} chiếm được ${toName}!`, [pid, defenderId]);
+    host.startAttackAnim({
+      fromId:from, toId:to, attLoss, defLoss, captured,
+      fromCountBefore, toCountBefore, fromCountAfter:game.armies[from], toCountAfter:game.armies[to],
+      attackerColor:p.color, defenderColor:defP.color,
+    }, finish);
+    host.renderGame();
+  }, aiDelay(260));
+}
+
+// attempt_continent bước 3 — giữ nguyên lực lượng cho lục địa mục tiêu, chỉ cố kiếm 1 lá bài:
+//  a. "Hú họa": dùng quân ở ô KHÔNG có đường fortify tới lục địa (vô dụng cho kế hoạch), đánh 1
+//     ô địch có tỉ lệ tốt nhất, đánh tới khi chiếm được hoặc hết quân.
+//  b. Không chiếm được (hoặc không có ô nào như vậy) → đánh ô địch ÍT QUÂN NHẤT trong lục địa từ ô
+//     mạnh nhất của tôi giáp nó, dừng khi tỉ lệ xuống dưới ngưỡng tấn công thường của độ khó —
+//     mong các ô nhiều quân của player khác trong lục địa bỏ đi hoặc đánh lẫn nhau.
+// Mỗi trận chỉ nhắm 1 ô; chiếm được 1 ô là thôi tấn công lượt này.
+function attemptContinentAttack(pid, intent){
+  const p = game.players[pid];
+  const contId = intent.continentId;
+  const leaderId = game.allianceEnabled ? updateCommonEnemy() : null;
+  const allowed = to=> game.owner[to]!==pid && (leaderId==null || leaderId===pid || game.owner[to]===leaderId);
+  const toFortify = ()=> aiFortifyStep(pid, intent);
+
+  function inContinent(){
+    const threshold = difficultyProfile(game.difficulty, p.personality).baseThreshold;
+    let to = null;
+    continentTerritories(contId).forEach(t=>{
+      if(!allowed(t.id)) return;
+      if(![...t.neighbors].some(n=>game.owner[n]===pid && game.armies[n]>=2)) return;
+      if(to==null || game.armies[t.id]<game.armies[to]) to = t.id;
+    });
+    const from = to==null ? null : [...mapData.territories[to].neighbors]
+      .filter(n=>game.owner[n]===pid && game.armies[n]>=2)
+      .reduce((b,id)=> (b==null || game.armies[id]>game.armies[b]) ? id : b, null);
+    const ratioOk = ()=> game.armies[from]/Math.max(1, game.armies[to]) >= threshold;
+    if(from==null || !ratioOk()){ aiSchedule(toFortify, aiDelay(260)); return; }
+    aiSetStepHint(pid, intent, 'thăm dò trong lục địa');
+    aiStrike(pid, from, to, ratioOk, toFortify);
+  }
+
+  const mineIn = ownedTerritories(pid).filter(id=>mapData.territories[id].continentId===contId);
+  const reach = ownedComponentFrom(pid, mineIn);
+  let best=null, bestRatio=-Infinity;
+  ownedTerritories(pid).forEach(from=>{
+    if(reach.has(from) || game.armies[from]<2) return;
+    mapData.territories[from].neighbors.forEach(to=>{
+      if(!allowed(to)) return;
+      const r = game.armies[from]/Math.max(1, game.armies[to]);
+      if(r>bestRatio){ bestRatio=r; best={from,to}; }
+    });
+  });
+  if(!best){ aiSetStepHint(pid, intent, 'giữ quân'); inContinent(); return; }
+  aiSetStepHint(pid, intent, 'đánh hú hoạ kiếm bài');
+  aiStrike(pid, best.from, best.to, ()=>true, captured=> captured ? toFortify() : inContinent());
+}
+
 function aiAttackStep(pid, intent){
   intent = intent || pickAITurnIntent(pid); // e.g. resuming a save mid-phase, see importGameJSON
   game.phase='attack';
@@ -3067,6 +3253,7 @@ function aiAttackStep(pid, intent){
     aiSetStepHint(pid, intent, 'giữ nguyên quân, không mạo hiểm');
     aiSchedule(()=> aiFortifyStep(pid, intent), aiDelay(260)); return;
   }
+  if(intent.type==='attempt_continent'){ attemptContinentAttack(pid, intent); return; }
   aiSetStepHint(pid, intent, 'tấn công');
   const profile = difficultyProfile(game.difficulty, p.personality);
   const opponents = game.players.filter(pl=>pl.alive && pl.id!==pid);
@@ -3318,7 +3505,7 @@ function aiFortifyStep(pid, intent){
     const t = mapData.territories[id];
     if(mustOnlyAttackLeader) return [...t.neighbors].some(n=>game.owner[n]===allianceLeaderId);
     if(intent.type==='stay_survival') return id===intent.focusTerrId; // "co cụm" — đúng biên bị đe doạ
-    if(intent.type==='finish_continent') return t.continentId===intent.continentId;
+    if(intent.type==='finish_continent' || intent.type==='attempt_continent') return t.continentId===intent.continentId;
     if(intent.type==='kill_weak') return [...t.neighbors].some(n=>game.owner[n]===intent.targetPlayerId);
     return id===intent.focusTerrId; // defend / expand
   }
@@ -3344,6 +3531,25 @@ function aiFortifyStep(pid, intent){
   // interior sources funneling into the same front log as one summary line each, not a spammy
   // line per source.
   const movedTo = {};
+  // attempt_continent bước 4: dồn quân từ MỌI ô ngoài lục địa có đường tới lục địa (cả ô đang giáp
+  // địch, chừa 1 quân) vào lục địa — trừ ô của lục địa khác đã chiếm trọn mà đang giáp player khác
+  // (isProtectedHolding). Đích: ô tập kết của bước 2 trước, rồi các ô trong lục địa giáp địch.
+  if(intent.type==='attempt_continent' && !mustOnlyAttackLeader){
+    const contId = intent.continentId;
+    const mineIn = mine.filter(id=>mapData.territories[id].continentId===contId);
+    const facing = mineIn.filter(id=>[...mapData.territories[id].neighbors].some(n=>game.owner[n]!==pid));
+    const staging = attemptContinentStaging(pid, contId).stagingId;
+    const dests = (facing.length ? facing : mineIn).slice()
+      .sort((a,b)=> (b===staging?1:0)-(a===staging?1:0));
+    mine.forEach(src=>{
+      if(mapData.territories[src].continentId===contId || game.armies[src]<2 || isProtectedHolding(pid, src)) return;
+      const dst = dests.find(d=> pathExistsOwned(src, d, pid));
+      if(dst==null) return;
+      const moving = game.armies[src]-1;
+      game.armies[src] -= moving; game.armies[dst] += moving;
+      movedTo[dst] = (movedTo[dst]||0)+moving;
+    });
+  }
   if(orderedBorders.length){
     interior.forEach(src=>{
       let bestDst=null;
@@ -3503,6 +3709,12 @@ return {
   completesContinentFor,
   evaluateStaySurvival,
   canHoldContinentBorders,
+  continentTerritories,
+  ownsWholeContinent,
+  isProtectedHolding,
+  ownedComponentFrom,
+  continentForce,
+  attemptContinentStaging,
   pickAITurnIntent,
   pickAIReinforceTarget,
   describeAITurnIntent,
@@ -3513,6 +3725,8 @@ return {
   findTradeCombo,
   tradeCards,
   staySurvivalNibble,
+  aiStrike,
+  attemptContinentAttack,
   aiAttackStep,
   aiFortifyStep,
   host,
