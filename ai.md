@@ -35,6 +35,11 @@ chạy không cần chờ thật. Độ trễ lấy từ `aiDelay(base)`
   đủ cho người xem.
 - Lượt AI chỉ bắt đầu sau khi banner "lượt của X" tắt (`TURN_INTRO_TOTAL_MS`).
 
+Chiến lược của lượt (mục 4) được hiển thị cho người xem: 1 dòng "X chọn chiến lược: …" trong
+nhật ký trận đấu, và thanh dưới cùng ở giữa ghi "X · 🎯 <chiến lược> — đang <bước>" suốt
+lượt (`describeAITurnIntent` / `aiSetStepHint`). Chỉ hiện tên chiến lược + mục tiêu, không
+hiện level trigger/đối sách.
+
 ### Đặt quân ban đầu
 
 Mặc định (`manualInitialPlacement: false`) quân ban đầu của **mọi** người chơi được rải

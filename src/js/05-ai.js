@@ -563,36 +563,34 @@ function pickAIReinforceTarget(pid, mine, intent){
 
 // Human-readable flavor text for the "<name> đang suy nghĩ..." hint shown throughout an AI
 // turn (see aiSetStepHint() below) — the WHY behind this turn's campaign (pickAITurnIntent),
-// in plain Vietnamese. Deliberately never prints intent.type/level/response or any other
-// internal name — those are implementation detail, not something a viewer should have to
-// decode, and showing the raw trigger/response level would spoil exactly the "khó đoán"
-// quality the level system is for.
+// in plain Vietnamese: the strategy's name plus its target. Shows WHICH strategy fired, but
+// never its trigger level/response — showing those would spoil the "khó đoán" quality the
+// level system is for.
+const AI_INTENT_LABELS = {
+  stay_survival: 'Sống còn',
+  finish_continent: 'Hoàn tất châu lục',
+  attempt_continent: 'Âm mưu chiếm châu lục',
+  kill_weak: 'Kết liễu đối thủ yếu',
+  defend: 'Phòng thủ biên giới',
+  expand: 'Mở rộng',
+};
 function describeAITurnIntent(intent){
+  const label = AI_INTENT_LABELS[intent.type] || intent.type;
   switch(intent.type){
-    case 'stay_survival': {
+    case 'stay_survival': case 'defend': {
       const t = mapData.territories[intent.focusTerrId];
-      return 'lo sống còn ở '+(t?t.name:'1 biên giới');
+      return label+(t?' ở '+t.name:'');
     }
-    case 'finish_continent': {
+    case 'finish_continent': case 'attempt_continent': {
       const c = mapData.continents[intent.continentId];
-      return 'muốn hoàn tất châu lục '+(c?c.name:'');
-    }
-    case 'attempt_continent': {
-      const c = mapData.continents[intent.continentId];
-      return 'âm mưu chiếm châu lục '+(c?c.name:'');
+      return label+(c?' '+c.name:'');
     }
     case 'kill_weak': {
       const target = game.players[intent.targetPlayerId];
-      return 'muốn kết liễu '+(target?target.name:'1 đối thủ sắp tàn');
-    }
-    case 'defend': {
-      const t = mapData.territories[intent.focusTerrId];
-      return 'lo củng cố biên giới'+(t?' ở '+t.name:'');
+      return label+(target?' ('+target.name+')':'');
     }
     default: // expand
-      return intent.level>=3 ? 'tìm mặt trận dễ ăn nhất'
-        : intent.level===2 ? 'đánh vào biên yếu nhất của mình'
-        : 'chưa có mục tiêu rõ ràng'; // Level 1 "Rụt rè" — không chủ động tấn công
+      return label;
   }
 }
 // Every step of an AI turn (reinforce/attack/fortify, see aiRunFullTurn below) sets its own
@@ -603,11 +601,12 @@ function describeAITurnIntent(intent){
 // caller is already scheduling its NEXT step with — no separate "how long to show a hint"
 // setting, same "Độ trễ khi xem AI đấu" knob paces both.
 function aiSetStepHint(pid, intent, step){
-  host.setActionHint(game.players[pid].name+' đang '+step+': '+describeAITurnIntent(intent)+'.');
+  host.setActionHint(game.players[pid].name+' · 🎯 '+describeAITurnIntent(intent)+' — đang '+step);
 }
 
 function aiRunFullTurn(pid){
   const intent = pickAITurnIntent(pid);
+  logMsg('info', game.players[pid].name+' chọn chiến lược: '+describeAITurnIntent(intent)+'.', pid);
   aiSetStepHint(pid, intent, 'suy nghĩ');
   aiSchedule(()=>{ aiReinforceStep(pid, intent); }, aiDelay(300));
 }
