@@ -629,6 +629,78 @@ function drawSeaLinks(ctx, map, now){
   ctx.restore();
 }
 
+// Mountains (map.mountain): impassable land, drawn as one smoothed mass in earth tones with small
+// peaks scattered inside it. The outline is traced with outlineIdAt() as its outside, the same as
+// territories trace theirs, so the two meet without a gap. Peaks are scattered with a minimum spacing (taken in a fixed pseudo-random
+// order, so the same map always gets the same peaks), only where the mass is wide enough for one —
+// which also strings them along the narrow ranges. Worked out once per map (cached on it).
+const MOUNTAIN_FILL = '#a39069', MOUNTAIN_EDGE = 'rgba(70,55,30,0.55)';
+function mountainShapes(map){
+  if(map._mountainShapes) return map._mountainShapes;
+  const shapes = {loops:[], peaks:[]};
+  map._mountainShapes = shapes;
+  if(!map.mountain) return shapes;
+  const cells = [];
+  for(let i=0;i<map.mountain.length;i++) if(map.mountain[i]) cells.push([i%map.cols, (i/map.cols)|0]);
+  if(!cells.length) return shapes;
+  shapes.loops = traceAndSmoothCells(map, cells, (c,r)=>outlineIdAt(map,c,r));
+  const e = territoryEDT(cells), cs = map.cellSize;
+  const hash = (a,b)=>{ const h = Math.sin(a*127.1+b*311.7)*43758.5453; return h-Math.floor(h); };
+  const minD = 13/cs; // ~13px between peaks whatever the cell size
+  const need2 = (6/cs)**2; // a peak needs ~6px of mountain all round
+  const cand = cells.filter(([c,r])=> e.d2[(r-e.minR)*e.w+(c-e.minC)] >= need2);
+  cand.sort((a,b)=> hash(a[0],a[1])-hash(b[0],b[1]));
+  const grid = new Map(), g = Math.ceil(minD), key = (c,r)=> Math.floor(c/g)+'_'+Math.floor(r/g);
+  for(const [c,r] of cand){
+    let ok = true;
+    for(let dy=-1; dy<=1 && ok; dy++) for(let dx=-1; dx<=1 && ok; dx++){
+      for(const [pc,pr] of grid.get((Math.floor(c/g)+dx)+'_'+(Math.floor(r/g)+dy)) || []){
+        if((pc-c)**2+(pr-r)**2 < minD*minD){ ok = false; break; }
+      }
+    }
+    if(!ok) continue;
+    const k = key(c,r);
+    if(!grid.has(k)) grid.set(k, []);
+    grid.get(k).push([c,r]);
+    shapes.peaks.push({x:(c+0.5)*cs, y:(r+0.5)*cs, s:0.8+hash(r,c)*0.4});
+  }
+  shapes.peaks.sort((a,b)=> a.y-b.y); // nearer (lower) peaks drawn over the ones behind them
+  return shapes;
+}
+function drawMountains(ctx, map){
+  const {loops, peaks} = mountainShapes(map);
+  if(!loops.length) return;
+  ctx.save();
+  pathFromLoops(ctx, loops);
+  ctx.fillStyle = MOUNTAIN_FILL;
+  ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = MOUNTAIN_EDGE;
+  ctx.stroke();
+  // each peak: a lit left face and a shaded right face
+  peaks.forEach(({x,y,s})=>{
+    const w = 6*s, h = 7*s;
+    ctx.beginPath(); ctx.moveTo(x-w, y+h*0.45); ctx.lineTo(x, y-h*0.55); ctx.lineTo(x, y+h*0.45); ctx.closePath();
+    ctx.fillStyle = '#c7b48a'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x, y-h*0.55); ctx.lineTo(x+w, y+h*0.45); ctx.lineTo(x, y+h*0.45); ctx.closePath();
+    ctx.fillStyle = '#6f5c3b'; ctx.fill();
+  });
+  ctx.restore();
+}
+// Rivers (map.rivers): decorative only — water-colored lines over the land, under the borders.
+function drawRivers(ctx, map, width){
+  if(!map.rivers || !map.rivers.length) return;
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  map.rivers.forEach(line=>{
+    ctx.moveTo(line[0], line[1]);
+    for(let i=2;i<line.length;i+=2) ctx.lineTo(line[i], line[i+1]);
+  });
+  ctx.lineWidth = width; ctx.strokeStyle = 'rgba(28,181,224,0.9)';
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawFlowLine(ctx, from, to, now, opts){
   opts = opts || {};
   const gap = opts.gap!=null ? opts.gap : 16;
@@ -988,6 +1060,7 @@ function drawGameCanvas(){
   // isCopy: this pass only fills in the overhang of territories across the right edge (single flat
   // copy of a wrapX map, see paintScene()), so the one-off edge marks aren't drawn again.
   const drawBase = (isCopy)=>{
+  drawMountains(ctx, mapData);
   terrs.forEach(t=>{
     if(offView(t)) return;
     let color;
@@ -1054,6 +1127,7 @@ function drawGameCanvas(){
     }
   }
 
+  drawRivers(ctx, mapData, Math.max(1.5, 1.5*cssPx));
   // borders: every territory's own outline, thin; continent outlines drawn thicker on top
   // when in continent view (rather than comparing neighbor-by-neighbor, each continent's own
   // traced outer edge already IS exactly where a thick border belongs).

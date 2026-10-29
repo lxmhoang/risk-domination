@@ -56,6 +56,13 @@ function newMap(cols, rows, name){
     // separates them (drawn as dotted lines in the game, see drawSeaLinks()). Only maps made by
     // hand (the gallery's) have any; the generator joins islands with land bridges instead.
     links: [],
+    // Mountains: per-cell 1 where the land is impassable mountain/highland (null = none). Such a
+    // cell belongs to no territory, exactly like water (cellTerritory -1), so movement, adjacency,
+    // combat and the AI treat it as water — it only differs in how it's drawn (drawMountains() in
+    // 06-render-game.js). Gaps left in a range are its passes. Only hand-made maps have any.
+    mountain: null,
+    // Rivers: decorative polylines [[x,y,x,y,…], …] in map px (drawRivers()); no effect on play.
+    rivers: [],
     _terrBoundaryCache: {}, // terrId -> smoothed pixel-space loops, see getTerritoryBoundaryLoops()
     _contBoundaryCache: {}, // contId -> smoothed pixel-space loops, see getContinentBoundaryLoops()
   };
@@ -73,16 +80,32 @@ function mapToPlainObject(map){
     nextTerrId: map.nextTerrId, nextContId: map.nextContId,
     wrapX: !!map.wrapX, wrapY: !!map.wrapY,
     links: (map.links||[]).map(l=>[l[0],l[1]]),
+    ...(map.mountain ? { mountainRLE: rleEncode(map.mountain) } : {}),
+    ...(map.rivers && map.rivers.length ? { rivers: map.rivers } : {}),
   };
+}
+// [value, count, value, count, …] run-length encoding of a per-cell array (see plainCellTerritory()).
+function rleEncode(arr){
+  const out = [];
+  for(let i=0;i<arr.length;){
+    let j = i+1;
+    while(j<arr.length && arr[j]===arr[i]) j++;
+    out.push(arr[i], j-i);
+    i = j;
+  }
+  return out;
+}
+function rleDecode(rle, n){
+  const out = new Array(n);
+  let k = 0;
+  for(let i=0;i<rle.length;i+=2) for(let c=0;c<rle[i+1];c++) out[k++] = rle[i];
+  return out;
 }
 // A hand-made map file (src/maps/) may store its cells run-length encoded instead, as
 // cellTerritoryRLE: [id, count, id, count, …] — a 469x347 map is ~0.5MB as a plain array.
 function plainCellTerritory(obj){
   if(obj.cellTerritory) return obj.cellTerritory;
-  const rle = obj.cellTerritoryRLE || [], out = new Array(obj.cols*obj.rows);
-  let k = 0;
-  for(let i=0;i<rle.length;i+=2) for(let n=0;n<rle[i+1];n++) out[k++] = rle[i];
-  return out;
+  return rleDecode(obj.cellTerritoryRLE || [], obj.cols*obj.rows);
 }
 function mapFromPlainObject(obj){
   const map = newMap(obj.cols, obj.rows, obj.name);
@@ -93,6 +116,12 @@ function mapFromPlainObject(obj){
     map.territories[t.id] = {id:t.id,name:t.name,continentId:t.continentId,color:t.color,cells:[],neighbors:new Set(),centroid:{x:0,y:0}};
   });
   map.links = (obj.links||[]).filter(l=> map.territories[l[0]] && map.territories[l[1]]).map(l=>[l[0],l[1]]);
+  if(obj.mountainRLE){
+    map.mountain = new Uint8Array(rleDecode(obj.mountainRLE, map.cols*map.rows));
+    // a mountain cell is never also a territory's
+    for(let i=0;i<map.mountain.length;i++) if(map.mountain[i]) map.cellTerritory[i] = -1;
+  }
+  map.rivers = (obj.rivers||[]).map(line=> line.slice());
   (obj.continents||[]).forEach(c=>{ map.continents[c.id] = {id:c.id,name:c.name,color:c.color,bonus:c.bonus}; });
   for(let r=0;r<map.rows;r++) for(let c=0;c<map.cols;c++){
     const id = map.cellTerritory[cellIndex(map,c,r)];
@@ -173,29 +202,48 @@ function createContinent(map, name, color){
 // fixed-endpoint unit. That stretch is exactly what two adjacent shapes SHARE, so both sides
 // see the same start/end anchors for it regardless of where their own trace happened to start —
 // see the big comment on splitLoopIntoRuns() for why that's the whole point.
+// Two cells of the mask touching only at a corner (a "pinch") give that corner two outgoing
+// edges; the walk then takes the sharpest right turn (the mask is on the right of every edge), so
+// it keeps hugging the cell it's going round and each side comes out as its own clean loop.
+// (Keying edges by start corner alone used to let one overwrite the other there, breaking the
+// outline into fragments — whole territories or mountain ranges then went unfilled.)
 function traceMaskBoundary(inSet, idFn){
-  const edges = new Map(); // "x_y" (edge start corner) -> {to:[x2,y2], outside: identity}
-  const k = (x,y)=> x+'_'+y;
+  const edges = new Map(); // "x_y" (edge start corner) -> [{x,y,tx,ty,outside,used}]
+  const add = (x,y,tx,ty,outside)=>{
+    const k = x+'_'+y;
+    let list = edges.get(k);
+    if(!list){ list = []; edges.set(k, list); }
+    list.push({x, y, tx, ty, outside, used:false});
+  };
   inSet.cells.forEach(([c,r])=>{
-    if(!inSet(c,r-1)) edges.set(k(c,r), {to:[c+1,r], outside:idFn(c,r-1)});
-    if(!inSet(c+1,r)) edges.set(k(c+1,r), {to:[c+1,r+1], outside:idFn(c+1,r)});
-    if(!inSet(c,r+1)) edges.set(k(c+1,r+1), {to:[c,r+1], outside:idFn(c,r+1)});
-    if(!inSet(c-1,r)) edges.set(k(c,r+1), {to:[c,r], outside:idFn(c-1,r)});
+    if(!inSet(c,r-1)) add(c, r, c+1, r, idFn(c,r-1));
+    if(!inSet(c+1,r)) add(c+1, r, c+1, r+1, idFn(c+1,r));
+    if(!inSet(c,r+1)) add(c+1, r+1, c, r+1, idFn(c,r+1));
+    if(!inSet(c-1,r)) add(c, r+1, c, r, idFn(c-1,r));
   });
   const loops = [];
-  const visited = new Set();
-  for(const startKey of edges.keys()){
-    if(visited.has(startKey)) continue;
-    const points = [], edgeIds = [];
-    let curKey = startKey, guard = 0;
-    while(!visited.has(curKey) && edges.has(curKey) && guard++<200000){
-      visited.add(curKey);
-      points.push(curKey.split('_').map(Number));
-      const edge = edges.get(curKey);
-      edgeIds.push(edge.outside);
-      curKey = k(edge.to[0], edge.to[1]);
+  for(const list of edges.values()){
+    for(const first of list){
+      if(first.used) continue;
+      const points = [], edgeIds = [];
+      let e = first, guard = 0;
+      while(e && guard++<400000){
+        e.used = true;
+        points.push([e.x, e.y]);
+        edgeIds.push(e.outside);
+        if(e.tx===first.x && e.ty===first.y) break; // back where this loop started
+        const dx = e.tx-e.x, dy = e.ty-e.y;
+        let next = null, bestScore = -1;
+        for(const n of edges.get(e.tx+'_'+e.ty) || []){
+          if(n.used) continue;
+          const nx = n.tx-n.x, ny = n.ty-n.y;
+          const score = dx*ny-dy*nx>0 ? 2 : (dx*nx+dy*ny>0 ? 1 : 0); // right turn, straight, left
+          if(score>bestScore){ bestScore = score; next = n; }
+        }
+        e = next;
+      }
+      if(points.length>=3) loops.push({points, edgeIds});
     }
-    if(points.length>=3) loops.push({points, edgeIds});
   }
   return loops;
 }
@@ -328,8 +376,8 @@ function douglasPeuckerLoop(loop, epsilon){
 // "diameter" generally has nothing to do with where ITS neighbors' boundaries happen to sit —
 // confirmed by an actual gap/overlap measurement between two adjacent test shapes: ~11% raster
 // area mismatched with an independent-anchor closed-loop split, ~0% with this neighbor-aware one).
-// Returns null if every edge in the loop faces the same identity (no transition point exists at
-// all) — the caller falls back to douglasPeuckerLoop() for that case.
+// Each run also carries .id, the identity it faces. Returns null if every edge in the loop faces the
+// same identity (no transition point exists at all) — the caller falls back to douglasPeuckerLoop().
 function splitLoopIntoRuns(points, edgeIds){
   const n = edgeIds.length;
   let changeIdx = -1;
@@ -338,12 +386,14 @@ function splitLoopIntoRuns(points, edgeIds){
   const runs = [];
   let runPts = [points[changeIdx]];
   let curId = edgeIds[changeIdx];
+  runPts.id = curId;
   for(let step=0; step<n; step++){
     const i = (changeIdx+step)%n;
     if(edgeIds[i]!==curId){
       runs.push(runPts);
       runPts = [points[i]];
       curId = edgeIds[i];
+      runPts.id = curId;
     }
     runPts.push(points[(i+1)%n]);
   }
@@ -373,7 +423,9 @@ function traceAndSmoothCells(map, cellList, idFn){
       const out = [];
       runs.forEach(run => {
         const dp = douglasPeuckerOpen(run, DP_EPSILON);
-        const smoothed = chaikinSmoothOpen(dp, 2);
+        // A stretch along the map's edge (-3, see outlineIdAt()) is a straight line with square
+        // corners, and stays one: corner-cutting a run that long would shave a big diagonal off.
+        const smoothed = run.id===-3 ? dp : chaikinSmoothOpen(dp, 2);
         out.push(...smoothed.slice(0,-1));
       });
       return out;
@@ -394,6 +446,19 @@ function territoryIdAt(map, c, r){
   if(map.wrapX) c = ((c%map.cols)+map.cols)%map.cols; // shape-space columns can run past either edge
   if(c<0||r<0||c>=map.cols||r>=map.rows) return -1;
   return map.cellTerritory[cellIndex(map,c,r)];
+}
+// What a shape's outline faces at (c,r), for splitting it into runs (see splitLoopIntoRuns()):
+// the territory there, -1 for water, -2 for a mountain cell, -3 past the map's edge. A mountain is
+// told apart from water so the run along a range ends exactly where the range's own outline run
+// does (drawMountains() traces the range with this same function as its outside), with no gap
+// between; the map edge so a stretch of edge is a run of its own and stays straight, instead of
+// being simplified together with the coastline next to it into one slanted line.
+function outlineIdAt(map, c, r){
+  if(map.wrapX) c = ((c%map.cols)+map.cols)%map.cols;
+  if(c<0||r<0||c>=map.cols||r>=map.rows) return -3;
+  const idx = cellIndex(map,c,r), id = map.cellTerritory[idx];
+  if(id!==-1) return id;
+  return map.mountain && map.mountain[idx] ? -2 : -1;
 }
 function continentIdAt(map, c, r){
   const tid = territoryIdAt(map, c, r);
@@ -417,7 +482,7 @@ function getTerritoryBoundaryLoops(map, terrId){
   if(!t || t.cells.length===0) return [];
   if(!map._terrBoundaryCache) map._terrBoundaryCache = {};
   if(map._terrBoundaryCache[terrId]) return map._terrBoundaryCache[terrId];
-  const loops = traceAndSmoothCells(map, unwrapCells(t.cells, map.cols, map.wrapX), (c,r)=>territoryIdAt(map,c,r));
+  const loops = traceAndSmoothCells(map, unwrapCells(t.cells, map.cols, map.wrapX), (c,r)=>outlineIdAt(map,c,r));
   map._terrBoundaryCache[terrId] = loops;
   return loops;
 }
@@ -466,6 +531,7 @@ function paintCell(map, c, r, terrId){
     invalidateBoundaryCache(map, old);
   }
   map.cellTerritory[idx] = terrId;
+  if(terrId !== -1 && map.mountain && map.mountain[idx]){ map.mountain[idx] = 0; delete map._mountainShapes; } // painted over: land now
   if(terrId !== -1 && map.territories[terrId]){
     map.territories[terrId].cells.push([c,r]);
     invalidateBoundaryCache(map, terrId);

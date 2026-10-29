@@ -146,6 +146,7 @@ function drawEditorCanvas(){
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = OCEAN_COLOR;
   ctx.fillRect(0,0,canvas.width,canvas.height);
+  drawMountains(ctx, mapData);
 
   const terrs = Object.values(mapData.territories).filter(t=>t.cells.length>0);
   terrs.forEach(t=>{
@@ -159,6 +160,7 @@ function drawEditorCanvas(){
     ctx.fill();
   });
 
+  drawRivers(ctx, mapData, 1.5);
   // borders: every territory's own outline, thin; continent outlines drawn thicker on top
   // when in continent view (rather than comparing neighbor-by-neighbor, each continent's own
   // traced outer edge already IS exactly where a thick border belongs).

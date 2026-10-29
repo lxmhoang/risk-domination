@@ -6,7 +6,8 @@
    game's map is made by the server.
    ========================================================================= */
 
-// The map as a small picture: every cell in the color of its territory's continent, water dark.
+// The map as a small picture: every cell in the color of its territory's continent, mountains in
+// their earth tone, water dark.
 function drawMapThumb(canvas, entry){
   const W = 132, H = Math.round(W*entry.rows/entry.cols);
   canvas.width = W; canvas.height = H;
@@ -18,8 +19,9 @@ function drawMapThumb(canvas, entry){
   small.width = entry.cols; small.height = entry.rows;
   const sctx = small.getContext('2d'), img = sctx.createImageData(entry.cols, entry.rows);
   const cells = plainCellTerritory(entry);
+  const mountain = entry.mountainRLE ? rleDecode(entry.mountainRLE, cells.length) : null;
   for(let i=0;i<cells.length;i++){
-    const col = terrColor[cells[i]];
+    const col = mountain && mountain[i] ? MOUNTAIN_FILL : terrColor[cells[i]];
     const hex = col ? parseInt(col.slice(1),16) : 0x0d3550;
     img.data[i*4] = hex>>16; img.data[i*4+1] = (hex>>8)&255; img.data[i*4+2] = hex&255; img.data[i*4+3] = 255;
   }
