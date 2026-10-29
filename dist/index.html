@@ -38,6 +38,10 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;}
    just eat into that, so it's hidden for the whole time you're actually playing, on every
    screen size (not just mobile). body.in-game-screen is set by showScreen() in 01-utils.js. */
 body.in-game-screen #topbar{display:none;}
+/* No pull-to-refresh / overscroll bounce while playing: a pan that runs past the map's edge
+   would otherwise carry on to the page and reload it (Chrome Android, Safari 16+ read this off
+   the root scroller, hence html too). The map wrap stops its own overscroll from chaining out. */
+html.in-game-screen, body.in-game-screen{overscroll-behavior:none;}
 button{
   font-family:inherit;cursor:pointer;border:none;border-radius:10px;
   padding:10px 16px;font-size:14px;font-weight:600;background:var(--panel2);
@@ -216,7 +220,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #screen-game{position:relative;overflow:hidden;padding:0;}
 #gameCanvasWrap{
   position:absolute;inset:0;overflow:auto;display:flex;align-items:flex-start;
-  background:#1CB5E0;touch-action:pan-x pan-y;
+  background:#1CB5E0;touch-action:pan-x pan-y;overscroll-behavior:none;
 }
 /* World-wrapping map: panning moves a camera in JS (the map repeats forever along the wrap), so
    native touch scrolling is off here — see the drag-pan wiring in 08-wiring.js. */
@@ -1358,8 +1362,10 @@ function fillTextWithBackground(ctx, text, x, y){
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
-  // Lets mobile CSS hide the outer app header while playing, to give the map more room.
+  // Lets mobile CSS hide the outer app header while playing, to give the map more room — and
+  // (on <html> too, the page's root scroller) turn off pull-to-refresh while playing, see style.css.
   document.body.classList.toggle('in-game-screen', id==='screen-game');
+  document.documentElement.classList.toggle('in-game-screen', id==='screen-game');
 }
 
 // Bright ocean blue used for water fill on both canvases and for the space around the map,
@@ -8049,6 +8055,15 @@ window.addEventListener('resize', ()=>{
   _resizeTimer = setTimeout(()=>{
     if(game && document.getElementById('screen-game').classList.contains('active')) renderGame();
   }, 120);
+});
+
+// Safety net behind the CSS that turns off pull-to-refresh in game (style.css): leaving or reloading
+// the page mid-way through an offline game asks first, since that game lives only in this tab. An
+// online game is kept on the server, and a finished one has nothing to lose, so neither asks.
+window.addEventListener('beforeunload', (e)=>{
+  if(!game || game.over || isOnlineGame() || !document.getElementById('screen-game').classList.contains('active')) return;
+  e.preventDefault();
+  e.returnValue = '';
 });
 
 // The actual "device physically rotated" signal — screen.orientation reflects the real display

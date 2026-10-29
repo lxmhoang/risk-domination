@@ -655,6 +655,15 @@ window.addEventListener('resize', ()=>{
   }, 120);
 });
 
+// Safety net behind the CSS that turns off pull-to-refresh in game (style.css): leaving or reloading
+// the page mid-way through an offline game asks first, since that game lives only in this tab. An
+// online game is kept on the server, and a finished one has nothing to lose, so neither asks.
+window.addEventListener('beforeunload', (e)=>{
+  if(!game || game.over || isOnlineGame() || !document.getElementById('screen-game').classList.contains('active')) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
 // The actual "device physically rotated" signal — screen.orientation reflects the real display
 // hardware's orientation, which is untouched by resizing a window or toggling fullscreen (unlike
 // matchMedia('(orientation: portrait)'), which reacts to the WINDOW's current width-vs-height

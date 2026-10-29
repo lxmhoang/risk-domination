@@ -114,8 +114,10 @@ function fillTextWithBackground(ctx, text, x, y){
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
-  // Lets mobile CSS hide the outer app header while playing, to give the map more room.
+  // Lets mobile CSS hide the outer app header while playing, to give the map more room — and
+  // (on <html> too, the page's root scroller) turn off pull-to-refresh while playing, see style.css.
   document.body.classList.toggle('in-game-screen', id==='screen-game');
+  document.documentElement.classList.toggle('in-game-screen', id==='screen-game');
 }
 
 // Bright ocean blue used for water fill on both canvases and for the space around the map,

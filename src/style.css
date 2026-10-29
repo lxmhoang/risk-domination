@@ -26,6 +26,10 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;}
    just eat into that, so it's hidden for the whole time you're actually playing, on every
    screen size (not just mobile). body.in-game-screen is set by showScreen() in 01-utils.js. */
 body.in-game-screen #topbar{display:none;}
+/* No pull-to-refresh / overscroll bounce while playing: a pan that runs past the map's edge
+   would otherwise carry on to the page and reload it (Chrome Android, Safari 16+ read this off
+   the root scroller, hence html too). The map wrap stops its own overscroll from chaining out. */
+html.in-game-screen, body.in-game-screen{overscroll-behavior:none;}
 button{
   font-family:inherit;cursor:pointer;border:none;border-radius:10px;
   padding:10px 16px;font-size:14px;font-weight:600;background:var(--panel2);
@@ -204,7 +208,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #screen-game{position:relative;overflow:hidden;padding:0;}
 #gameCanvasWrap{
   position:absolute;inset:0;overflow:auto;display:flex;align-items:flex-start;
-  background:#1CB5E0;touch-action:pan-x pan-y;
+  background:#1CB5E0;touch-action:pan-x pan-y;overscroll-behavior:none;
 }
 /* World-wrapping map: panning moves a camera in JS (the map repeats forever along the wrap), so
    native touch scrolling is off here — see the drag-pan wiring in 08-wiring.js. */
