@@ -277,11 +277,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   pointer-events:auto;
 }
 #floatingFortifyButton[hidden]{display:none;}
-/* Width is the card's own 132px plus the active-card shift below (14px) so that shifted card
-   still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
-   horizontal scrollbar ever appears, without needing to clip anything since nothing actually
-   exceeds this width. */
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:auto;max-width:230px;padding-right:12px;overflow-y:auto;overflow-x:hidden;}
+/* max-width fits an expanded flag plus the active flag's sideways shift (see .player-flag.active-turn)
+   with room to spare — overflow-x:hidden (not visible/auto) so no horizontal scrollbar ever
+   appears, without needing to clip anything since nothing actually exceeds this width. */
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:auto;max-width:200px;padding-right:12px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);
   max-height:none;white-space:nowrap;
@@ -374,19 +373,20 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 /* Player flags. .player-flag is the wrapper (the glow is a drop-shadow on it — a filter on the
    clipped .player-card itself would be cut off by the clip-path); .player-card is the flag: the
-   player's color (--pc), with a triangle cut out of one short edge (right edge in landscape,
-   bottom edge in portrait — see the media block further down). */
-#playerList{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+   player's color (--pc), with a triangle cut out of its right edge. Landscape stacks them in one
+   column; portrait puts the collapsed flags in one row and the expanded ones in a 2-column grid
+   (see the media block further down). */
+#playerList{display:flex;flex-direction:column;gap:5px;align-items:flex-start;}
 .player-flag{flex-shrink:0;transition:transform .2s ease;}
 .player-card{
-  display:flex;align-items:center;gap:8px;
-  padding:5px 20px 5px 6px;min-height:46px;box-sizing:border-box;
+  display:flex;align-items:center;gap:6px;
+  padding:4px 16px 4px 5px;min-height:37px;box-sizing:border-box;
   background:linear-gradient(160deg,rgba(255,255,255,.22),rgba(0,0,0,.3)),var(--pc,#555);
-  border-radius:8px 0 0 8px;
-  clip-path:polygon(0 0,100% 0,calc(100% - 13px) 50%,100% 100%,0 100%);
+  border-radius:6px 0 0 6px;
+  clip-path:polygon(0 0,100% 0,calc(100% - 10px) 50%,100% 100%,0 100%);
 }
 .player-flag.active-turn{
-  transform:translateX(10px);position:relative;z-index:2;
+  transform:translateX(8px);position:relative;z-index:2;
   filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px rgba(47,125,255,.9));
   animation:activeTurnGlow 1.8s ease-in-out infinite;
 }
@@ -395,25 +395,30 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   50%{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 13px rgba(47,125,255,1));}
 }
 .pf-avatar{
-  position:relative;flex-shrink:0;width:38px;height:38px;border-radius:50%;
-  border:3px solid #fff;background:#222;box-shadow:0 1px 4px rgba(0,0,0,.5);
+  position:relative;flex-shrink:0;width:30px;height:30px;border-radius:50%;
+  border:2px solid #fff;background:#222;box-shadow:0 1px 3px rgba(0,0,0,.5);
 }
 .pf-avatar svg{display:block;width:100%;height:100%;border-radius:50%;}
-.enemy-icon{position:absolute;top:-9px;left:-7px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
-.crown-icon{position:absolute;top:-9px;right:-7px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
-.pf-stats{display:flex;align-items:center;gap:5px;min-width:0;}
+.enemy-icon{position:absolute;top:-7px;left:-6px;font-size:11px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
+.crown-icon{position:absolute;top:-7px;right:-6px;font-size:11px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
+/* Cards in hand, on the avatar's bottom-right corner (shown collapsed too; none when the hand is empty). */
+.pf-cards{
+  position:absolute;right:-6px;bottom:-4px;min-width:13px;height:15px;padding:0 2px;
+  display:flex;align-items:center;justify-content:center;
+  background:#f5f1e6;color:#1b2030;border:1px solid rgba(10,14,24,.75);border-radius:3px;
+  font-size:9px;font-weight:700;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.5);
+}
+.pf-stats{display:flex;align-items:center;gap:4px;min-width:0;}
 .pf-stat{
-  display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:9px;
-  background:rgba(10,14,24,.62);color:#fff;font-size:12px;line-height:1.2;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:2px;padding:1px 5px;border-radius:7px;
+  background:rgba(10,14,24,.62);color:#fff;font-size:10px;line-height:1.2;white-space:nowrap;
 }
 .pf-stat b{font-weight:500;letter-spacing:.2px;}
-.pf-stat i{font-style:normal;font-size:11px;}
 .pf-sep{opacity:.55;margin:0 2px;font-weight:300;}
-.pf-pin{width:13px;height:13px;margin-left:1px;flex-shrink:0;}
-.pf-port{display:none;}
+.pf-ico{width:11px;height:11px;margin-left:1px;flex-shrink:0;}
 /* Collapsed (default): just the avatar on a short flag; the numbers only show while expanded. */
 #playerList:not(.expanded) .pf-stats{display:none;}
-#playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding-right:18px;}
+#playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding-right:14px;}
 .player-flag{cursor:pointer;}
 /* Eliminated: always collapsed (renderPlayerList() gives it no numbers), under a white veil. */
 .player-card{position:relative;}
@@ -463,25 +468,18 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    completely untouched by anything in this block. */
 @media (orientation:portrait){
   #gamePlayerListWrap{
-    left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
+    left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;max-width:none;
     overflow:visible;max-height:none;padding-right:0;
   }
-  /* One row of vertical flags spread evenly along the top: the avatar on top, the three numbers
-     stacked under it, the triangle cut out of the bottom edge. */
-  #playerList{flex-direction:row;justify-content:space-around;align-items:flex-start;gap:4px;}
-  .player-flag{flex:1 1 0;min-width:0;max-width:72px;}
-  .player-card{
-    flex-direction:column;gap:5px;padding:6px 3px 20px;min-height:0;
-    border-radius:8px 8px 0 0;
-    clip-path:polygon(0 0,100% 0,100% 100%,50% calc(100% - 13px),0 100%);
-  }
-  .pf-stats{flex-direction:column;gap:3px;}
-  .pf-land{display:none;}
-  .pf-port{display:inline-flex;}
-  #playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding:6px 3px 18px;}
-  .pf-stat{font-size:clamp(10px,3vw,12px);padding:1px 4px;}
-  /* The landscape shift sideways makes no sense for a row of flags — lift the active one instead. */
-  .player-flag.active-turn{transform:translateY(3px);}
+  /* The same horizontal flags as landscape, a little shorter (just the avatar plus 3px above and
+     below it): collapsed, the avatar-only flags sit in one row along the top; expanded, a 2-column
+     grid so the numbers have room. */
+  #playerList{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:4px;}
+  #playerList.expanded{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px;justify-items:start;}
+  .player-flag{max-width:100%;}
+  .player-card{min-height:0;padding-top:3px;padding-bottom:3px;max-width:100%;}
+  /* No sideways shift for the active flag here — it would push into the next column; the glow marks it. */
+  .player-flag.active-turn{transform:none;}
 
   /* Portrait: #gameControlsBand takes no part in layout itself (display:contents) — its two
      children size/position independently, each bottom-anchored to its own screen edge (exact

@@ -289,11 +289,10 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   pointer-events:auto;
 }
 #floatingFortifyButton[hidden]{display:none;}
-/* Width is the card's own 132px plus the active-card shift below (14px) so that shifted card
-   still fits inside the box with room to spare — overflow-x:hidden (not visible/auto) so no
-   horizontal scrollbar ever appears, without needing to clip anything since nothing actually
-   exceeds this width. */
-#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:auto;max-width:230px;padding-right:12px;overflow-y:auto;overflow-x:hidden;}
+/* max-width fits an expanded flag plus the active flag's sideways shift (see .player-flag.active-turn)
+   with room to spare — overflow-x:hidden (not visible/auto) so no horizontal scrollbar ever
+   appears, without needing to clip anything since nothing actually exceeds this width. */
+#gamePlayerListWrap{left:10px;top:50%;transform:translateY(-50%);width:auto;max-width:200px;padding-right:12px;overflow-y:auto;overflow-x:hidden;}
 #gameTurnInfo{
   left:50%;bottom:10px;transform:translateX(-50%);
   max-height:none;white-space:nowrap;
@@ -386,19 +385,20 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 
 /* Player flags. .player-flag is the wrapper (the glow is a drop-shadow on it — a filter on the
    clipped .player-card itself would be cut off by the clip-path); .player-card is the flag: the
-   player's color (--pc), with a triangle cut out of one short edge (right edge in landscape,
-   bottom edge in portrait — see the media block further down). */
-#playerList{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+   player's color (--pc), with a triangle cut out of its right edge. Landscape stacks them in one
+   column; portrait puts the collapsed flags in one row and the expanded ones in a 2-column grid
+   (see the media block further down). */
+#playerList{display:flex;flex-direction:column;gap:5px;align-items:flex-start;}
 .player-flag{flex-shrink:0;transition:transform .2s ease;}
 .player-card{
-  display:flex;align-items:center;gap:8px;
-  padding:5px 20px 5px 6px;min-height:46px;box-sizing:border-box;
+  display:flex;align-items:center;gap:6px;
+  padding:4px 16px 4px 5px;min-height:37px;box-sizing:border-box;
   background:linear-gradient(160deg,rgba(255,255,255,.22),rgba(0,0,0,.3)),var(--pc,#555);
-  border-radius:8px 0 0 8px;
-  clip-path:polygon(0 0,100% 0,calc(100% - 13px) 50%,100% 100%,0 100%);
+  border-radius:6px 0 0 6px;
+  clip-path:polygon(0 0,100% 0,calc(100% - 10px) 50%,100% 100%,0 100%);
 }
 .player-flag.active-turn{
-  transform:translateX(10px);position:relative;z-index:2;
+  transform:translateX(8px);position:relative;z-index:2;
   filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px rgba(47,125,255,.9));
   animation:activeTurnGlow 1.8s ease-in-out infinite;
 }
@@ -407,25 +407,30 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   50%{filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 13px rgba(47,125,255,1));}
 }
 .pf-avatar{
-  position:relative;flex-shrink:0;width:38px;height:38px;border-radius:50%;
-  border:3px solid #fff;background:#222;box-shadow:0 1px 4px rgba(0,0,0,.5);
+  position:relative;flex-shrink:0;width:30px;height:30px;border-radius:50%;
+  border:2px solid #fff;background:#222;box-shadow:0 1px 3px rgba(0,0,0,.5);
 }
 .pf-avatar svg{display:block;width:100%;height:100%;border-radius:50%;}
-.enemy-icon{position:absolute;top:-9px;left:-7px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
-.crown-icon{position:absolute;top:-9px;right:-7px;font-size:14px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
-.pf-stats{display:flex;align-items:center;gap:5px;min-width:0;}
+.enemy-icon{position:absolute;top:-7px;left:-6px;font-size:11px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
+.crown-icon{position:absolute;top:-7px;right:-6px;font-size:11px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.6));}
+/* Cards in hand, on the avatar's bottom-right corner (shown collapsed too; none when the hand is empty). */
+.pf-cards{
+  position:absolute;right:-6px;bottom:-4px;min-width:13px;height:15px;padding:0 2px;
+  display:flex;align-items:center;justify-content:center;
+  background:#f5f1e6;color:#1b2030;border:1px solid rgba(10,14,24,.75);border-radius:3px;
+  font-size:9px;font-weight:700;line-height:1;box-shadow:0 1px 2px rgba(0,0,0,.5);
+}
+.pf-stats{display:flex;align-items:center;gap:4px;min-width:0;}
 .pf-stat{
-  display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:9px;
-  background:rgba(10,14,24,.62);color:#fff;font-size:12px;line-height:1.2;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:2px;padding:1px 5px;border-radius:7px;
+  background:rgba(10,14,24,.62);color:#fff;font-size:10px;line-height:1.2;white-space:nowrap;
 }
 .pf-stat b{font-weight:500;letter-spacing:.2px;}
-.pf-stat i{font-style:normal;font-size:11px;}
 .pf-sep{opacity:.55;margin:0 2px;font-weight:300;}
-.pf-pin{width:13px;height:13px;margin-left:1px;flex-shrink:0;}
-.pf-port{display:none;}
+.pf-ico{width:11px;height:11px;margin-left:1px;flex-shrink:0;}
 /* Collapsed (default): just the avatar on a short flag; the numbers only show while expanded. */
 #playerList:not(.expanded) .pf-stats{display:none;}
-#playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding-right:18px;}
+#playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding-right:14px;}
 .player-flag{cursor:pointer;}
 /* Eliminated: always collapsed (renderPlayerList() gives it no numbers), under a white veil. */
 .player-card{position:relative;}
@@ -475,25 +480,18 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
    completely untouched by anything in this block. */
 @media (orientation:portrait){
   #gamePlayerListWrap{
-    left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;
+    left:10px;right:10px;top:10px;bottom:auto;transform:none;width:auto;max-width:none;
     overflow:visible;max-height:none;padding-right:0;
   }
-  /* One row of vertical flags spread evenly along the top: the avatar on top, the three numbers
-     stacked under it, the triangle cut out of the bottom edge. */
-  #playerList{flex-direction:row;justify-content:space-around;align-items:flex-start;gap:4px;}
-  .player-flag{flex:1 1 0;min-width:0;max-width:72px;}
-  .player-card{
-    flex-direction:column;gap:5px;padding:6px 3px 20px;min-height:0;
-    border-radius:8px 8px 0 0;
-    clip-path:polygon(0 0,100% 0,100% 100%,50% calc(100% - 13px),0 100%);
-  }
-  .pf-stats{flex-direction:column;gap:3px;}
-  .pf-land{display:none;}
-  .pf-port{display:inline-flex;}
-  #playerList:not(.expanded) .player-card,.player-flag.eliminated .player-card{padding:6px 3px 18px;}
-  .pf-stat{font-size:clamp(10px,3vw,12px);padding:1px 4px;}
-  /* The landscape shift sideways makes no sense for a row of flags — lift the active one instead. */
-  .player-flag.active-turn{transform:translateY(3px);}
+  /* The same horizontal flags as landscape, a little shorter (just the avatar plus 3px above and
+     below it): collapsed, the avatar-only flags sit in one row along the top; expanded, a 2-column
+     grid so the numbers have room. */
+  #playerList{flex-direction:row;flex-wrap:wrap;align-items:flex-start;gap:4px;}
+  #playerList.expanded{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 8px;justify-items:start;}
+  .player-flag{max-width:100%;}
+  .player-card{min-height:0;padding-top:3px;padding-bottom:3px;max-width:100%;}
+  /* No sideways shift for the active flag here — it would push into the next column; the glow marks it. */
+  .player-flag.active-turn{transform:none;}
 
   /* Portrait: #gameControlsBand takes no part in layout itself (display:contents) — its two
      children size/position independently, each bottom-anchored to its own screen edge (exact
@@ -1421,11 +1419,11 @@ function newMap(cols, rows, name){
     nextContId: 1,
     // World wrap (cylinder, like Civilization): wrapX joins the left edge to the right edge, so a
     // territory touching column 0 neighbors whatever touches column cols-1 on the same row.
-    // wrapY is the same along the top/bottom — only ever set by rotateMapData90CW(), which turns
-    // a horizontal wrap into a vertical one. On a wrapX map the generator treats the left/right
-    // edge like any other column, so territories, continents and lakes run across it; outlines and
-    // badge anchors are worked out on the shape laid out in one piece (see unwrapCells()).
-    // wrapY is adjacency-only (see recomputeGraph()) — wrapping maps are never rotated in play.
+    // On a wrapX map the generator treats the left/right edge like any other column, so
+    // territories, continents and lakes run across it; outlines and badge anchors are worked out
+    // on the shape laid out in one piece (see unwrapCells()). wrapY (top/bottom) is adjacency-only
+    // (see recomputeGraph()) — nothing sets it any more (it came from the old portrait
+    // auto-rotation), but a map file that has it still loads and plays.
     wrapX: false,
     wrapY: false,
     // Sea lanes: [terrIdA, terrIdB] pairs of territories that count as neighbors although water
@@ -1917,55 +1915,6 @@ function recomputeGraph(map){
       t.flatAnchor = { x: (fc+0.5)*cs, y: (fr+0.5)*cs };
     }
   });
-}
-
-/* ---------------- Portrait auto-rotation ----------------
-   The map is purely grid-based (cellTerritory + per-territory cell lists), so rotating it 90° is
-   just a coordinate remap — border/centroid rendering, click hit-testing and AI/combat logic all
-   already work generically off of map.cols/map.rows/cellTerritory, with no orientation-specific
-   code of their own, so none of that needs touching. Adjacency is also rotation-invariant (two
-   cells don't stop being neighbors just because the grid turned), so only cell coordinates and
-   the derived centroid/pole-cell actually need recomputing — done here via the same
-   recomputeGraph() every other map-construction path already uses.
-   One 90° clockwise step: (c,r) in a cols×rows grid -> (rows-1-r, c) in the resulting rows×cols
-   grid. See maybeRotateMapForPortrait() in 06-render-game.js for when/why this gets called, and
-   unrotateMapData() below for undoing it (always 3 more of these steps = 270° = -90°). */
-function rotateMapData90CW(map){
-  const oldCols = map.cols, oldRows = map.rows;
-  const newCols = oldRows, newRows = oldCols;
-  const rotated = newMap(newCols, newRows, map.name);
-  rotated.cellSize = map.cellSize;
-  // (c,r) -> (rows-1-r, c): old columns become new rows, so a left/right seam becomes top/bottom.
-  rotated.wrapX = !!map.wrapY; rotated.wrapY = !!map.wrapX;
-  Object.values(map.territories).forEach(t=>{
-    rotated.territories[t.id] = {id:t.id, name:t.name, continentId:t.continentId, color:t.color, cells:[], neighbors:new Set(), centroid:{x:0,y:0}};
-  });
-  Object.values(map.continents).forEach(c=>{
-    rotated.continents[c.id] = {id:c.id, name:c.name, color:c.color, bonus:c.bonus};
-  });
-  for(let r=0;r<oldRows;r++){
-    for(let c=0;c<oldCols;c++){
-      const id = map.cellTerritory[r*oldCols+c];
-      if(id===-1) continue;
-      const nc = oldRows-1-r, nr = c;
-      rotated.cellTerritory[nr*newCols+nc] = id;
-      rotated.territories[id].cells.push([nc,nr]);
-    }
-  }
-  rotated.nextTerrId = map.nextTerrId;
-  rotated.nextContId = map.nextContId;
-  rotated.links = (map.links||[]).map(l=>[l[0],l[1]]);
-  recomputeGraph(rotated);
-  return rotated;
-}
-// Rotating 3 more times (270° CW = -90°) undoes a single rotateMapData90CW() call exactly —
-// the grid is all integer coordinates, so this round-trips back to the identical map, not just an
-// approximation. Tagged with _rotatedFor90 (set by maybeRotateMapForPortrait()) rather than
-// tracked in a separate "original map" variable, so the one map object is always self-describing
-// and nothing needs to remember to reset a side variable whenever a genuinely new map is loaded.
-function unrotateMapData(map){
-  if(!map._rotatedFor90) return map;
-  return rotateMapData90CW(rotateMapData90CW(rotateMapData90CW(map)));
 }
 
 /* ---------------- Procedural random map generator ---------------- */
@@ -5162,7 +5111,7 @@ const LABEL_CSS_PX = 10;
 let labelNativePx = 11;
 let hoverTerrId = null;
 // How far a territory's deepest point is from its edge, in map px (cached on the territory —
-// a rotated map is a new object, so it gets its own).
+// a different map is a different object, so it gets its own).
 function territoryClearance(map, t){
   if(t._clear!=null) return t._clear;
   const e = territoryEDT(unwrapCells(t.cells, map.cols, map.wrapX));
@@ -5855,38 +5804,20 @@ function isPortraitLayout(){
   return wrap.clientHeight > wrap.clientWidth;
 }
 
-// Auto-rotates the active map 90° when it's landscape-shaped (wider than tall) but the screen
-// itself is portrait — "màn dọc nhưng map load vào lại ngang" — instead of leaving the player to
-// squint at a wide map squeezed into a narrow screen, or blocking play outright like the old
-// rotate-prompt did. Call once per game-screen entry, right after showScreen('screen-game') makes
-// #gameCanvasWrap measurable (isPortraitLayout() needs real layout, not display:none) and before
-// the first renderGame() — see the call sites in 08-wiring.js/04-game-state.js.
-// Always starts from unrotateMapData(mapData) rather than rotating whatever's already there, so
-// repeat calls (loading another save, "Chơi lại" after a game-over, without a full page reload)
-// are idempotent instead of compounding into 180°/270°.
-// lastAdaptedPortraitLayout records which way THIS call just decided, so a later orientation FLIP
-// (the device/window actually turning, not just any resize) can be detected and re-trigger this —
-// see handleGameOrientationResize() below, wired to the resize listener in 08-wiring.js.
+// Which way the game screen was laid out (portrait/landscape) when it was entered or last flipped,
+// so an actual orientation flip can be told apart from any other resize — see
+// handleGameOrientationResize() below. The map itself is never rotated: it keeps its own shape on
+// either orientation and is fitted/zoomed into whatever space the layout leaves it. Call once per
+// game-screen entry, right after showScreen('screen-game') makes #gameCanvasWrap measurable.
 let lastAdaptedPortraitLayout = null;
-// Global (wrapping) maps are never rotated: their seam always stays on the left/right edges of
-// the screen, whatever the screen's orientation — a wide global map on a portrait phone (or a
-// tall one on a landscape screen) just plays at whatever size fits.
-function maybeRotateMapForPortrait(){
-  mapData = unrotateMapData(mapData);
-  if(isPortraitLayout() && !mapData.wrapX && !mapData.wrapY && mapData.cols > mapData.rows){
-    mapData = rotateMapData90CW(mapData);
-    mapData._rotatedFor90 = true;
-  }
-  lastAdaptedPortraitLayout = isPortraitLayout();
-}
+function rememberGameOrientation(){ lastAdaptedPortraitLayout = isPortraitLayout(); }
 
-// "Xoay màn hình khi đang chơi thì map cũng xoay theo" — re-runs the portrait/landscape rotation
-// decision when the screen's actual SHAPE flips mid-game, not on every resize (resize fires for
-// lots of harmless reasons too, e.g. a mobile browser's address bar showing/hiding, which
-// shouldn't go reset the player's zoom/pan every time). Zoom/pan reset to a clean fit alongside
-// the rotation itself, since the map's whole aspect ratio just changed and whatever the player
-// had zoomed/panned to almost certainly doesn't line up with the new framing anymore. Called from
-// the existing debounced resize listener in 08-wiring.js (only while the game screen is active).
+// Re-fits the map when the screen's actual SHAPE flips mid-game (portrait <-> landscape), not on
+// every resize (resize fires for lots of harmless reasons too, e.g. a mobile browser's address bar
+// showing/hiding, which shouldn't go reset the player's zoom/pan every time). Zoom/pan reset to a
+// clean fit, since the player list and controls just moved to different edges and whatever the
+// player had zoomed/panned to almost certainly doesn't line up with the new framing anymore.
+// Called from the screen.orientation listener in 08-wiring.js (only while the game screen is active).
 // Map px -> CSS px scale of the last frame at zoom 1 (set by drawGameCanvas()).
 let lastFitScale = 1;
 // Called right after a game's first frame: when this map's badges can't grow enough to stay
@@ -5910,7 +5841,7 @@ function applyInitialGameZoom(){
 function handleGameOrientationResize(){
   const nowPortrait = isPortraitLayout();
   if(lastAdaptedPortraitLayout!==null && nowPortrait!==lastAdaptedPortraitLayout){
-    maybeRotateMapForPortrait();
+    rememberGameOrientation();
     gameZoom = 1;
     const wrap = $('gameCanvasWrap');
     wrap.scrollLeft = 0; wrap.scrollTop = 0;
@@ -6419,7 +6350,9 @@ function drawGameCanvas(){
 let playerListExpanded = false;
 let collapsedPlayerListSize = {w:0, h:0};
 // Thin outline map pin — the territory count's icon (an emoji 🗺️ was unreadable at this size).
-const TERR_ICON_SVG = '<svg class="pf-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.5s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0c0 5-6.5 11.2-6.5 11.2z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="10.2" r="2.3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
+// Thin line icons for the player flags' numbers: a rifleman (armies) and a lightning bolt (power).
+const ARMY_ICON_SVG = '<svg class="pf-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="4.6" r="2.3"/><path d="M10 7.6v7.2M10 14.8l-3.2 6.4M10 14.8l3.2 6.4M6.2 10.8h8.6M16.8 2.8v17.4"/></svg>';
+const POWER_ICON_SVG = '<svg class="pf-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M13.5 2.5 5.5 13.5h6l-1 8 8-11h-6z"/></svg>';
 function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
   wrap.classList.toggle('expanded', playerListExpanded);
@@ -6447,18 +6380,21 @@ function renderPlayerList(){
       mark.title = 'Kẻ thù chung — các AI khác đang liên minh chống lại';
       avatar.appendChild(mark);
     }
+    if(p.alive && p.cards.length){
+      const cards = el('span','pf-cards', String(p.cards.length));
+      cards.title = 'Số thẻ đang giữ';
+      avatar.appendChild(cards);
+    }
     card.appendChild(avatar);
     if(p.alive){
       const mine = ownedTerritories(p.id);
       const armies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
       const next = computeReinforcements(p.id)+'+';
-      const stat = (cls, html, tip)=>{ const s = el('span','pf-stat '+cls, html); s.title = tip; return s; };
+      const stat = (html, tip)=>{ const s = el('span','pf-stat', html); s.title = tip; return s; };
       const stats = el('div','pf-stats');
-      // landscape: one chip for both army numbers; portrait: one row each (only one set shows)
-      stats.appendChild(stat('pf-land', `<b>${armies}</b><span class="pf-sep">|</span><b>${next}</b><i>🪖</i>`, 'Quân đang có | quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
-      stats.appendChild(stat('pf-port', `<b>${armies}</b><i>🪖</i>`, 'Quân đang có'));
-      stats.appendChild(stat('pf-port', `<b>${next}</b><i>🪖</i>`, 'Quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
-      stats.appendChild(stat('', `<b>${mine.length}</b>${TERR_ICON_SVG}`, 'Số lãnh thổ đang giữ'));
+      stats.appendChild(stat(`<b>${armies}</b><span class="pf-sep">|</span><b>${next}</b>${ARMY_ICON_SVG}`, 'Quân đang có | quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
+      // the same power score the AI weighs players by (armies, territories, income — see evaluatePlayerPower())
+      stats.appendChild(stat(`<b>${Math.round(evaluatePlayerPower(p.id))}</b>${POWER_ICON_SVG}`, 'Sức mạnh: quân, lãnh thổ và quân nhận mỗi lượt cộng lại'));
       card.appendChild(stats);
     }
     flagWrap.appendChild(card);
@@ -7214,7 +7150,7 @@ function replaySameGame(){
   game.turnOrder = [...snap.turnOrder];
   game.players.forEach(p=>{ game.pool[p.id] = 0; });
   showScreen('screen-game');
-  maybeRotateMapForPortrait();
+  rememberGameOrientation();
   renderGame();
   applyInitialGameZoom();
   beginReinforcePhase();
@@ -7334,15 +7270,11 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
 const GAME_SAVE_FORMAT_VERSION = 1;
 
 function exportGameJSON(){
-  // Always the CANONICAL (un-rotated) map, regardless of whether this session is currently
-  // displaying a portrait auto-rotated copy (see maybeRotateMapForPortrait() in
-  // 06-render-game.js) — otherwise reloading the save on a landscape device would show it
-  // sideways relative to how it was actually authored/generated.
   const out = {
     formatVersion: GAME_SAVE_FORMAT_VERSION,
     savedAt: Date.now(),
     spectatorMode,
-    mapData: mapToPlainObject(unrotateMapData(mapData)),
+    mapData: mapToPlainObject(mapData),
     game,
   };
   const blob = new Blob([JSON.stringify(out)], {type:'application/json'});
@@ -7364,7 +7296,7 @@ function importGameJSON(obj){
   gameZoom = 1;
   resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');
-  maybeRotateMapForPortrait();
+  rememberGameOrientation();
   renderGame();
   applyInitialGameZoom();
   renderCombatLog();
@@ -7829,7 +7761,7 @@ $('btnStartGame').addEventListener('click', ()=>{
   if(setupForOnline){ startOnlineGame(playerConfigs, diff, alliance, tradeRule, $('toggleMapWrap').checked); return; }
   initGame(playerConfigs, diff, spectator, alliance, tradeRule);
   showScreen('screen-game');
-  maybeRotateMapForPortrait();
+  rememberGameOrientation();
   renderGame();
   applyInitialGameZoom();
   if(RUNTIME_CONFIG.manualInitialPlacement){
@@ -8107,8 +8039,8 @@ $('btnToggleLog').addEventListener('click', ()=>{
 // resize too, debounced since resize fires continuously while dragging a window/devtools pane.
 // Deliberately a plain renderGame() here, NOT handleGameOrientationResize() — `resize` fires for
 // lots of things that aren't an actual orientation flip, including entering/exiting fullscreen,
-// and doing the map-rotation check's heavier work (re-measuring layout, potentially rebuilding the
-// whole map + its border cache) at the exact moment a fullscreen transition is also in flight was
+// and doing the orientation-flip handling's heavier work (re-measuring layout, re-fitting and
+// re-zooming the map — it used to rebuild the whole map too, when maps were auto-rotated) at the exact moment a fullscreen transition is also in flight was
 // enough to freeze real Chrome on macOS (reported: clicking the fullscreen button hung the page).
 // See the screen.orientation listener further down for the actual orientation-flip-only trigger.
 let _resizeTimer = null;
@@ -8124,9 +8056,9 @@ window.addEventListener('resize', ()=>{
 // matchMedia('(orientation: portrait)'), which reacts to the WINDOW's current width-vs-height
 // ratio: if that window happened to be narrower than tall before going fullscreen, filling a
 // normal landscape monitor with it flips that media query too, re-triggering this same heavy
-// rotation+render work mid-transition — which was still freezing the fullscreen button even after
+// re-fit+render work mid-transition — which was still freezing the fullscreen button even after
 // moving off plain `resize`). Falls back to doing nothing where unsupported (older Safari) — the
-// mid-game re-rotation just won't fire there, same as before this feature existed.
+// mid-game re-fit just won't fire there (the next plain resize render still lays it out).
 if(window.screen && window.screen.orientation){
   window.screen.orientation.addEventListener('change', ()=>{
     if(game && document.getElementById('screen-game').classList.contains('active')) handleGameOrientationResize();
@@ -8411,7 +8343,7 @@ function showOnlineGame(id, version, map, state, log){
   game.log = log || [];
   onlineGame = { id, version, busy:false };
   showScreen('screen-game');
-  maybeRotateMapForPortrait();
+  rememberGameOrientation();
   renderGame();
   applyInitialGameZoom();
   renderCombatLog();

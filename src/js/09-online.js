@@ -101,7 +101,7 @@ function showOnlineGame(id, version, map, state, log){
   game.log = log || [];
   onlineGame = { id, version, busy:false };
   showScreen('screen-game');
-  maybeRotateMapForPortrait();
+  rememberGameOrientation();
   renderGame();
   applyInitialGameZoom();
   renderCombatLog();

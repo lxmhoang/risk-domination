@@ -59,7 +59,7 @@ const LABEL_CSS_PX = 10;
 let labelNativePx = 11;
 let hoverTerrId = null;
 // How far a territory's deepest point is from its edge, in map px (cached on the territory —
-// a rotated map is a new object, so it gets its own).
+// a different map is a different object, so it gets its own).
 function territoryClearance(map, t){
   if(t._clear!=null) return t._clear;
   const e = territoryEDT(unwrapCells(t.cells, map.cols, map.wrapX));
@@ -752,38 +752,20 @@ function isPortraitLayout(){
   return wrap.clientHeight > wrap.clientWidth;
 }
 
-// Auto-rotates the active map 90° when it's landscape-shaped (wider than tall) but the screen
-// itself is portrait — "màn dọc nhưng map load vào lại ngang" — instead of leaving the player to
-// squint at a wide map squeezed into a narrow screen, or blocking play outright like the old
-// rotate-prompt did. Call once per game-screen entry, right after showScreen('screen-game') makes
-// #gameCanvasWrap measurable (isPortraitLayout() needs real layout, not display:none) and before
-// the first renderGame() — see the call sites in 08-wiring.js/04-game-state.js.
-// Always starts from unrotateMapData(mapData) rather than rotating whatever's already there, so
-// repeat calls (loading another save, "Chơi lại" after a game-over, without a full page reload)
-// are idempotent instead of compounding into 180°/270°.
-// lastAdaptedPortraitLayout records which way THIS call just decided, so a later orientation FLIP
-// (the device/window actually turning, not just any resize) can be detected and re-trigger this —
-// see handleGameOrientationResize() below, wired to the resize listener in 08-wiring.js.
+// Which way the game screen was laid out (portrait/landscape) when it was entered or last flipped,
+// so an actual orientation flip can be told apart from any other resize — see
+// handleGameOrientationResize() below. The map itself is never rotated: it keeps its own shape on
+// either orientation and is fitted/zoomed into whatever space the layout leaves it. Call once per
+// game-screen entry, right after showScreen('screen-game') makes #gameCanvasWrap measurable.
 let lastAdaptedPortraitLayout = null;
-// Global (wrapping) maps are never rotated: their seam always stays on the left/right edges of
-// the screen, whatever the screen's orientation — a wide global map on a portrait phone (or a
-// tall one on a landscape screen) just plays at whatever size fits.
-function maybeRotateMapForPortrait(){
-  mapData = unrotateMapData(mapData);
-  if(isPortraitLayout() && !mapData.wrapX && !mapData.wrapY && mapData.cols > mapData.rows){
-    mapData = rotateMapData90CW(mapData);
-    mapData._rotatedFor90 = true;
-  }
-  lastAdaptedPortraitLayout = isPortraitLayout();
-}
+function rememberGameOrientation(){ lastAdaptedPortraitLayout = isPortraitLayout(); }
 
-// "Xoay màn hình khi đang chơi thì map cũng xoay theo" — re-runs the portrait/landscape rotation
-// decision when the screen's actual SHAPE flips mid-game, not on every resize (resize fires for
-// lots of harmless reasons too, e.g. a mobile browser's address bar showing/hiding, which
-// shouldn't go reset the player's zoom/pan every time). Zoom/pan reset to a clean fit alongside
-// the rotation itself, since the map's whole aspect ratio just changed and whatever the player
-// had zoomed/panned to almost certainly doesn't line up with the new framing anymore. Called from
-// the existing debounced resize listener in 08-wiring.js (only while the game screen is active).
+// Re-fits the map when the screen's actual SHAPE flips mid-game (portrait <-> landscape), not on
+// every resize (resize fires for lots of harmless reasons too, e.g. a mobile browser's address bar
+// showing/hiding, which shouldn't go reset the player's zoom/pan every time). Zoom/pan reset to a
+// clean fit, since the player list and controls just moved to different edges and whatever the
+// player had zoomed/panned to almost certainly doesn't line up with the new framing anymore.
+// Called from the screen.orientation listener in 08-wiring.js (only while the game screen is active).
 // Map px -> CSS px scale of the last frame at zoom 1 (set by drawGameCanvas()).
 let lastFitScale = 1;
 // Called right after a game's first frame: when this map's badges can't grow enough to stay
@@ -807,7 +789,7 @@ function applyInitialGameZoom(){
 function handleGameOrientationResize(){
   const nowPortrait = isPortraitLayout();
   if(lastAdaptedPortraitLayout!==null && nowPortrait!==lastAdaptedPortraitLayout){
-    maybeRotateMapForPortrait();
+    rememberGameOrientation();
     gameZoom = 1;
     const wrap = $('gameCanvasWrap');
     wrap.scrollLeft = 0; wrap.scrollTop = 0;
@@ -1316,7 +1298,9 @@ function drawGameCanvas(){
 let playerListExpanded = false;
 let collapsedPlayerListSize = {w:0, h:0};
 // Thin outline map pin — the territory count's icon (an emoji 🗺️ was unreadable at this size).
-const TERR_ICON_SVG = '<svg class="pf-pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21.5s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0c0 5-6.5 11.2-6.5 11.2z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="12" cy="10.2" r="2.3" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
+// Thin line icons for the player flags' numbers: a rifleman (armies) and a lightning bolt (power).
+const ARMY_ICON_SVG = '<svg class="pf-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="4.6" r="2.3"/><path d="M10 7.6v7.2M10 14.8l-3.2 6.4M10 14.8l3.2 6.4M6.2 10.8h8.6M16.8 2.8v17.4"/></svg>';
+const POWER_ICON_SVG = '<svg class="pf-ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M13.5 2.5 5.5 13.5h6l-1 8 8-11h-6z"/></svg>';
 function renderPlayerList(){
   const wrap = $('playerList'); wrap.innerHTML='';
   wrap.classList.toggle('expanded', playerListExpanded);
@@ -1344,18 +1328,21 @@ function renderPlayerList(){
       mark.title = 'Kẻ thù chung — các AI khác đang liên minh chống lại';
       avatar.appendChild(mark);
     }
+    if(p.alive && p.cards.length){
+      const cards = el('span','pf-cards', String(p.cards.length));
+      cards.title = 'Số thẻ đang giữ';
+      avatar.appendChild(cards);
+    }
     card.appendChild(avatar);
     if(p.alive){
       const mine = ownedTerritories(p.id);
       const armies = mine.reduce((s,id)=>s+(game.armies[id]||0),0);
       const next = computeReinforcements(p.id)+'+';
-      const stat = (cls, html, tip)=>{ const s = el('span','pf-stat '+cls, html); s.title = tip; return s; };
+      const stat = (html, tip)=>{ const s = el('span','pf-stat', html); s.title = tip; return s; };
       const stats = el('div','pf-stats');
-      // landscape: one chip for both army numbers; portrait: one row each (only one set shows)
-      stats.appendChild(stat('pf-land', `<b>${armies}</b><span class="pf-sep">|</span><b>${next}</b><i>🪖</i>`, 'Quân đang có | quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
-      stats.appendChild(stat('pf-port', `<b>${armies}</b><i>🪖</i>`, 'Quân đang có'));
-      stats.appendChild(stat('pf-port', `<b>${next}</b><i>🪖</i>`, 'Quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
-      stats.appendChild(stat('', `<b>${mine.length}</b>${TERR_ICON_SVG}`, 'Số lãnh thổ đang giữ'));
+      stats.appendChild(stat(`<b>${armies}</b><span class="pf-sep">|</span><b>${next}</b>${ARMY_ICON_SVG}`, 'Quân đang có | quân nhận được ở lượt tới (nếu không có gì thay đổi)'));
+      // the same power score the AI weighs players by (armies, territories, income — see evaluatePlayerPower())
+      stats.appendChild(stat(`<b>${Math.round(evaluatePlayerPower(p.id))}</b>${POWER_ICON_SVG}`, 'Sức mạnh: quân, lãnh thổ và quân nhận mỗi lượt cộng lại'));
       card.appendChild(stats);
     }
     flagWrap.appendChild(card);
