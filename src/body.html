@@ -53,8 +53,8 @@
         <input type="text" id="mapNameInput" value="Bản đồ của tôi" style="width:100%;margin-bottom:8px;">
         <div class="field-row"><span>Cột × Hàng</span>
           <span style="display:flex;gap:4px;">
-            <input type="number" id="gridCols" value="100" min="10" max="500" style="width:52px;">
-            <input type="number" id="gridRows" value="100" min="10" max="500" style="width:52px;">
+            <input type="number" id="gridCols" value="100" min="10" max="500" style="width:64px;">
+            <input type="number" id="gridRows" value="100" min="10" max="500" style="width:64px;">
           </span>
         </div>
         <button class="small ghost" id="btnApplyGrid" style="width:100%;margin-bottom:8px;">Áp dụng lưới mới</button>
@@ -75,6 +75,8 @@
           <button class="small ghost" id="btnRandomGen">🎲 Ngẫu nhiên</button>
           <button class="small ghost" id="btnClearMap">🗑️ Xoá hết</button>
         </div>
+        <div class="field-row" style="margin-top:10px;margin-bottom:4px;"><span>Mở bản đồ có sẵn</span></div>
+        <div id="editorGalleryMaps" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       </div>
     </div>
 

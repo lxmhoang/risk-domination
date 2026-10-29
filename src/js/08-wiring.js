@@ -341,6 +341,7 @@ $('importMapInput').addEventListener('change', (e)=>{
   reader.readAsText(file);
   e.target.value='';
 });
+renderEditorGalleryButtons();
 $('btnValidate').addEventListener('click', validateMap);
 $('btnPlayThisMap').addEventListener('click', ()=>{
   if(!validateMap()) { if(!confirm('Bản đồ có vấn đề. Vẫn muốn tiếp tục chơi?')) return; }

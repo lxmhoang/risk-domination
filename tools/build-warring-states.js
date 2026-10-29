@@ -261,8 +261,10 @@ const obj = {
   name: 'Chiến Quốc',
   cols: COLS, rows: ROWS, cellSize: CELL_SIZE,
   cellTerritoryRLE: core.rleEncode(cellTerritory),
-  territories: T.map(([name,,,cont],i)=>({ id:i+1, name, continentId: contId[cont], color: core.PALETTE_TERR[i % core.PALETTE_TERR.length] })),
-  continents: CONTS.map(([name,color],i)=>({ id:i+1, name, color, bonus: Math.max(2, Math.round(terrCount[name]/2)+1) })),
+  // the game's naming convention: territories in lower case, continents in upper case (as the
+  // editor would store them, see finalizeTerrName()/finalizeContName())
+  territories: T.map(([name,,,cont],i)=>({ id:i+1, name: core.finalizeTerrName(name), continentId: contId[cont], color: core.PALETTE_TERR[i % core.PALETTE_TERR.length] })),
+  continents: CONTS.map(([name,color],i)=>({ id:i+1, name: core.finalizeContName(name), color, bonus: Math.max(2, Math.round(terrCount[name]/2)+1) })),
   nextTerrId: T.length+1, nextContId: CONTS.length+1,
   wrapX: false, wrapY: false,
   // sea lane across the Bohai strait (Đăng Châu – Liêu Đông)

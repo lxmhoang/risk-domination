@@ -303,6 +303,23 @@ function exportMapJSON(){
   URL.revokeObjectURL(url);
 }
 
+// "Mở bản đồ có sẵn": one button per gallery map (MAP_GALLERY, see 07c-map-gallery.js) that opens
+// it in the editor to edit from. mapFromPlainObject() builds a fresh copy (cells, territories,
+// mountains, rivers), so edits never touch the gallery's own entry.
+function renderEditorGalleryButtons(){
+  const wrap = $('editorGalleryMaps');
+  wrap.innerHTML = '';
+  MAP_GALLERY.forEach(entry=>{
+    const b = el('button','small ghost','📂 '+entry.name);
+    b.title = `${entry.territories.length} lãnh thổ · ${entry.continents.length} châu lục`;
+    b.addEventListener('click', ()=>{
+      if(!confirm(`Mở bản đồ "${entry.name}" sẽ thay bản đồ đang vẽ. Tiếp tục?`)) return;
+      importMapJSON(entry);
+    });
+    wrap.appendChild(b);
+  });
+}
+
 function importMapJSON(obj){
   mapData = mapFromPlainObject(obj);
   $('mapNameInput').value = mapData.name;
