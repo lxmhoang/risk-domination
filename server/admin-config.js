@@ -13,7 +13,7 @@
 const num = (label, min, max, step, hint)=> ({kind:'number', label, min, max, step, hint});
 // The AI's turn strategies whose tier an admin can set (05-ai.js, strategyTiers()). The fallback,
 // attempt_continent, isn't here: it always comes last.
-const STRATEGIES = [['StaySurvival','Sống còn'], ['KillWeak','Kết liễu đối thủ yếu'], ['PushToWin','Tổng tấn công'],
+const STRATEGIES = [['StaySurvival','Sống còn'], ['GangUp','Hội đồng đánh leader (khi bật liên minh)'], ['KillWeak','Kết liễu đối thủ yếu'], ['PushToWin','Tổng tấn công'],
   ['Defend','Phòng thủ biên giới'], ['BreakContinent','Phá châu lục'], ['FinishContinent','Hoàn tất châu lục'],
   ['Revenge','Trả thù'], ['Expand','Mở rộng']];
 const TIER_OPTIONS = [['0','Tắt'], ['1','Tier 1'], ['2','Tier 2'], ['3','Tier 3'], ['4','Tier 4'], ['5','Tier 5']];

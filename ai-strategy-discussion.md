@@ -203,6 +203,8 @@ opportunist → Level 2/Response A.
    lean của 3 cái này do Claude đề xuất, chưa tinh chỉnh với user.
    Sau đó: `break_continent` xuống tier 4; tier của mọi chiến lược (trừ fallback) chỉnh được
    trên trang `/admin` (key `aiTier<Tên>`).
+   Thêm `gang_up` (Hội đồng đánh leader, tier 2, chỉ khi bật liên minh): ưu tiên phá châu lục
+   của kẻ thù chung, không xét ngưỡng tỉ lệ; các tier sau dồn xuống 1 bậc (3/4/5).
 1. ✅ Thứ tự ưu tiên: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak` >
    `defend` > `expand`.
 2. ✅ Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng

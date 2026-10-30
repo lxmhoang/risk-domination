@@ -16,12 +16,13 @@ không còn gì khác khớp, nên lúc nào cũng chọn được.
 | Tier | Chiến lược | Tên hiển thị | Thang trigger | Đối sách |
 |---|---|---|---|---|
 | 1 | `stay_survival` | Sống còn | 1–4 | 1 / 2 |
-| 2 | `kill_weak` | Kết liễu đối thủ yếu | 1–4 | A / B |
-| 2 | `push_to_win` | Tổng tấn công | 1–3 | A / B |
-| 3 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
-| 4 | `break_continent` | Phá châu lục | 1–3 | A / B |
-| 4 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
-| 4 | `revenge` | Trả thù | 1–3 | A / B |
+| 2 | `gang_up` | Hội đồng đánh (chỉ khi bật liên minh) | không có | A / B |
+| 3 | `kill_weak` | Kết liễu đối thủ yếu | 1–4 | A / B |
+| 3 | `push_to_win` | Tổng tấn công | 1–3 | A / B |
+| 4 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
+| 5 | `break_continent` | Phá châu lục | 1–3 | A / B |
+| 5 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
+| 5 | `revenge` | Trả thù | 1–3 | A / B |
 | Tắt | `expand` | Mở rộng | 1–3 | A / B — chỉ còn là lưới an toàn cuối |
 | Cuối (fallback) | `attempt_continent` | Âm mưu chiếm châu lục | không có | không có |
 
@@ -188,9 +189,30 @@ Lean trigger: turtle 3 · balanced 2 · rusher 1 · opportunist 2`*`.
 
 ---
 
-## 3 chiến lược thêm 2026-10-31
+## Chiến lược thêm 2026-10-31
 
-### `push_to_win` — Tổng tấn công (tier 2)
+### `gang_up` — Hội đồng đánh leader (tier 2)
+
+Chỉ khi bật liên minh: đang có "kẻ thù chung" và mình không phải kẻ đó. Không có thang
+trigger — có kẻ thù chung và mình giáp đất họ là khớp.
+
+**Mục tiêu.**
+- Họ giữ trọn châu lục giáp đất mình → **phá châu lục** đó (thưởng cao nhất, rồi ô có Tỷ lệ
+  quân số tốt nhất). **Không** xét ngưỡng tỉ lệ — cả bàn đang cùng đánh họ.
+- Không có → ô ít quân nhất của họ mà mình giáp.
+
+**Thực thi.**
+- **Tăng viện**: toàn bộ vào ô mạnh nhất của mình giáp ô mục tiêu.
+- **Tấn công**: +2.0 vào ô mục tiêu, +1.5 vào ô khác của châu lục đó (cộng thêm +1.2 chung
+  của liên minh).
+- **Fortify**: đích ưu tiên là ô giáp mục tiêu.
+
+**Đối sách.** Lean: rusher B, còn lại A.
+- **A**: chiếm 1 ô của họ (trong châu lục đó, nếu có) là dừng.
+- **B**: đánh tiếp.
+
+
+### `push_to_win` — Tổng tấn công (tier 3)
 
 Mình áp đảo rõ cả bàn → bỏ dè dặt, đánh dồn để kết thúc ván (tránh ván kéo dài lê thê cuối game).
 
@@ -206,7 +228,7 @@ Lean trigger: rusher 3 · opportunist 3 · balanced 2 · turtle 2.
 - **A — Dồn dập**: mọi đòn tấn công +0.8.
 - **B — Tất tay**: mọi đòn +1.5 và không giữ quân dự phòng.
 
-### `break_continent` — Phá châu lục (tier 4)
+### `break_continent` — Phá châu lục (tier 5)
 
 Đối thủ giữ trọn 1 châu lục giáp đất mình → đánh vào 1 ô để cắt thưởng của họ.
 
@@ -228,7 +250,7 @@ rusher 3 · opportunist 3 · balanced 2 · turtle 2.
 - **A — Phá rồi thôi**: chiếm được 1 ô của châu lục là dừng tấn công.
 - **B — Phá rồi đánh tiếp** như thường.
 
-### `revenge` — Trả thù (tier 4)
+### `revenge` — Trả thù (tier 5)
 
 Ai đánh mình đau nhất kể từ cuối lượt trước của mình thì lượt này nhắm vào họ. Đây là trí nhớ
 duy nhất của AI giữa các lượt (`game.damageTaken`).
@@ -301,7 +323,7 @@ Lean trigger: rusher 3 · turtle 1 · balanced 2 · opportunist 2.
 
 - **Liên minh** (nếu bật): khi có "kẻ thù chung", mọi AI khác chỉ được đánh kẻ đó, và tăng
   viện/fortify dồn về biên giáp kẻ đó — **thắng** mọi chiến lược trên, trừ `stay_survival`
-  (tăng viện vẫn dồn về biên bị đe doạ).
+  (tăng viện vẫn dồn về biên bị đe doạ). Thường thì các AI đó sẽ chọn luôn `gang_up`.
 - **Ngưỡng tấn công** (vòng tấn công thường):
   `tỉ lệ ≥ max(1.05, ngưỡng độ khó + chỉnh theo tính cách − bonus × 0.3)` — bonus của chiến
   lược làm AI chịu đánh ở tỉ lệ xấu hơn.

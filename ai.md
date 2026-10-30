@@ -105,9 +105,10 @@ Tắt / Tier 1–5; `strategyTiers()` đọc từ config). Mặc định:
 | Tier | Chiến lược |
 |---|---|
 | 1 | `stay_survival` |
-| 2 | `kill_weak`, `push_to_win` |
-| 3 | `defend` |
-| 4 | `break_continent`, `finish_continent`, `revenge` + fallback `attempt_continent` |
+| 2 | `gang_up` (chỉ khi bật liên minh) |
+| 3 | `kill_weak`, `push_to_win` |
+| 4 | `defend` |
+| 5 | `break_continent`, `finish_continent`, `revenge` + fallback `attempt_continent` |
 | Tắt | `expand` |
 
 Xét tier 1 trước. Trong 1 tier, lọc mọi chiến lược khớp (trigger = yes): có 1 thì lấy luôn,
@@ -196,16 +197,29 @@ ratio = A / B
 3 mức ngưỡng tái dùng đúng `aiEasyThreshold`/`aiNormalThreshold`/`aiHardThreshold` (mục
 2) — không thêm field admin mới.
 
-### 3 chiến lược thêm 2026-10-31
+### Chiến lược thêm 2026-10-31
 
-**`push_to_win` — Tổng tấn công** (tier 2). Mình áp đảo rõ cả bàn → bỏ dè dặt để kết thúc ván.
+**`gang_up` — Hội đồng đánh leader** (tier 2, chỉ khi bật liên minh). Liên minh đang nhắm 1
+kẻ thù chung và mình không phải kẻ đó.
+- Trigger: không có thang level — liên minh bật + có kẻ thù chung + mình giáp đất họ là khớp.
+- Mục tiêu: họ giữ trọn châu lục giáp đất mình → **phá châu lục** đó (thưởng cao nhất, rồi ô có
+  Tỷ lệ quân số tốt nhất), **không** xét ngưỡng tỉ lệ vì cả bàn đang cùng đánh họ. Không có →
+  ô ít quân nhất của họ mà mình giáp.
+- Thực thi: tăng viện dồn vào ô mạnh nhất của mình giáp ô mục tiêu; tấn công +2.0 vào ô mục
+  tiêu, +1.5 vào ô khác của châu lục đó (cộng thêm +1.2 chung của liên minh); fortify về các ô
+  giáp mục tiêu.
+- Đối sách: **A** chiếm 1 ô của họ (trong châu lục đó, nếu có) là dừng; **B** đánh tiếp. Lean:
+  rusher B, còn lại A.
+
+
+**`push_to_win` — Tổng tấn công** (tier 3). Mình áp đảo rõ cả bàn → bỏ dè dặt để kết thúc ván.
 - Trigger (1–3): Level 3 sức mạnh ≥ 0.8 × tổng sức mạnh các đối thủ còn lại; Level 2 ≥ 1.0 ×;
   Level 1 bỏ qua. Lean: rusher 3 · opportunist 3 · balanced 2 · turtle 2.
 - Đối sách: **A — Dồn dập**: mọi đòn tấn công +0.8; **B — Tất tay**: mọi đòn +1.5 và không giữ
   quân dự phòng. Lean: rusher B, còn lại A.
 - Tăng viện/fortify như thường (không có mặt trận riêng).
 
-**`break_continent` — Phá châu lục** (tier 4). Đối thủ giữ trọn 1 châu lục giáp đất mình →
+**`break_continent` — Phá châu lục** (tier 5). Đối thủ giữ trọn 1 châu lục giáp đất mình →
 đánh vào 1 ô để cắt thưởng của họ.
 - Trigger (1–3): ô của châu lục đó giáp đất mình có Tỷ lệ quân số (`captureRatio`) ≥ 1.15
   (Level 3) hoặc ≥ 1.5 (Level 2); Level 1 bỏ qua. Nhiều châu lục đạt → thưởng cao nhất, rồi tỉ
@@ -215,7 +229,7 @@ ratio = A / B
 - Đối sách: **A — Phá rồi thôi**: chiếm được 1 ô của châu lục là dừng tấn công; **B — Phá rồi
   đánh tiếp**. Lean: rusher B, còn lại A.
 
-**`revenge` — Trả thù** (tier 4). Ai đánh mình đau nhất kể từ cuối lượt trước của mình thì lượt
+**`revenge` — Trả thù** (tier 5). Ai đánh mình đau nhất kể từ cuối lượt trước của mình thì lượt
 này nhắm vào họ.
 - Trí nhớ: `game.damageTaken` (ghi trong `doBattle` qua `recordDamage`, xoá khi nạn nhân hết
   lượt) — lưu trong game nên ván lưu/online vẫn nhớ.
@@ -384,7 +398,8 @@ mới tìm leader hiện tại để gán nhãn mới. Trên thẻ người chơ
 
 Khi có kẻ thù chung, mọi AI khác bị **khoá cứng**: lượt đó chỉ được tấn công đất của leader.
 Nếu không có ô nào giáp leader thì không tấn công gì. Quân dự phòng cũng chỉ tính trước
-đất của leader. Leader thì chơi bình thường.
+đất của leader. Leader thì chơi bình thường. Các AI khác thường chọn chiến lược `gang_up`
+(mục 4), nhắm vào châu lục của leader nếu có.
 
 ### d) Chọn mục tiêu và ngưỡng
 

@@ -2548,6 +2548,7 @@ const RESPONSE_LEAN = {
   push_to_win:      { rusher:'B', turtle:'A', balanced:'A', opportunist:'A' },
   break_continent:  { rusher:'B', turtle:'A', balanced:'A', opportunist:'A' },
   revenge:          { rusher:'B', turtle:'A', balanced:'A', opportunist:'A' },
+  gang_up:          { rusher:'B', turtle:'A', balanced:'A', opportunist:'A' },
 };
 
 // 1 lần/lượt, dùng chung cho mọi intent: 2 số ngẫu nhiên độc lập trong [0,1) — 1 cho trục
@@ -2833,7 +2834,7 @@ function attemptContinentStaging(pid, contId){
 // "1".."5" = tier đó. Fallback (AI_FALLBACK_STRATEGY) không có trong danh sách — luôn đứng cuối.
 // `expand` mặc định tắt nhưng vẫn là lưới an toàn cuối cùng khi chính fallback không có mục tiêu
 // (mọi lục địa tôi có mặt đều đã chiếm trọn).
-const AI_TIERED_STRATEGIES = ['stay_survival', 'kill_weak', 'push_to_win', 'defend', 'break_continent',
+const AI_TIERED_STRATEGIES = ['stay_survival', 'gang_up', 'kill_weak', 'push_to_win', 'defend', 'break_continent',
   'finish_continent', 'revenge', 'expand'];
 const AI_FALLBACK_STRATEGY = 'attempt_continent';
 function strategyTierKey(name){
@@ -2853,6 +2854,43 @@ function strategyTiers(){
 const AI_STRATEGIES = {
   // "Sắp chết thì không màng chiếm châu lục" — xem evaluateStaySurvival() ở trên.
   stay_survival: ctx=> evaluateStaySurvival(ctx.pid, ctx.mood),
+
+  // Liên minh đang nhắm 1 kẻ thù chung (updateCommonEnemy) và tôi không phải kẻ đó → hội đồng
+  // đánh họ. Không có thang trigger: liên minh bật + có mục tiêu + tôi giáp đất họ là khớp.
+  //  - Họ giữ trọn châu lục giáp đất tôi → phá châu lục đó (thưởng cao nhất, rồi ô có Tỷ lệ quân
+  //    số tốt nhất), KHÔNG xét ngưỡng tỉ lệ — cả bàn đang cùng đánh họ.
+  //  - Không có → đánh ô ít quân nhất của họ mà tôi giáp.
+  // Đối sách như break_continent: A chiếm 1 ô của họ là thôi, B đánh tiếp.
+  // (updateCommonEnemy() cập nhật nhãn trong game — việc mọi bước AI đều làm, không phải tác
+  // dụng phụ riêng của hàm này.)
+  gang_up: ctx=>{
+    const {pid, p, mood} = ctx;
+    if(!game.allianceEnabled) return null;
+    const leaderId = updateCommonEnemy();
+    if(leaderId==null || leaderId===pid) return null;
+    const touchesMe = id=> [...mapData.territories[id].neighbors].some(n=>game.owner[n]===pid);
+    let best = null;
+    Object.values(mapData.continents).forEach(c=>{
+      const terrs = continentTerritories(c.id);
+      if(!terrs.length || !terrs.every(t=>game.owner[t.id]===leaderId)) return;
+      const bonus = c.bonus||0;
+      terrs.forEach(t=>{
+        if(!touchesMe(t.id)) return;
+        const ratio = captureRatio(pid, t.id);
+        if(!best || bonus>best.bonus || (bonus===best.bonus && ratio>best.ratio))
+          best = {continentId:c.id, bonus, ratio, terrId:t.id};
+      });
+    });
+    let focusTerrId = best ? best.terrId : null;
+    if(focusTerrId==null){
+      ownedTerritories(leaderId).forEach(id=>{
+        if(touchesMe(id) && (focusTerrId==null || game.armies[id]<game.armies[focusTerrId])) focusTerrId = id;
+      });
+    }
+    if(focusTerrId==null) return null;
+    const response = pickResponse('gang_up', p.personality, ['A','B'], mood);
+    return {type:'gang_up', response, targetPlayerId:leaderId, continentId: best ? best.continentId : null, focusTerrId};
+  },
 
   // Đối thủ còn ít lãnh thổ và giáp đất tôi — kết liễu để lấy hết bài của họ.
   kill_weak: ctx=>{
@@ -3070,8 +3108,9 @@ function pickAIReinforceTarget(pid, mine, intent){
     const s = attemptContinentStaging(pid, intent.continentId);
     if(s.stagingId!=null) return s.stagingId;
   }
-  // break_continent: dồn hết vào ô mạnh nhất của tôi giáp ô định phá.
-  if(intent && intent.type==='break_continent' && !mustOnlyDefendAgainstLeader){
+  // break_continent / gang_up: dồn hết vào ô mạnh nhất của tôi giáp ô định đánh. (gang_up đánh
+  // đúng leader nên hợp với khoá liên minh.)
+  if(intent && (intent.type==='gang_up' || (intent.type==='break_continent' && !mustOnlyDefendAgainstLeader))){
     const nb = [...mapData.territories[intent.focusTerrId].neighbors].filter(n=>mine.includes(n));
     if(nb.length) return nb.reduce((b,id)=> game.armies[id]>game.armies[b] ? id : b);
   }
@@ -3120,6 +3159,7 @@ const AI_INTENT_LABELS = {
   push_to_win: 'Tổng tấn công',
   break_continent: 'Phá châu lục',
   revenge: 'Trả thù',
+  gang_up: 'Hội đồng đánh',
   kill_weak: 'Kết liễu đối thủ yếu',
   defend: 'Phòng thủ biên giới',
   expand: 'Mở rộng',
@@ -3142,6 +3182,11 @@ function describeAITurnIntent(intent){
     case 'break_continent': {
       const c = mapData.continents[intent.continentId], holder = game.players[intent.targetPlayerId];
       return label+(c?' '+c.name:'')+(holder?' của '+holder.name:'');
+    }
+    case 'gang_up': {
+      const target = game.players[intent.targetPlayerId];
+      const c = intent.continentId!=null ? mapData.continents[intent.continentId] : null;
+      return label+(target?' '+target.name:'')+(c?' (phá châu lục '+c.name+')':'');
     }
     default: // expand
       return label;
@@ -3481,6 +3526,10 @@ function aiAttackStep(pid, intent){
     else if(intent.type==='revenge' && defenderId===intent.targetPlayerId) bonus += intent.response==='B' ? 1.8 : 1.2;
     else if(intent.type==='break_continent' && defenderId===intent.targetPlayerId
       && mapData.territories[toId].continentId===intent.continentId) bonus += toId===intent.focusTerrId ? 2.0 : 1.5;
+    else if(intent.type==='gang_up' && defenderId===intent.targetPlayerId){
+      if(toId===intent.focusTerrId) bonus += 2.0;
+      else if(intent.continentId!=null && mapData.territories[toId].continentId===intent.continentId) bonus += 1.5;
+    }
     return {ratio, score:ratio+bonus, bonus};
   }
 
@@ -3535,10 +3584,11 @@ function aiAttackStep(pid, intent){
   let attacksCompleted = 0, killWeakBiteDone = false;
   // Đối sách A của kill_weak / revenge / break_continent: "đớp 1 miếng" — chiếm được 1 ô đúng
   // mục tiêu là thôi tấn công lượt này.
-  const biteOnly = intent.response==='A' && ['kill_weak','revenge','break_continent'].includes(intent.type);
+  const biteOnly = intent.response==='A' && ['kill_weak','revenge','break_continent','gang_up'].includes(intent.type);
   function isBite(toId, defenderId){
     if(defenderId!==intent.targetPlayerId) return false;
-    return intent.type!=='break_continent' || mapData.territories[toId].continentId===intent.continentId;
+    const cont = intent.type==='break_continent' || intent.type==='gang_up' ? intent.continentId : null;
+    return cont==null || mapData.territories[toId].continentId===cont;
   }
   const EXPAND_RESPONSE_A_CAP = 2;
   function step(){
@@ -3658,6 +3708,8 @@ function aiFortifyStep(pid, intent){
   // lands on next turn's front instead of a border unrelated to the plan.
   function isIntentFront(id){
     const t = mapData.territories[id];
+    if(intent.type==='gang_up') return [...t.neighbors].some(n=> n===intent.focusTerrId ||
+      (game.owner[n]===intent.targetPlayerId && intent.continentId!=null && mapData.territories[n].continentId===intent.continentId));
     if(mustOnlyAttackLeader) return [...t.neighbors].some(n=>game.owner[n]===allianceLeaderId);
     if(intent.type==='stay_survival') return id===intent.focusTerrId; // "co cụm" — đúng biên bị đe doạ
     if(intent.type==='finish_continent' || intent.type==='attempt_continent') return t.continentId===intent.continentId;
