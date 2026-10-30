@@ -387,17 +387,27 @@ function attemptContinentStaging(pid, contId){
 // khớp — có 1 thì lấy luôn, có nhiều thì random đều 1 cái — rồi dừng. Không cái nào khớp thì
 // xuống tier sau. Tier cuối còn có chiến lược FALLBACK (attempt_continent), chỉ dùng khi không
 // còn gì khác khớp, nên lúc nào cũng chọn được. Thêm chiến lược mới = viết evaluator rồi bỏ tên
-// vào 1 tier.
-const AI_STRATEGY_TIERS = [
-  ['stay_survival'],
-  ['kill_weak', 'push_to_win'],
-  ['defend', 'break_continent'],
-  ['finish_continent', 'revenge', 'expand'],
-];
+// vào AI_TIERED_STRATEGIES + 1 key aiTier<Tên> trong src/config.json và server/admin-config.js.
+// Tier của mỗi chiến lược lấy từ config (aiTier<Tên>, chỉnh trên trang /admin): "0" = tắt,
+// "1".."5" = tier đó. Fallback (AI_FALLBACK_STRATEGY) không có trong danh sách — luôn đứng cuối.
+// `expand` mặc định tắt nhưng vẫn là lưới an toàn cuối cùng khi chính fallback không có mục tiêu
+// (mọi lục địa tôi có mặt đều đã chiếm trọn).
+const AI_TIERED_STRATEGIES = ['stay_survival', 'kill_weak', 'push_to_win', 'defend', 'break_continent',
+  'finish_continent', 'revenge', 'expand'];
 const AI_FALLBACK_STRATEGY = 'attempt_continent';
-// Tạm tắt: vẫn nằm trong tier nhưng không bao giờ "khớp". `expand` còn là lưới an toàn cuối cùng
-// khi chính fallback không có mục tiêu (mọi lục địa tôi có mặt đều đã chiếm trọn).
-const AI_DISABLED_STRATEGIES = new Set(['expand']);
+function strategyTierKey(name){
+  return 'aiTier'+name.split('_').map(w=> w[0].toUpperCase()+w.slice(1)).join('');
+}
+// [[tên…] của tier nhỏ nhất, …] — tier trống bị bỏ qua.
+function strategyTiers(){
+  const byTier = {};
+  AI_TIERED_STRATEGIES.forEach(name=>{
+    const tier = Number(RUNTIME_CONFIG[strategyTierKey(name)]);
+    if(!(tier>=1)) return; // "0" hoặc thiếu = tắt
+    (byTier[tier] = byTier[tier] || []).push(name);
+  });
+  return Object.keys(byTier).map(Number).sort((a,b)=>a-b).map(t=> byTier[t]);
+}
 
 const AI_STRATEGIES = {
   // "Sắp chết thì không màng chiếm châu lục" — xem evaluateStaySurvival() ở trên.
@@ -540,7 +550,7 @@ const AI_STRATEGIES = {
     return {type:'attempt_continent', continentId:best.contId};
   },
 
-  // Tạm tắt (AI_DISABLED_STRATEGIES) — luôn trả intent nên chỉ dùng làm lưới an toàn cuối.
+  // Mặc định tắt (aiTierExpand = "0") — luôn trả intent nên còn dùng làm lưới an toàn cuối.
   expand: ctx=>{
     const {pid, p, mood} = ctx;
     const expandLevel = pickTriggerLevel('expand', p.personality, [1,2,3], mood);
@@ -586,9 +596,8 @@ function pickAITurnIntent(pid){
     myPower: evaluatePlayerPower(pid),
     forces: continentIds.map(contId=>({contId, force:continentForce(pid, contId)})).filter(x=>x.force),
   };
-  for(const tier of AI_STRATEGY_TIERS){
-    const matched = tier.filter(name=> !AI_DISABLED_STRATEGIES.has(name))
-      .map(name=> AI_STRATEGIES[name](ctx)).filter(Boolean);
+  for(const tier of strategyTiers()){
+    const matched = tier.map(name=> AI_STRATEGIES[name](ctx)).filter(Boolean);
     if(matched.length===1) return matched[0];
     if(matched.length>1) return matched[Math.floor(random()*matched.length)];
   }

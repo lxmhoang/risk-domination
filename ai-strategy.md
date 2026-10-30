@@ -19,14 +19,20 @@ không còn gì khác khớp, nên lúc nào cũng chọn được.
 | 2 | `kill_weak` | Kết liễu đối thủ yếu | 1–4 | A / B |
 | 2 | `push_to_win` | Tổng tấn công | 1–3 | A / B |
 | 3 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
-| 3 | `break_continent` | Phá châu lục | 1–3 | A / B |
+| 4 | `break_continent` | Phá châu lục | 1–3 | A / B |
 | 4 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
 | 4 | `revenge` | Trả thù | 1–3 | A / B |
-| 4 | `expand` | Mở rộng | 1–3 | A / B — **tạm tắt**, chỉ là lưới an toàn cuối |
-| 4 (fallback) | `attempt_continent` | Âm mưu chiếm châu lục | không có | không có |
+| Tắt | `expand` | Mở rộng | 1–3 | A / B — chỉ còn là lưới an toàn cuối |
+| Cuối (fallback) | `attempt_continent` | Âm mưu chiếm châu lục | không có | không có |
 
-Thêm chiến lược mới: viết 1 hàm trong `AI_STRATEGIES` (`src/js/05-ai.js`) rồi bỏ tên vào 1
-tier trong `AI_STRATEGY_TIERS`.
+Bảng trên là **mặc định**. Tier của từng chiến lược chỉnh được trên trang `/admin` (nhóm
+"Chiến lược AI theo tier": Tắt / Tier 1–5); "Âm mưu chiếm châu lục" luôn là dự phòng cuối,
+không chỉnh được. Chỉnh trên admin chỉ áp cho ván online tạo sau đó; chơi offline dùng mặc
+định.
+
+Thêm chiến lược mới: viết 1 hàm trong `AI_STRATEGIES` (`src/js/05-ai.js`), thêm tên vào
+`AI_TIERED_STRATEGIES`, thêm key `aiTier<Tên>` vào `src/config.json` và
+`server/admin-config.js`.
 
 ## Cơ chế chung: trigger, đối sách, mood
 
@@ -200,7 +206,7 @@ Lean trigger: rusher 3 · opportunist 3 · balanced 2 · turtle 2.
 - **A — Dồn dập**: mọi đòn tấn công +0.8.
 - **B — Tất tay**: mọi đòn +1.5 và không giữ quân dự phòng.
 
-### `break_continent` — Phá châu lục (tier 3)
+### `break_continent` — Phá châu lục (tier 4)
 
 Đối thủ giữ trọn 1 châu lục giáp đất mình → đánh vào 1 ô để cắt thưởng của họ.
 

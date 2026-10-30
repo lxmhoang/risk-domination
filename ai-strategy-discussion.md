@@ -201,6 +201,8 @@ opportunist → Level 2/Response A.
    Thêm 3 chiến lược (chi tiết ở `ai-strategy.md`): `push_to_win` (tier 2), `break_continent`
    (tier 3), `revenge` (tier 4, AI nhớ ai đánh mình qua `game.damageTaken`). Ngưỡng, level và
    lean của 3 cái này do Claude đề xuất, chưa tinh chỉnh với user.
+   Sau đó: `break_continent` xuống tier 4; tier của mọi chiến lược (trừ fallback) chỉnh được
+   trên trang `/admin` (key `aiTier<Tên>`).
 1. ✅ Thứ tự ưu tiên: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak` >
    `defend` > `expand`.
 2. ✅ Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng

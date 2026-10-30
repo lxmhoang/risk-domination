@@ -98,20 +98,24 @@ dùng chung cho MỌI intent lượt đó), nghiêng trọng số gấp 3 về m
 Vài ô trong 2 bảng này không được tài liệu thảo luận chốt rõ cho personality đó, đánh dấu
 `/* * */` trong code — mặc định về giá trị của `balanced`.
 
-Chiến lược được chọn theo **tier** (`AI_STRATEGY_TIERS`), kiểu "lọt sàng xuống nia":
+Chiến lược được chọn theo **tier**, kiểu "lọt sàng xuống nia". Tier của từng chiến lược
+**chỉnh được trên trang `/admin`** (nhóm "Chiến lược AI theo tier", key `aiTier<Tên>`:
+Tắt / Tier 1–5; `strategyTiers()` đọc từ config). Mặc định:
 
 | Tier | Chiến lược |
 |---|---|
 | 1 | `stay_survival` |
 | 2 | `kill_weak`, `push_to_win` |
-| 3 | `defend`, `break_continent` |
-| 4 | `finish_continent`, `revenge`, `expand` (tạm tắt) + fallback `attempt_continent` |
+| 3 | `defend` |
+| 4 | `break_continent`, `finish_continent`, `revenge` + fallback `attempt_continent` |
+| Tắt | `expand` |
 
 Xét tier 1 trước. Trong 1 tier, lọc mọi chiến lược khớp (trigger = yes): có 1 thì lấy luôn,
 có nhiều thì **random đều** 1 cái, rồi dừng. Không cái nào khớp thì xuống tier sau. Fallback
 `attempt_continent` chỉ dùng khi cả 4 tier không có gì khớp, nên lúc nào cũng chọn được (nếu
 chính nó không có mục tiêu thì dùng `expand` làm lưới an toàn cuối). Mỗi chiến lược là 1 hàm
-trong `AI_STRATEGIES`; thêm chiến lược mới = viết hàm rồi bỏ tên vào 1 tier.
+trong `AI_STRATEGIES`; thêm chiến lược mới = viết hàm, thêm tên vào `AI_TIERED_STRATEGIES`
+và 1 key `aiTier<Tên>` trong `src/config.json` + `server/admin-config.js`.
 
 Mô tả từng chiến lược:
 
@@ -201,7 +205,7 @@ ratio = A / B
   quân dự phòng. Lean: rusher B, còn lại A.
 - Tăng viện/fortify như thường (không có mặt trận riêng).
 
-**`break_continent` — Phá châu lục** (tier 3). Đối thủ giữ trọn 1 châu lục giáp đất mình →
+**`break_continent` — Phá châu lục** (tier 4). Đối thủ giữ trọn 1 châu lục giáp đất mình →
 đánh vào 1 ô để cắt thưởng của họ.
 - Trigger (1–3): ô của châu lục đó giáp đất mình có Tỷ lệ quân số (`captureRatio`) ≥ 1.15
   (Level 3) hoặc ≥ 1.5 (Level 2); Level 1 bỏ qua. Nhiều châu lục đạt → thưởng cao nhất, rồi tỉ

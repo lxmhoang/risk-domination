@@ -11,6 +11,12 @@
    was created with (games.config).
    ========================================================================= */
 const num = (label, min, max, step, hint)=> ({kind:'number', label, min, max, step, hint});
+// The AI's turn strategies whose tier an admin can set (05-ai.js, strategyTiers()). The fallback,
+// attempt_continent, isn't here: it always comes last.
+const STRATEGIES = [['StaySurvival','Sống còn'], ['KillWeak','Kết liễu đối thủ yếu'], ['PushToWin','Tổng tấn công'],
+  ['Defend','Phòng thủ biên giới'], ['BreakContinent','Phá châu lục'], ['FinishContinent','Hoàn tất châu lục'],
+  ['Revenge','Trả thù'], ['Expand','Mở rộng']];
+const TIER_OPTIONS = [['0','Tắt'], ['1','Tier 1'], ['2','Tier 2'], ['3','Tier 3'], ['4','Tier 4'], ['5','Tier 5']];
 const PERSONALITIES = [['Balanced','Cân bằng'], ['Turtle','Rùa'], ['Rusher','Xông pha'], ['Opportunist','Cơ hội']];
 
 const GROUPS = [
@@ -19,6 +25,10 @@ const GROUPS = [
       ['ai'+k+'Threshold', num(vn+' — ngưỡng đánh', 1, 5, 0.05, 'Tỉ lệ quân ta / quân địch tối thiểu để AI chịu tấn công')],
       ['ai'+k+'Reserve', num(vn+' — giữ quân', 0, 3, 0.05, 'Phần quân giữ lại để phòng các địch kề bên khác')],
     ])),
+  }},
+  { title:'Chiến lược AI theo tier', fields:{
+    ...Object.fromEntries(STRATEGIES.map(([k,vn])=> ['aiTier'+k, {kind:'enum', label:vn, options:TIER_OPTIONS,
+      hint:'Mỗi lượt xét tier nhỏ trước; nhiều chiến lược cùng tier khớp thì chọn ngẫu nhiên. Không có gì khớp thì dùng "Âm mưu chiếm châu lục" (luôn là dự phòng cuối).'}])),
   }},
   { title:'Tính cách AI (chỉnh thêm lên trên độ khó)', fields:{
     ...Object.fromEntries(PERSONALITIES.flatMap(([k,vn])=> [
