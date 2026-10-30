@@ -158,6 +158,9 @@ Response A.
 Khác `stay_survival`: đây là "1 biên đang hơi yếu, nên củng cố" — chưa phải nguy cơ bị
 loại. Nếu `stay_survival` đã trigger thì `defend` coi như vô nghĩa lượt đó.
 
+**Cập nhật 2026-10-30:** chỉ xét tỉnh thuộc châu lục đã chiếm trọn — không phòng thủ biên
+ở châu lục đang âm mưu chiếm hay châu lục không quan tâm.
+
 - **Level 3 — Chăm chút**: bất kỳ biên nào chênh lệch quân ≥1 (dù nhẹ) VÀ tôi không dẫn
   đầu bàn.
 - **Level 2 — Bình thường (hành vi hiện tại)**: biên yếu nhất chênh lệch ≥2 VÀ
@@ -174,30 +177,7 @@ loại. Nếu `stay_survival` đã trigger thì `defend` coi như vô nghĩa lư
 Personality lean: turtle → Level 3/Response B; balanced → Level 2/Response A; rusher →
 Level 1.
 
-### Intent mới: `attempt_continent` — "âm mưu chiếm lục địa" (2026-10-28)
-
-Fallback thay cho `expand` (trigger luôn có thể xảy ra, không có thang trigger/đối sách).
-
-1. **Chọn lục địa**: trong các lục địa tôi có ≥1 ô mà chưa chiếm trọn, chọn lục địa có
-   Lực trên lục địa (mục `finish_continent`) cao nhất — tức áp đảo nhất. Khi ratio đủ cao
-   thì lượt sau nó tự "chín" thành `finish_continent`.
-2. **Tăng viện**: dồn hết vào 1 ô trong lục địa, ưu tiên ô giáp ô địch ít quân nhất trong
-   lục địa (để đánh nếu cần).
-3. **Tấn công** — bảo toàn lực lượng ở lục địa mục tiêu, chỉ cố kiếm 1 lá bài:
-   - Dùng quân ở ô KHÔNG đi tới được lục địa, đánh "hú hoạ" 1 ô có tỉ lệ thắng cao nhất,
-     đánh tới khi chiếm được hoặc hết quân (quân này vô dụng cho kế hoạch nên liều được).
-   - Không được thì đánh 1 ô của player khác trong lục địa, ưu tiên ô ít quân nhất, dừng khi
-     tỉ lệ dưới ngưỡng tấn công thường của độ khó — mong các ô nhiều quân hơn của player
-     khác trong lục địa bỏ đi hoặc đánh lẫn nhau.
-   - Chiếm được 1 ô là thôi tấn công.
-4. **Fortify**: dồn quân mọi ô ngoài lục địa có đường tới lục địa (cả ô đang giáp địch,
-   chừa 1) vào lục địa, ưu tiên ô giáp player khác — KHÔNG động vào ô của lục địa cũ đã
-   chiếm trọn mà đang giáp player khác.
-
-### `expand` — TẠM TẮT (2026-10-28)
-
-Chỉ còn là lưới an toàn khi không có lục địa nào để `attempt_continent` (mọi lục địa tôi
-có mặt đều đã chiếm trọn). Thiết kế cũ giữ nguyên dưới đây.
+### `expand` (mặc định/fallback — luôn có thể trigger)
 
 - **Level 3 — Cơ hội nhất**: quét tất cả biên, chọn cặp có tỉ lệ thắng tốt nhất cho tôi
   (dễ ăn nhất), bất kể có phải biên yếu hay không.
@@ -215,7 +195,7 @@ opportunist → Level 2/Response A.
 ## Đã chốt với user (2026-10)
 
 1. ✅ Thứ tự ưu tiên: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak` >
-   `defend` > `attempt_continent` (từ 2026-10-28, thay `expand` — giờ chỉ là lưới an toàn).
+   `defend` > `expand`.
 2. ✅ Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng
    từng intent) — nhưng mood gồm **2 thuộc tính độc lập** (`mood.trigger`,
    `mood.response`), mỗi thuộc tính lệch level của đúng 1 thang (trigger hoặc đối sách),
@@ -231,24 +211,14 @@ opportunist → Level 2/Response A.
    công thức chung) — công thức A/B riêng của `stay_survival`, chỉ mượn chung *3 con số
    ngưỡng + nguồn config*, không mượn định nghĩa A/B.
 
-6. ✅ Mood: random có trọng số (mức personality "hay chạm" nặng gấp 3), không có công
-   thức lệch ±N.
-7. ✅ (2026-10-28) `finish_continent` cho phép thiếu nhiều ô; thêm `attempt_continent`,
-   tắt `expand`. Đã chốt: đo "đủ mạnh" bằng Lực trên lục địa; ứng viên chỉ là lục địa có
-   ≥1 ô của tôi; trận hú hoạ đánh liều, trận trong lục địa giữ ngưỡng; fortify dồn mọi ô
-   ngoài lục địa trừ ô lục địa cũ đã chiếm trọn đang giáp player khác.
+## Giả định còn treo, cần user xác nhận trước khi code
 
-## Trạng thái implement
-
-Đã làm hết, trừ các chỗ đơn giản hoá / chưa làm sau:
-
-- `stay_survival`: phần "quân bên thứ 3 phải bị vượt qua" **chưa cài** (chưa có công thức).
-- `kill_weak` Level 2: điều kiện "không làm `usable` tụt dưới mức stay_survival cần"
-  **chưa cài** — Level 2 hiện giống Level 3.
-- `kill_weak` Level 4: "đủ ít để kết liễu trong 1-2 lượt" ước lượng thô bằng tổng quân
-  của họ ≤ `myPower × 0.5`.
-- `finish_continent` Level 2 và 3 giống nhau.
-- `expand` (giờ chỉ là lưới an toàn): Level 2 và 3 chỉ khác ở ô dồn quân, không khác ở
-  chọn mục tiêu tấn công.
-- Vài ô trong bảng personality lean không được chốt rõ → mặc định theo `balanced`
-  (đánh dấu `/* * */` trong code).
+1. Thang trigger/đối sách của `defend`/`kill_weak`/`finish_continent`/`expand` (mục
+   riêng từng intent ở trên) vẫn đang liệt kê theo kiểu "Personality lean: X → Level
+   N/Response M" — tức mặc định 1 cặp (level, response) cố định cho mỗi personality,
+   CHƯA áp dụng cơ chế 2 thuộc tính mood độc lập vừa chốt ở mục 2/4 trên. Cần viết lại
+   các dòng "Personality lean" này thành 2 dòng riêng (trigger lean / response lean,
+   như đã làm cho `stay_survival`) cho đồng bộ.
+2. Range cụ thể của `mood.trigger`/`mood.response` (ví dụ ±1 level, hay random 1-trong-4
+   level không phụ thuộc baseline?) và cách nó cộng/lệch với baseline của personality —
+   chưa có công thức, chỉ có ý tưởng "độc lập nhau".

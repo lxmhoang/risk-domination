@@ -148,8 +148,10 @@ Lean trigger: opportunist 4 · turtle 2 · balanced 3 · rusher 3`*`.
 
 "1 biên đang hơi yếu" — nhẹ hơn `stay_survival`.
 
-**Trigger.** Lấy biên có `chênh lệch = quân địch mạnh nhất giáp nó − quân mình ở đó` lớn
-nhất, **và** mình không phải người mạnh nhất bàn.
+**Trigger.** Chỉ xét tỉnh thuộc **châu lục mình đã chiếm trọn** — biên ở châu lục đang âm
+mưu hay không quan tâm thì bỏ qua (chưa chiếm trọn châu lục nào thì không bao giờ
+trigger). Trong số đó lấy biên có `chênh lệch = quân địch mạnh nhất giáp nó − quân mình ở
+đó` lớn nhất, **và** mình không phải người mạnh nhất bàn.
 
 | Level | Tên | Điều kiện |
 |---|---|---|

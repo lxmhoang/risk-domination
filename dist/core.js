@@ -2883,20 +2883,29 @@ function pickAITurnIntent(pid){
     }
   }
 
-  let worstBorder=null, worstDeficit=-Infinity;
-  mine.forEach(id=>{
-    const t = mapData.territories[id];
-    const enemyNb = [...t.neighbors].filter(n=>game.owner[n]!==pid);
-    if(!enemyNb.length) return;
-    const maxEnemy = Math.max(...enemyNb.map(n=>game.armies[n]));
-    const deficit = maxEnemy - game.armies[id];
-    if(deficit>worstDeficit){ worstDeficit=deficit; worstBorder=id; }
-  });
+  // Biên yếu nhất (quân địch mạnh nhất giáp nó − quân mình ở đó). `defend` chỉ xét tỉnh thuộc
+  // châu lục tôi đã chiếm trọn — biên ở châu lục đang âm mưu hay không quan tâm thì kệ;
+  // `expand` (lưới an toàn) vẫn xét mọi biên.
+  function weakestBorder(ids){
+    let id0=null, deficit0=-Infinity;
+    ids.forEach(id=>{
+      const enemyNb = [...mapData.territories[id].neighbors].filter(n=>game.owner[n]!==pid);
+      if(!enemyNb.length) return;
+      const deficit = Math.max(...enemyNb.map(n=>game.armies[n])) - game.armies[id];
+      if(deficit>deficit0){ deficit0=deficit; id0=id; }
+    });
+    return {id:id0, deficit:deficit0};
+  }
+  const worstBorder = weakestBorder(mine).id;
+  const heldWorst = weakestBorder(mine.filter(id=>{
+    const c = mapData.territories[id].continentId;
+    return c!=null && ownsWholeContinent(pid, c);
+  }));
   const defendLevel = pickTriggerLevel('defend', p.personality, [1,2,3], mood);
   const defendDeficitBar = defendLevel>=3 ? 1 : 2;
-  if(defendLevel>1 && worstBorder!=null && worstDeficit>=defendDeficitBar && myPower<leaderPower){
+  if(defendLevel>1 && heldWorst.id!=null && heldWorst.deficit>=defendDeficitBar && myPower<leaderPower){
     const response = pickResponse('defend', p.personality, ['A','B'], mood);
-    return {type:'defend', level:defendLevel, response, focusTerrId:worstBorder};
+    return {type:'defend', level:defendLevel, response, focusTerrId:heldWorst.id};
   }
 
   // attempt_continent ("âm mưu chiếm lục địa") — fallback thay cho expand: chọn lục địa tôi áp

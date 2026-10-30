@@ -110,8 +110,10 @@ Intent được xét theo thứ tự cố định, khớp cái đầu tiên thì
 3. **`kill_weak`** — có đối thủ còn ≤2 lãnh thổ (≤3 ở Level 4) và giáp đất mình. Level 4
    còn đòi tổng quân của họ đủ ít so với sức mạnh của tôi (`myPower×0.5` — ước lượng thô,
    không mô phỏng chiến đấu thật).
-4. **`defend`** — biên bị áp đảo nặng nhất của mình thua láng giềng địch mạnh nhất ≥1
-   (Level 3) hoặc ≥2 (Level 2) quân, **và** mình yếu hơn đối thủ mạnh nhất.
+4. **`defend`** — chỉ xét tỉnh thuộc **châu lục mình đã chiếm trọn** (biên ở châu lục đang
+   âm mưu hay không quan tâm thì bỏ qua): biên bị áp đảo nặng nhất trong số đó thua láng
+   giềng địch mạnh nhất ≥1 (Level 3) hoặc ≥2 (Level 2) quân, **và** mình yếu hơn đối thủ
+   mạnh nhất. Chưa chiếm trọn châu lục nào thì `defend` không bao giờ trigger.
 5. **`attempt_continent`** ("âm mưu chiếm lục địa") — phương án cuối, không có thang
    trigger/đối sách: chọn châu lục có "Lực trên lục địa" cao nhất trong các châu lục mình có
    ≥1 ô mà chưa trọn. Cách thực thi xem riêng dưới đây.
