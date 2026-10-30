@@ -6,18 +6,24 @@ vụ chiến lược đó. Tên chiến lược hiện ở thanh dưới cùng g
 đấu. Chi tiết đầy đủ ở [`ai.md`](ai.md); lịch sử thảo luận ở
 [`ai-strategy-discussion.md`](ai-strategy-discussion.md).
 
-## Thứ tự ưu tiên
+## Thứ tự ưu tiên — theo tier
 
-Xét từ trên xuống, khớp cái nào trước thì lấy cái đó:
+"Lọt sàng xuống nia": xét tier 1 trước. Trong 1 tier, lọc các chiến lược **khớp** (trigger =
+yes) — có 1 thì chọn luôn, có nhiều thì **random đều** 1 cái — rồi dừng. Không cái nào khớp
+thì xuống tier tiếp theo. Tier cuối có thêm **fallback** `attempt_continent`, chỉ dùng khi
+không còn gì khác khớp, nên lúc nào cũng chọn được.
 
-| # | Chiến lược | Tên hiển thị | Thang trigger | Đối sách |
+| Tier | Chiến lược | Tên hiển thị | Thang trigger | Đối sách |
 |---|---|---|---|---|
 | 1 | `stay_survival` | Sống còn | 1–4 | 1 / 2 |
-| 2 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
-| 3 | `kill_weak` | Kết liễu đối thủ yếu | 1–4 | A / B |
-| 4 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
-| 5 | `attempt_continent` | Âm mưu chiếm châu lục | không có (fallback) | không có |
-| 6 | `expand` | Mở rộng | 1–3 | A / B — **tạm tắt**, chỉ là lưới an toàn |
+| 2 | `kill_weak` | Kết liễu đối thủ yếu | 1–4 | A / B |
+| 3 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
+| 4 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
+| 4 | `expand` | Mở rộng | 1–3 | A / B — **tạm tắt**, chỉ là lưới an toàn cuối |
+| 4 (fallback) | `attempt_continent` | Âm mưu chiếm châu lục | không có | không có |
+
+Thêm chiến lược mới: viết 1 hàm trong `AI_STRATEGIES` (`src/js/05-ai.js`) rồi bỏ tên vào 1
+tier trong `AI_STRATEGY_TIERS`.
 
 ## Cơ chế chung: trigger, đối sách, mood
 

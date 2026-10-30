@@ -98,7 +98,22 @@ dùng chung cho MỌI intent lượt đó), nghiêng trọng số gấp 3 về m
 Vài ô trong 2 bảng này không được tài liệu thảo luận chốt rõ cho personality đó, đánh dấu
 `/* * */` trong code — mặc định về giá trị của `balanced`.
 
-Intent được xét theo thứ tự cố định, khớp cái đầu tiên thì dừng:
+Chiến lược được chọn theo **tier** (`AI_STRATEGY_TIERS`), kiểu "lọt sàng xuống nia":
+
+| Tier | Chiến lược |
+|---|---|
+| 1 | `stay_survival` |
+| 2 | `kill_weak` |
+| 3 | `defend` |
+| 4 | `finish_continent`, `expand` (tạm tắt) + fallback `attempt_continent` |
+
+Xét tier 1 trước. Trong 1 tier, lọc mọi chiến lược khớp (trigger = yes): có 1 thì lấy luôn,
+có nhiều thì **random đều** 1 cái, rồi dừng. Không cái nào khớp thì xuống tier sau. Fallback
+`attempt_continent` chỉ dùng khi cả 4 tier không có gì khớp, nên lúc nào cũng chọn được (nếu
+chính nó không có mục tiêu thì dùng `expand` làm lưới an toàn cuối). Mỗi chiến lược là 1 hàm
+trong `AI_STRATEGIES`; thêm chiến lược mới = viết hàm rồi bỏ tên vào 1 tier.
+
+Mô tả từng chiến lược:
 
 1. **`stay_survival`** — ưu tiên số 1, xem riêng dưới đây.
 2. **`finish_continent`** — châu lục mình có ≥1 ô nhưng chưa trọn, thiếu **bao nhiêu ô

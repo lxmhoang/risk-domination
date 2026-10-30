@@ -194,6 +194,10 @@ opportunist → Level 2/Response A.
 
 ## Đã chốt với user (2026-10)
 
+0. ✅ (2026-10-31) Thay thứ tự cố định bằng **tier**: tier 1 `stay_survival` · tier 2
+   `kill_weak` · tier 3 `defend` · tier 4 `finish_continent`, `expand` (tắt) + fallback
+   `attempt_continent`. Trong 1 tier nhiều chiến lược khớp thì random đều; fallback chỉ dùng
+   khi không còn gì khớp. Mục 1 dưới đây là thứ tự cũ.
 1. ✅ Thứ tự ưu tiên: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak` >
    `defend` > `expand`.
 2. ✅ Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng
