@@ -198,6 +198,9 @@ opportunist → Level 2/Response A.
    `kill_weak` · tier 3 `defend` · tier 4 `finish_continent`, `expand` (tắt) + fallback
    `attempt_continent`. Trong 1 tier nhiều chiến lược khớp thì random đều; fallback chỉ dùng
    khi không còn gì khớp. Mục 1 dưới đây là thứ tự cũ.
+   Thêm 3 chiến lược (chi tiết ở `ai-strategy.md`): `push_to_win` (tier 2), `break_continent`
+   (tier 3), `revenge` (tier 4, AI nhớ ai đánh mình qua `game.damageTaken`). Ngưỡng, level và
+   lean của 3 cái này do Claude đề xuất, chưa tinh chỉnh với user.
 1. ✅ Thứ tự ưu tiên: `stay_survival` (nếu trigger) > `finish_continent` > `kill_weak` >
    `defend` > `expand`.
 2. ✅ Cơ chế personality+mood: roll **1 lần mood chung mỗi lượt** (không phải roll riêng

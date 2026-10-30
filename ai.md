@@ -103,9 +103,9 @@ Chiến lược được chọn theo **tier** (`AI_STRATEGY_TIERS`), kiểu "l�
 | Tier | Chiến lược |
 |---|---|
 | 1 | `stay_survival` |
-| 2 | `kill_weak` |
-| 3 | `defend` |
-| 4 | `finish_continent`, `expand` (tạm tắt) + fallback `attempt_continent` |
+| 2 | `kill_weak`, `push_to_win` |
+| 3 | `defend`, `break_continent` |
+| 4 | `finish_continent`, `revenge`, `expand` (tạm tắt) + fallback `attempt_continent` |
 
 Xét tier 1 trước. Trong 1 tier, lọc mọi chiến lược khớp (trigger = yes): có 1 thì lấy luôn,
 có nhiều thì **random đều** 1 cái, rồi dừng. Không cái nào khớp thì xuống tier sau. Fallback
@@ -192,6 +192,37 @@ ratio = A / B
 3 mức ngưỡng tái dùng đúng `aiEasyThreshold`/`aiNormalThreshold`/`aiHardThreshold` (mục
 2) — không thêm field admin mới.
 
+### 3 chiến lược thêm 2026-10-31
+
+**`push_to_win` — Tổng tấn công** (tier 2). Mình áp đảo rõ cả bàn → bỏ dè dặt để kết thúc ván.
+- Trigger (1–3): Level 3 sức mạnh ≥ 0.8 × tổng sức mạnh các đối thủ còn lại; Level 2 ≥ 1.0 ×;
+  Level 1 bỏ qua. Lean: rusher 3 · opportunist 3 · balanced 2 · turtle 2.
+- Đối sách: **A — Dồn dập**: mọi đòn tấn công +0.8; **B — Tất tay**: mọi đòn +1.5 và không giữ
+  quân dự phòng. Lean: rusher B, còn lại A.
+- Tăng viện/fortify như thường (không có mặt trận riêng).
+
+**`break_continent` — Phá châu lục** (tier 3). Đối thủ giữ trọn 1 châu lục giáp đất mình →
+đánh vào 1 ô để cắt thưởng của họ.
+- Trigger (1–3): ô của châu lục đó giáp đất mình có Tỷ lệ quân số (`captureRatio`) ≥ 1.15
+  (Level 3) hoặc ≥ 1.5 (Level 2); Level 1 bỏ qua. Nhiều châu lục đạt → thưởng cao nhất, rồi tỉ
+  lệ tốt nhất. Lean: rusher 3 · opportunist 3 · balanced 2 · turtle 2.
+- Thực thi: dồn toàn bộ tăng viện vào ô mạnh nhất của mình giáp ô định phá; tấn công +2.0 vào
+  đúng ô đó, +1.5 vào ô khác của châu lục đó; fortify về các ô giáp châu lục đó.
+- Đối sách: **A — Phá rồi thôi**: chiếm được 1 ô của châu lục là dừng tấn công; **B — Phá rồi
+  đánh tiếp**. Lean: rusher B, còn lại A.
+
+**`revenge` — Trả thù** (tier 4). Ai đánh mình đau nhất kể từ cuối lượt trước của mình thì lượt
+này nhắm vào họ.
+- Trí nhớ: `game.damageTaken` (ghi trong `doBattle` qua `recordDamage`, xoá khi nạn nhân hết
+  lượt) — lưu trong game nên ván lưu/online vẫn nhớ.
+- Trigger (1–3): mức đau = số ô bị chiếm × 3 + số quân mất; Level 3 ("thù dai") ≥ 3, Level 2
+  ≥ 6, Level 1 bỏ qua. Kẻ đó phải còn sống và giáp đất mình. Lean: rusher 3 · balanced 2 ·
+  opportunist 2 · turtle 1.
+- Thực thi như `kill_weak`: tăng viện dồn vào biên giáp kẻ đó, fortify về đó, tấn công vào kẻ
+  đó +1.2 (A) / +1.8 (B).
+- Đối sách: **A — Trả đũa**: chiếm được 1 ô của họ là dừng; **B — Truy cùng**: đánh tiếp. Lean:
+  rusher B, còn lại A.
+
 ### `stay_survival` — ưu tiên số 1
 
 ([05-ai.js:150](src/js/05-ai.js#L150)) "Sắp chết thì không màng chiếm châu lục". Khác mọi
@@ -255,7 +286,8 @@ bất kể điểm, nên toàn bộ quân dồn vào đó:
 
 - Ý định là `stay_survival` → mục tiêu là `focusTerrId` (biên bị đe doạ nhất) — thắng
   tuyệt đối trước cả các override khác dưới đây, bất kể đối sách nào được chọn.
-- Ý định là `kill_weak` → mục tiêu là đối thủ đang bị nhắm.
+- Ý định là `kill_weak` / `revenge` → mục tiêu là đối thủ đang bị nhắm.
+- Ý định là `break_continent` → ô mạnh nhất của mình giáp ô định phá.
 - Ý định là `attempt_continent` → ô tập kết trong châu lục (mục 4, bước 2).
 - Liên minh đang kích hoạt (mục 7c) → mục tiêu là người dẫn đầu; lúc này quân địch
   không phải của người dẫn đầu cũng không được tính là mối đe doạ.
@@ -415,8 +447,8 @@ bài của họ (`checkElimination`, [04-game-state.js:341](src/js/04-game-state
 ## 10. Giới hạn đã biết
 
 - Không nhìn trước nước đi, không mô phỏng phản ứng của đối thủ.
-- Không có trí nhớ giữa các lượt: ý định, mục tiêu, ai vừa đánh mình đều không được lưu —
-  kể cả `mood` (mục 4) cũng roll lại từ đầu mỗi lượt, không có quán tính qua các lượt.
+- Trí nhớ giữa các lượt chỉ có `game.damageTaken` (ai đánh mình, cho `revenge`); ý định,
+  mục tiêu và `mood` (mục 4) đều chọn lại từ đầu mỗi lượt, không có quán tính.
 - Quân tăng viện vẫn bị rải đều các biên ngoài các override "mục tiêu duy nhất" (mục 5),
   và đạo quân chính không tiến theo sau khi chiếm ô (mục 7e), nên AI hiếm khi đánh xuyên
   nhiều ô trong 1 lượt trừ khi `kill_weak` đối sách B chủ động theo đuổi.

@@ -17,8 +17,11 @@ không còn gì khác khớp, nên lúc nào cũng chọn được.
 |---|---|---|---|---|
 | 1 | `stay_survival` | Sống còn | 1–4 | 1 / 2 |
 | 2 | `kill_weak` | Kết liễu đối thủ yếu | 1–4 | A / B |
+| 2 | `push_to_win` | Tổng tấn công | 1–3 | A / B |
 | 3 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
+| 3 | `break_continent` | Phá châu lục | 1–3 | A / B |
 | 4 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
+| 4 | `revenge` | Trả thù | 1–3 | A / B |
 | 4 | `expand` | Mở rộng | 1–3 | A / B — **tạm tắt**, chỉ là lưới an toàn cuối |
 | 4 (fallback) | `attempt_continent` | Âm mưu chiếm châu lục | không có | không có |
 
@@ -179,6 +182,70 @@ Lean trigger: turtle 3 · balanced 2 · rusher 1 · opportunist 2`*`.
 
 ---
 
+## 3 chiến lược thêm 2026-10-31
+
+### `push_to_win` — Tổng tấn công (tier 2)
+
+Mình áp đảo rõ cả bàn → bỏ dè dặt, đánh dồn để kết thúc ván (tránh ván kéo dài lê thê cuối game).
+
+| Level | Điều kiện |
+|---|---|
+| 3 | sức mạnh ≥ 0.8 × tổng sức mạnh các đối thủ còn lại |
+| 2 | sức mạnh ≥ 1.0 × tổng đó |
+| 1 | bỏ qua |
+
+Lean trigger: rusher 3 · opportunist 3 · balanced 2 · turtle 2.
+
+**Đối sách.** Lean: rusher B, còn lại A.
+- **A — Dồn dập**: mọi đòn tấn công +0.8.
+- **B — Tất tay**: mọi đòn +1.5 và không giữ quân dự phòng.
+
+### `break_continent` — Phá châu lục (tier 3)
+
+Đối thủ giữ trọn 1 châu lục giáp đất mình → đánh vào 1 ô để cắt thưởng của họ.
+
+| Level | Điều kiện (Tỷ lệ quân số tại ô định phá) |
+|---|---|
+| 3 | ≥ 1.15 (Chủ quan) |
+| 2 | ≥ 1.5 (Bình thường) |
+| 1 | bỏ qua |
+
+Nhiều châu lục đạt → chọn châu lục thưởng cao nhất, rồi ô có tỉ lệ tốt nhất. Lean trigger:
+rusher 3 · opportunist 3 · balanced 2 · turtle 2.
+
+**Thực thi.**
+- **Tăng viện**: toàn bộ vào ô mạnh nhất của mình giáp ô định phá.
+- **Tấn công**: +2.0 vào đúng ô định phá, +1.5 vào ô khác của châu lục đó.
+- **Fortify**: đích ưu tiên là ô giáp châu lục đó.
+
+**Đối sách.** Lean: rusher B, còn lại A.
+- **A — Phá rồi thôi**: chiếm được 1 ô của châu lục là dừng tấn công.
+- **B — Phá rồi đánh tiếp** như thường.
+
+### `revenge` — Trả thù (tier 4)
+
+Ai đánh mình đau nhất kể từ cuối lượt trước của mình thì lượt này nhắm vào họ. Đây là trí nhớ
+duy nhất của AI giữa các lượt (`game.damageTaken`).
+
+`mức đau = số ô bị chiếm × 3 + số quân mất`
+
+| Level | Tên | Điều kiện |
+|---|---|---|
+| 3 | Thù dai | mức đau ≥ 3 |
+| 2 | Bình thường | mức đau ≥ 6 |
+| 1 | — | bỏ qua |
+
+Kẻ đó phải còn sống và giáp đất mình. Lean trigger: rusher 3 · balanced 2 · opportunist 2 ·
+turtle 1.
+
+**Thực thi** giống `kill_weak`: tăng viện dồn vào biên giáp kẻ đó, fortify về đó.
+
+**Đối sách.** Lean: rusher B, còn lại A.
+- **A — Trả đũa**: tấn công họ +1.2; chiếm được 1 ô của họ là dừng.
+- **B — Truy cùng**: tấn công họ +1.8; đánh tiếp.
+
+---
+
 ## 5. `attempt_continent` — Âm mưu chiếm châu lục
 
 Fallback khi 4 chiến lược trên không khớp. Không có thang trigger/đối sách.
@@ -232,4 +299,5 @@ Lean trigger: rusher 3 · turtle 1 · balanced 2 · opportunist 2.
 - **Ngưỡng tấn công** (vòng tấn công thường):
   `tỉ lệ ≥ max(1.05, ngưỡng độ khó + chỉnh theo tính cách − bonus × 0.3)` — bonus của chiến
   lược làm AI chịu đánh ở tỉ lệ xấu hơn.
-- AI không nhớ gì giữa các lượt: chiến lược và mood chọn lại từ đầu mỗi lượt.
+- Trí nhớ giữa các lượt chỉ có "ai đánh mình" (cho `revenge`); chiến lược và mood chọn lại
+  từ đầu mỗi lượt.

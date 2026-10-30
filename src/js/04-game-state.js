@@ -87,6 +87,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
     allianceEnabled: !!allianceEnabled,
     commonEnemy: null, // {id, startPower}: the alliance's current target, see updateCommonEnemy() in 05-ai.js
     biggestBattle: null, // set by recordBattleStat(), shown on the end-game summary screen
+    damageTaken: {}, // {victimId: {attackerId: {armies, territories}}}, see recordDamage()
   };
   logMsg('info', 'Ván chơi bắt đầu! '+players.length+' người chơi trên bản đồ "'+mapData.name+'".');
 }
@@ -309,6 +310,7 @@ function doBattle(fromId,toId,opts){
   const attP = game.players[game.owner[fromId]];
   const defP = game.players[game.owner[toId]];
   if(defLoss>0) attP.killedThisTurn = true; // feeds the 'on_kill' cardAwardEvent mode
+  recordDamage(defP.id, attP.id, defLoss, game.armies[toId]<=0 ? 1 : 0);
   attP.totalKills += defLoss; // cumulative since game start, shown in the topbar
   if(!silent) logMsg('attack', `${attP.name} tấn công ${mapData.territories[toId].name} từ ${mapData.territories[fromId].name}: mất ${attLoss}, đối phương mất ${defLoss}.`, [attP.id, defP.id]);
   let captured=false, moving=null, maxMovable=null;
@@ -332,6 +334,17 @@ function doBattle(fromId,toId,opts){
   }
   if(!silent) host.renderGame();
   return {attLoss,defLoss,captured,ad,dd,results,moving,maxMovable};
+}
+
+// What each player has lost to whom since the end of their own last turn — the AI's only
+// memory between turns, read by the 'revenge' strategy (05-ai.js). Cleared in endTurn() once
+// the victim has had their turn. Kept in game so a saved/online game remembers it too.
+function recordDamage(victimId, attackerId, armies, territories){
+  if(!armies && !territories) return;
+  if(!game.damageTaken) game.damageTaken = {}; // a save from before this existed
+  const byVictim = game.damageTaken[victimId] = game.damageTaken[victimId] || {};
+  const d = byVictim[attackerId] = byVictim[attackerId] || {armies:0, territories:0};
+  d.armies += armies; d.territories += territories;
 }
 
 // Tracks the single attack (1 human click, or 1 AI battleBatch) with the highest combined
@@ -404,6 +417,7 @@ function endTurn(){
   }
   p.capturedThisTurn=false;
   p.killedThisTurn=false;
+  if(game.damageTaken) delete game.damageTaken[p.id]; // its turn to react to that is over
   do {
     game.turnIdx = (game.turnIdx+1) % game.turnOrder.length;
     if(game.turnIdx===0) game.roundNumber++; // wrapped back to the start of turnOrder = a new round
