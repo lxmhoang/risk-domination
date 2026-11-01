@@ -22,7 +22,7 @@ không còn gì khác khớp, nên lúc nào cũng chọn được.
 | 4 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
 | 5 | `break_continent` | Phá châu lục | 1–3 | A / B |
 | 5 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
-| 5 | `revenge` | Trả thù | 1–3 | A / B |
+| Tắt | `revenge` | Trả thù | 1–3 | A / B — tạm tắt (bật lại ở `/admin` hoặc `aiTierRevenge`) |
 | Tắt | `expand` | Mở rộng | 1–3 | A / B — chỉ còn là lưới an toàn cuối |
 | Cuối (fallback) | `attempt_continent` | Âm mưu chiếm châu lục | không có | không có |
 
@@ -250,7 +250,7 @@ rusher 3 · opportunist 3 · balanced 2 · turtle 2.
 - **A — Phá rồi thôi**: chiếm được 1 ô của châu lục là dừng tấn công.
 - **B — Phá rồi đánh tiếp** như thường.
 
-### `revenge` — Trả thù (tier 5)
+### `revenge` — Trả thù (tạm tắt, mặc định trước đó là tier 5)
 
 Ai đánh mình đau nhất kể từ cuối lượt trước của mình thì lượt này nhắm vào họ. Đây là trí nhớ
 duy nhất của AI giữa các lượt (`game.damageTaken`).
