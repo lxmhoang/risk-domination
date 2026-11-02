@@ -2133,7 +2133,71 @@ function canAttack(fromId,toId,pid){
   if(game.owner[fromId]!==pid) return false;
   if(game.owner[toId]===pid) return false;
   if(game.armies[fromId]<2) return false;
-  return mapData.territories[fromId].neighbors.has(toId);
+  return canReachTarget(fromId, toId, pid);
+}
+
+/* ---------------- Mượn đường (liên minh) ----------------
+   Khi liên minh đang nhắm 1 kẻ thù chung (game.commonEnemy, đặt bởi updateCommonEnemy() ở
+   05-ai.js), mọi người chơi KHÁC kẻ đó được "mượn đường" qua đất của các người chơi còn lại
+   (không tính đất của kẻ thù chung và đất của chính mình):
+     - tấn công: ô A của tôi đánh được ô B của kẻ thù chung nếu có chuỗi ô liền kề
+       A - x1 - x2 - … - xk - B, mọi xi thuộc người chơi khác (không phải tôi, không phải kẻ thù chung),
+       k ≥ 1 và k ≤ allianceBorrowHops (0 = tắt luật này);
+     - fortify: chuyển quân giữa 2 ô của tôi qua chuỗi đất đồng minh như vậy, nhưng chỉ khi ô
+       đích giáp đất kẻ thù chung (tức là đang tiếp viện cho mặt trận), xem pathExistsOwned().
+   Lõi game dùng chung cho người chơi, AI, UI và server nên luật áp dụng cho tất cả. */
+function borrowRoadTarget(pid){
+  if(!game.allianceEnabled || !game.commonEnemy) return null;
+  if(!(Number(RUNTIME_CONFIG.allianceBorrowHops)>=1)) return null;
+  const lid = game.commonEnemy.id, leader = game.players[lid];
+  if(!leader || !leader.alive || lid===pid) return null;
+  return lid;
+}
+// Mọi ô đất đồng minh (không phải của tôi, không phải của kẻ thù chung) nối được từ `fromId`
+// qua ≤ maxHops ô; Map ô -> số ô trung gian tính tới nó (ô liền kề trực tiếp = 1).
+function allyLandReach(fromId, pid, leaderId, maxHops){
+  const depth = new Map();
+  let frontier = [];
+  const isAlly = n=>{ const o = game.owner[n]; return o!=null && o!==pid && o!==leaderId; };
+  mapData.territories[fromId].neighbors.forEach(n=>{ if(isAlly(n)){ depth.set(n,1); frontier.push(n); } });
+  while(frontier.length){
+    const next = [];
+    frontier.forEach(c=>{
+      const d = depth.get(c);
+      if(d>=maxHops) return;
+      mapData.territories[c].neighbors.forEach(n=>{
+        if(!depth.has(n) && isAlly(n)){ depth.set(n,d+1); next.push(n); }
+      });
+    });
+    frontier = next;
+  }
+  return depth;
+}
+// Hình học thuần của 1 đòn đánh (không xét số quân): liền kề, hoặc mượn đường tới ô kẻ thù chung.
+function canReachTarget(fromId, toId, pid){
+  if(mapData.territories[fromId].neighbors.has(toId)) return true;
+  const lid = borrowRoadTarget(pid);
+  if(lid==null || game.owner[toId]!==lid) return false;
+  const reach = allyLandReach(fromId, pid, lid, Number(RUNTIME_CONFIG.allianceBorrowHops));
+  for(const id of reach.keys()){
+    if(mapData.territories[id].neighbors.has(toId)) return true;
+  }
+  return false;
+}
+// Mọi ô địch `fromId` đánh được về mặt hình học: láng giềng + ô kẻ thù chung qua mượn đường.
+function attackTargetsFrom(fromId, pid){
+  const out = new Set(mapData.territories[fromId].neighbors);
+  const lid = borrowRoadTarget(pid);
+  if(lid!=null){
+    allyLandReach(fromId, pid, lid, Number(RUNTIME_CONFIG.allianceBorrowHops)).forEach((d,id)=>{
+      mapData.territories[id].neighbors.forEach(n=>{ if(game.owner[n]===lid) out.add(n); });
+    });
+  }
+  return [...out].filter(n=>game.owner[n]!==pid);
+}
+// Mọi ô của tôi có thể đánh `toId` về mặt hình học (kể cả mượn đường).
+function attackersOf(toId, pid){
+  return ownedTerritories(pid).filter(id=> canReachTarget(id, toId, pid));
 }
 
 function doBattle(fromId,toId,opts){
@@ -2239,6 +2303,11 @@ function beginFortifyPhase(){
 }
 
 function pathExistsOwned(fromId,toId,pid){
+  // Mượn đường: khi liên minh đang nhắm kẻ thù chung, ô đích giáp đất họ (mặt trận) tới được
+  // qua chuỗi đất đồng minh nối giữa các ô của tôi — để ô vừa chiếm "nhảy cóc" vẫn tiếp viện được.
+  const lid = borrowRoadTarget(pid);
+  const borrow = lid!=null && [...mapData.territories[toId].neighbors].some(n=>game.owner[n]===lid);
+  const hops = Number(RUNTIME_CONFIG.allianceBorrowHops);
   const seen=new Set([fromId]); const stack=[fromId];
   while(stack.length){
     const cur=stack.pop();
@@ -2246,6 +2315,13 @@ function pathExistsOwned(fromId,toId,pid){
     mapData.territories[cur].neighbors.forEach(n=>{
       if(!seen.has(n) && game.owner[n]===pid){ seen.add(n); stack.push(n); }
     });
+    if(borrow){
+      allyLandReach(cur, pid, lid, hops).forEach((d,id)=>{
+        mapData.territories[id].neighbors.forEach(n=>{
+          if(!seen.has(n) && game.owner[n]===pid){ seen.add(n); stack.push(n); }
+        });
+      });
+    }
   }
   return false;
 }
@@ -2868,7 +2944,8 @@ const AI_STRATEGIES = {
     if(!game.allianceEnabled) return null;
     const leaderId = updateCommonEnemy();
     if(leaderId==null || leaderId===pid) return null;
-    const touchesMe = id=> [...mapData.territories[id].neighbors].some(n=>game.owner[n]===pid);
+    // Giáp tôi, hoặc (luật mượn đường, canReachTarget ở 04-game-state.js) có ô nào của tôi với tới được.
+    const touchesMe = id=> [...mapData.territories[id].neighbors].some(n=>game.owner[n]===pid) || attackersOf(id, pid).length>0;
     let best = null;
     Object.values(mapData.continents).forEach(c=>{
       const terrs = continentTerritories(c.id);
@@ -3111,7 +3188,8 @@ function pickAIReinforceTarget(pid, mine, intent){
   // break_continent / gang_up: dồn hết vào ô mạnh nhất của tôi giáp ô định đánh. (gang_up đánh
   // đúng leader nên hợp với khoá liên minh.)
   if(intent && (intent.type==='gang_up' || (intent.type==='break_continent' && !mustOnlyDefendAgainstLeader))){
-    const nb = [...mapData.territories[intent.focusTerrId].neighbors].filter(n=>mine.includes(n));
+    // attackersOf: ô liền kề ô mục tiêu + (mượn đường) mọi ô của tôi với tới được nó.
+    const nb = attackersOf(intent.focusTerrId, pid);
     if(nb.length) return nb.reduce((b,id)=> game.armies[id]>game.armies[b] ? id : b);
   }
   let best=null, bestScore=-Infinity;
@@ -3143,6 +3221,15 @@ function pickAIReinforceTarget(pid, mine, intent){
     if(score>bestScore){ bestScore=score; best=id; }
   });
   if(focusPlayerId!=null && bestFocus!=null) return bestFocus;
+  // Không giáp người bị nhắm nhưng có thể mượn đường: dồn vào ô mạnh nhất với tới được đất họ.
+  if(focusPlayerId!=null && mustOnlyDefendAgainstLeader){
+    let strongest = null;
+    mine.forEach(id=>{
+      if(strongest!=null && game.armies[id]<=game.armies[strongest]) return;
+      if(attackTargetsFrom(id, pid).some(n=>game.owner[n]===focusPlayerId)) strongest = id;
+    });
+    if(strongest!=null) return strongest;
+  }
   if(best===null) best = randChoice(mine);
   return best;
 }
@@ -3605,9 +3692,8 @@ function aiAttackStep(pid, intent){
     let bestOpt=null, bestEval=null;
     for(const from of mine){
       if(game.armies[from]<2) continue;
-      const t = mapData.territories[from];
-      for(const to of t.neighbors){
-        if(game.owner[to]===pid) continue;
+      // attackTargetsFrom: láng giềng + (mượn đường, xem 04-game-state.js) ô kẻ thù chung xa hơn.
+      for(const to of attackTargetsFrom(from, pid)){
         if(mustOnlyAttackLeader && game.owner[to]!==allianceLeaderId) continue;
         const ev = attackScore(from, to);
         if(!ev) continue;
@@ -3892,6 +3978,11 @@ return {
   placeReinforcement,
   beginAttackPhase,
   canAttack,
+  borrowRoadTarget,
+  allyLandReach,
+  canReachTarget,
+  attackTargetsFrom,
+  attackersOf,
   doBattle,
   recordDamage,
   recordBattleStat,

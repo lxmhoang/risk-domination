@@ -22,7 +22,7 @@ không còn gì khác khớp, nên lúc nào cũng chọn được.
 | 4 | `defend` | Phòng thủ biên giới | 1–3 | A / B |
 | 5 | `break_continent` | Phá châu lục | 1–3 | A / B |
 | 5 | `finish_continent` | Hoàn tất châu lục | 1–4 | A / B |
-| 5 | `revenge` | Trả thù | 1–3 | A / B |
+| Tắt | `revenge` | Trả thù | 1–3 | A / B — tạm tắt (bật lại ở `/admin` hoặc `aiTierRevenge`) |
 | Tắt | `expand` | Mở rộng | 1–3 | A / B — chỉ còn là lưới an toàn cuối |
 | Cuối (fallback) | `attempt_continent` | Âm mưu chiếm châu lục | không có | không có |
 
@@ -250,7 +250,7 @@ rusher 3 · opportunist 3 · balanced 2 · turtle 2.
 - **A — Phá rồi thôi**: chiếm được 1 ô của châu lục là dừng tấn công.
 - **B — Phá rồi đánh tiếp** như thường.
 
-### `revenge` — Trả thù (tier 5)
+### `revenge` — Trả thù (tạm tắt, mặc định trước đó là tier 5)
 
 Ai đánh mình đau nhất kể từ cuối lượt trước của mình thì lượt này nhắm vào họ. Đây là trí nhớ
 duy nhất của AI giữa các lượt (`game.damageTaken`).
@@ -324,6 +324,13 @@ Lean trigger: rusher 3 · turtle 1 · balanced 2 · opportunist 2.
 - **Liên minh** (nếu bật): khi có "kẻ thù chung", mọi AI khác chỉ được đánh kẻ đó, và tăng
   viện/fortify dồn về biên giáp kẻ đó — **thắng** mọi chiến lược trên, trừ `stay_survival`
   (tăng viện vẫn dồn về biên bị đe doạ). Thường thì các AI đó sẽ chọn luôn `gang_up`.
+- **Mượn đường** (thử nghiệm, `allianceBorrowHops`, mặc định 99 = gần như không giới hạn, 0 = tắt):
+  khi có "kẻ thù chung", mọi người chơi khác (kể cả người thật) đánh được ô của kẻ thù chung qua
+  một chuỗi ô liền kề thuộc người chơi khác — không cần giáp trực tiếp. Chuỗi không được đi qua
+  đất của chính mình hay của kẻ thù chung. Fortify cũng "nhảy cóc" qua chuỗi đó, nhưng chỉ khi ô
+  đích giáp đất kẻ thù chung (để ô vừa chiếm không bị cô lập). Code: `canReachTarget`,
+  `attackTargetsFrom`, `attackersOf`, `pathExistsOwned` trong `src/js/04-game-state.js`; test:
+  `npm run test:borrow`. AI dùng ở `gang_up` và vòng tấn công bị khoá `mustOnlyAttackLeader`.
 - **Ngưỡng tấn công** (vòng tấn công thường):
   `tỉ lệ ≥ max(1.05, ngưỡng độ khó + chỉnh theo tính cách − bonus × 0.3)` — bonus của chiến
   lược làm AI chịu đánh ở tỉ lệ xấu hơn.
