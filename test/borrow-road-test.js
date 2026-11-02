@@ -13,6 +13,7 @@ const fs = require('fs'), path = require('path');
 const createCore = require(path.join(__dirname, '..', 'dist', 'core.js'));
 const CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'config.json'), 'utf8'));
 const core = createCore(CONFIG, {});
+core.RUNTIME_CONFIG.allianceBorrowHops = 99; // the test sets its own limit, whatever src/config.json ships
 // Line of 8 territories: 1(P0) 2(P1) 3(P1) 4(P2) 5(P3 leader) 6(P3) 7(P0) 8(P1)
 const map = core.newMap(8, 1, 't');
 for(let i=1;i<=8;i++) map.territories[i] = {id:i, name:'T'+i, continentId:1, color:'#fff', cells:[], neighbors:new Set(), centroid:{x:i,y:0}};
