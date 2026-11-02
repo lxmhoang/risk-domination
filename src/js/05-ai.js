@@ -427,7 +427,8 @@ const AI_STRATEGIES = {
     if(!game.allianceEnabled) return null;
     const leaderId = updateCommonEnemy();
     if(leaderId==null || leaderId===pid) return null;
-    const touchesMe = id=> [...mapData.territories[id].neighbors].some(n=>game.owner[n]===pid);
+    // Giáp tôi, hoặc (luật mượn đường, canReachTarget ở 04-game-state.js) có ô nào của tôi với tới được.
+    const touchesMe = id=> [...mapData.territories[id].neighbors].some(n=>game.owner[n]===pid) || attackersOf(id, pid).length>0;
     let best = null;
     Object.values(mapData.continents).forEach(c=>{
       const terrs = continentTerritories(c.id);
@@ -670,7 +671,8 @@ function pickAIReinforceTarget(pid, mine, intent){
   // break_continent / gang_up: dồn hết vào ô mạnh nhất của tôi giáp ô định đánh. (gang_up đánh
   // đúng leader nên hợp với khoá liên minh.)
   if(intent && (intent.type==='gang_up' || (intent.type==='break_continent' && !mustOnlyDefendAgainstLeader))){
-    const nb = [...mapData.territories[intent.focusTerrId].neighbors].filter(n=>mine.includes(n));
+    // attackersOf: ô liền kề ô mục tiêu + (mượn đường) mọi ô của tôi với tới được nó.
+    const nb = attackersOf(intent.focusTerrId, pid);
     if(nb.length) return nb.reduce((b,id)=> game.armies[id]>game.armies[b] ? id : b);
   }
   let best=null, bestScore=-Infinity;
@@ -702,6 +704,15 @@ function pickAIReinforceTarget(pid, mine, intent){
     if(score>bestScore){ bestScore=score; best=id; }
   });
   if(focusPlayerId!=null && bestFocus!=null) return bestFocus;
+  // Không giáp người bị nhắm nhưng có thể mượn đường: dồn vào ô mạnh nhất với tới được đất họ.
+  if(focusPlayerId!=null && mustOnlyDefendAgainstLeader){
+    let strongest = null;
+    mine.forEach(id=>{
+      if(strongest!=null && game.armies[id]<=game.armies[strongest]) return;
+      if(attackTargetsFrom(id, pid).some(n=>game.owner[n]===focusPlayerId)) strongest = id;
+    });
+    if(strongest!=null) return strongest;
+  }
   if(best===null) best = randChoice(mine);
   return best;
 }
@@ -1164,9 +1175,8 @@ function aiAttackStep(pid, intent){
     let bestOpt=null, bestEval=null;
     for(const from of mine){
       if(game.armies[from]<2) continue;
-      const t = mapData.territories[from];
-      for(const to of t.neighbors){
-        if(game.owner[to]===pid) continue;
+      // attackTargetsFrom: láng giềng + (mượn đường, xem 04-game-state.js) ô kẻ thù chung xa hơn.
+      for(const to of attackTargetsFrom(from, pid)){
         if(mustOnlyAttackLeader && game.owner[to]!==allianceLeaderId) continue;
         const ev = attackScore(from, to);
         if(!ev) continue;

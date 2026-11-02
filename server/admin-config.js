@@ -42,6 +42,7 @@ const GROUPS = [
     allianceLeaderVsField: num('Leader khi sức mạnh ≥ … × tổng những người còn lại', 0, 5, 0.05),
     allianceLeaderMargin: num('… và ≥ … × người đứng thứ 2', 1, 5, 0.05),
     allianceReleaseFraction: num('Kẻ thù chung hết bị đánh khi sức mạnh < … × lúc bị gán nhãn', 0.05, 1, 0.01),
+    allianceBorrowHops: num('Mượn đường khi gang-up: số ô đồng minh trung gian tối đa (0 = tắt)', 0, 99, 1, 'Khi có kẻ thù chung, ô của tôi đánh được ô của họ qua chuỗi đất của người chơi khác, và ô giáp họ được tiếp viện qua chuỗi đó'),
     powerWeightArmies: num('Sức mạnh: trọng số quân', 0, 20, 0.5),
     powerWeightTerritories: num('Sức mạnh: trọng số lãnh thổ', 0, 20, 0.5),
     powerWeightReinforcements: num('Sức mạnh: trọng số tăng viện/lượt', 0, 50, 0.5),

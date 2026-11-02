@@ -38,6 +38,7 @@
   "allianceLeaderVsField": 0.6,
   "allianceLeaderMargin": 1.2,
   "allianceReleaseFraction": 0.3333,
+  "allianceBorrowHops": 99,
   "powerWeightArmies": 2,
   "powerWeightTerritories": 1,
   "powerWeightReinforcements": 6,
