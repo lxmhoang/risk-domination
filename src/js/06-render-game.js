@@ -137,6 +137,17 @@ function scheduleAnimFrame(){
   animFrameQueued = true;
   requestAnimationFrame(()=>{ animFrameQueued=false; if(game) drawGameCanvas(); });
 }
+// The pulsing glow on a selected territory is the only thing that needs a redraw while nothing
+// else moves. Repainting the whole map at the screen's refresh rate (60/s) for it made phones run
+// hot and lag after a while, so that case redraws at ~9 frames/s instead, and not at all while the
+// page is hidden (the visibilitychange listener in 08-wiring.js restarts it).
+const PULSE_FRAME_MS = 110;
+const MAP_DPR_MAX = 2;
+let pulseTimer = null;
+function schedulePulseFrame(){
+  if(pulseTimer || animFrameQueued) return;
+  pulseTimer = setTimeout(()=>{ pulseTimer = null; if(game && !document.hidden) drawGameCanvas(); }, PULSE_FRAME_MS);
+}
 // Called whenever a fresh `game` starts being drawn for the first time (new game, replay,
 // loaded save) so leftover animation state from whatever was on screen before doesn't bleed
 // into it (e.g. every territory "fading in" from the previous match's final colors).
@@ -951,7 +962,8 @@ function drawGameCanvas(){
   // pixels than it actually has data for, which is what made the map/army badges/territory
   // names look soft/blurry on mobile. ctx.scale() below is multiplied by dpr to match, so every
   // draw call downstream still just thinks in native map-pixel coordinates as before.
-  const dpr = window.devicePixelRatio || 1;
+  // Capped: a 3x phone screen would otherwise paint 2.25x the pixels of a 2x one for a barely visible gain.
+  const dpr = Math.min(window.devicePixelRatio || 1, MAP_DPR_MAX);
   const cssW = Math.max(1, Math.round(nativeW*displayScale));
   const cssH = Math.max(1, Math.round(nativeH*displayScale));
   // Center within the SAFE AREA specifically (the box between the 4 overlays), not the wrap's
@@ -1355,9 +1367,11 @@ function drawGameCanvas(){
   // goes back to being purely event-driven (see RENDER ANIMATION STATE at the top of this file).
   // The selection glow alone never "finishes" while a territory stays selected, but with
   // reducedMotion it's just a static line (pulse=0 above), so it doesn't need to keep redrawing.
-  const stillAnimating = Object.keys(colorFades).length>0 || Object.keys(armyTweens).length>0 ||
-    captureParticles.length>0 || !!attackAnim || (!reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null));
-  if(stillAnimating) scheduleAnimFrame();
+  const needsSmoothFrames = Object.keys(colorFades).length>0 || Object.keys(armyTweens).length>0 ||
+    captureParticles.length>0 || !!attackAnim;
+  const pulseOnly = !reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null);
+  if(needsSmoothFrames) scheduleAnimFrame();
+  else if(pulseOnly) schedulePulseFrame();
   if(inAttackPhase) positionFloatingAttackButtons();
   if(game.phase==='fortify') positionFloatingFortifyButton();
 }

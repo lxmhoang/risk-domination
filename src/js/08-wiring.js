@@ -623,6 +623,9 @@ $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });
 
+// The selection pulse stops redrawing while the page is hidden; draw once more when it comes back.
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && game && $('screen-game').classList.contains('active')) scheduleAnimFrame(); });
+
 // Tap anywhere on the common-enemy overlay to close it before its 4 seconds are up.
 $('enemyOverlay').addEventListener('click', closeEnemyOverlay);
 
@@ -775,7 +778,7 @@ function toggleFullscreen(){
 // The title tooltip is the only state indicator; same single ⛶ glyph either way.
 function updateFullscreenButtons(){
   const fs = isFullscreen();
-  const label = withShortcut('⛶', 'F');
+  const label = '⛶'; // no "(F)" suffix on the button; the shortcut is still in the tooltip
   const title = (fs ? 'Thoát' : 'Vào') + ' toàn màn hình (F)';
   const gameBtn = $('btnFullscreenGame');
   if(gameBtn){ gameBtn.textContent = label; gameBtn.title = title; }

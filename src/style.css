@@ -699,3 +699,14 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     transition:none !important;
   }
 }
+
+/* Touch devices: the blur behind panels (re-blurred whenever the map under them changes) and the
+   endlessly animated glow on the active player's flag are costly to repaint on a phone, so they are
+   dropped there — the panels get a more opaque background instead, the glow becomes static. */
+@media (hover:none) and (pointer:coarse){
+  #floatingAttackButtons button{backdrop-filter:none;background:rgba(255,255,255,.62);}
+  #turnInfoPill, .ov-section{backdrop-filter:none;background:rgba(10,14,24,.72);}
+  .modal-overlay{backdrop-filter:none;}
+  .modal.translucent{backdrop-filter:none;background:rgba(22,29,46,.94);}
+  .player-flag.active-turn{animation:none;filter:drop-shadow(0 0 3px #fff) drop-shadow(0 0 9px rgba(47,125,255,.9));}
+}
