@@ -331,6 +331,11 @@ Lean trigger: rusher 3 · turtle 1 · balanced 2 · opportunist 2.
   đích giáp đất kẻ thù chung (để ô vừa chiếm không bị cô lập). Code: `canReachTarget`,
   `attackTargetsFrom`, `attackersOf`, `pathExistsOwned` trong `src/js/04-game-state.js`; test:
   `npm run test:borrow`. AI dùng ở `gang_up` và vòng tấn công bị khoá `mustOnlyAttackLeader`.
+- **Thông báo kẻ thù chung:** khi một người được gán nhãn 🎯 hoặc được gỡ nhãn, game hiện overlay (tên,
+  lý do, sức mạnh của mọi người chơi), tạm dừng game và tự đóng sau 4 giây (chạm để đóng sớm). Code:
+  `announceCommonEnemy()` trong `src/js/05-ai.js`, `showCommonEnemyOverlay()` trong `src/js/06-render-game.js`.
+- **Chỉnh ngưỡng liên minh:** màn ⚙️ Cấu hình (ván offline) và trang `/admin` (ván online) có 4 giá trị:
+  `allianceLeaderVsField`, `allianceLeaderMargin`, `allianceReleaseFraction`, `allianceBorrowHops`.
 - **Ngưỡng tấn công** (vòng tấn công thường):
   `tỉ lệ ≥ max(1.05, ngưỡng độ khó + chỉnh theo tính cách − bonus × 0.3)` — bonus của chiến
   lược làm AI chịu đánh ở tỉ lệ xấu hơn.

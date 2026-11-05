@@ -55,6 +55,7 @@ function makeEngine(defaultConfig, secret){
     setActionHint(msg){ emit({t:'hint', msg}); },
     showDice(ad, dd, results){ emit({t:'dice', ad, dd, results}); },
     showTurnIntro(p){ emit({t:'turn', pid:p.id}); },
+    onCommonEnemyChange(info){ emit({t:'enemy', info}); },
     openCardsModal(forced){ emit({t:'cards', forced:!!forced}); },
     showGameOver(winner){ emit({t:'over', winnerId: winner ? winner.id : null}); },
     startAttackAnim(info, onDone){ emit({t:'anim', info}); if(onDone) onDone(); },

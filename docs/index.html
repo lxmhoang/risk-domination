@@ -628,6 +628,27 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 #turnIntroLabel{position:relative;font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;}
 #turnIntroName{position:relative;font-size:40px;font-weight:800;color:var(--turn-intro-color, #fff);text-shadow:0 0 24px var(--turn-intro-color, #fff);}
 @media (max-width: 480px){ #turnIntroName{font-size:30px;} #turnIntroCard::before{width:260px;height:260px;} }
+
+/* Common-enemy overlay (mark / release): a compact card, like the turn banner but with the powers.
+   Dims the map a little, blocks input behind it, closes on tap. */
+#enemyOverlay{position:absolute;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(4,7,14,0);transition:background .25s ease;cursor:pointer;}
+#enemyOverlay.show{background:rgba(4,7,14,.4);}
+#enemyCard{width:min(300px,100%);max-height:calc(100% - 24px);overflow:auto;background:var(--panel);border:1.5px solid var(--enemy-color,#fff);border-radius:12px;padding:9px 11px 0;box-shadow:0 6px 24px rgba(0,0,0,.55);opacity:0;transform:scale(.92);transition:opacity .25s ease,transform .25s cubic-bezier(.2,.9,.3,1.3);}
+#enemyOverlay.show #enemyCard{opacity:1;transform:scale(1);}
+#enemyTitle{font-size:14px;font-weight:800;line-height:1.25;text-align:center;}
+#enemySub{font-size:11px;color:var(--muted);text-align:center;margin:3px 0 6px;line-height:1.4;}
+#enemyPowers{display:flex;flex-direction:column;gap:2px;padding-bottom:8px;}
+.enemy-row{position:relative;display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.2;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.04);overflow:hidden;}
+.enemy-row.subject{outline:1.5px solid var(--enemy-color,#fff);background:rgba(255,255,255,.1);font-weight:700;}
+.enemy-row.dead{opacity:.55;}
+.enemy-row .bar{position:absolute;left:0;top:0;bottom:0;opacity:.28;}
+.enemy-row .dot{position:relative;width:9px;height:9px;border-radius:50%;flex:none;border:1px solid rgba(255,255,255,.6);}
+.enemy-row .nm{position:relative;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.enemy-row .pw{position:relative;font-variant-numeric:tabular-nums;}
+#enemyBar{height:3px;margin:0 -11px;background:rgba(255,255,255,.1);}
+#enemyBar i{display:block;height:100%;width:100%;background:var(--enemy-color,#fff);transform-origin:left;}
+#enemyBar i.run{animation:enemyCountdown var(--enemy-ms,4000ms) linear forwards;}
+@keyframes enemyCountdown{from{transform:scaleX(1);}to{transform:scaleX(0);}}
 .summary-table-wrap{max-width:640px;width:92vw;max-height:44vh;overflow:auto;}
 .summary-table{width:100%;border-collapse:collapse;font-size:13px;}
 .summary-table th,.summary-table td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);}
@@ -682,7 +703,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   .screen.active, .modal-overlay, .modal, #gameOverOverlay, .die, .player-flag.active-turn{
     animation:none !important;
   }
-  #turnIntroOverlay, #turnIntroOverlay.show, #turnIntroCard, #turnIntroOverlay.show #turnIntroCard{
+  #turnIntroOverlay, #turnIntroOverlay.show, #turnIntroCard, #turnIntroOverlay.show #turnIntroCard,
+  #enemyOverlay, #enemyOverlay.show, #enemyCard, #enemyOverlay.show #enemyCard{
     transition:none !important;
   }
 }
@@ -914,7 +936,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
   <div class="cfg-wrap">
     <div class="cfg-head">
       <h2>⚙️ Cấu hình</h2>
-      <span class="cfg-note">Tự lưu trong trình duyệt này. Ô viền vàng = khác mặc định. Rê chuột vào ô để xem giải thích. Cấu hình AI/cân bằng (độ khó, tính cách, thẻ bài, tăng viện…) đã dời sang <code>/admin</code> cho ván online — ván offline luôn dùng giá trị mặc định.</span>
+      <span class="cfg-note">Tự lưu trong trình duyệt này. Ô viền vàng = khác mặc định. Rê chuột vào ô để xem giải thích. Cấu hình AI/cân bằng (độ khó, tính cách, thẻ bài, tăng viện…) đã dời sang <code>/admin</code> cho ván online — ván offline dùng giá trị mặc định, trừ thẻ 🤝 Liên minh bên dưới.</span>
     </div>
     <div class="cfg-grid">
       <section class="cfg-card">
@@ -927,6 +949,19 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
         </div>
         <div class="cfg-line"><label class="switch-row"><input type="checkbox" data-cfg="manualInitialPlacement"> Đặt quân thủ công lúc đầu ván</label></div>
         <div class="cfg-line">Độ trễ khi xem AI đấu: <input type="number" data-cfg="spectatorModeDelayMs" step="50" min="0" max="10000" title="Mili-giây giữa mỗi hành động khi xem AI đấu với nhau"> ms</div>
+      </section>
+      <section class="cfg-card">
+        <h3>🤝 Liên minh <span class="cfg-sub">ván offline — ván online chỉnh ở /admin</span></h3>
+        <div class="cfg-line">Thành leader khi sức mạnh ≥ <input type="number" data-cfg="allianceLeaderVsField" step="0.05" min="0" max="5" title="Sức mạnh của người dẫn đầu phải ≥ số này × tổng sức mạnh của tất cả người còn lại"> × tổng những người còn lại</div>
+        <div class="cfg-line">… và ≥ <input type="number" data-cfg="allianceLeaderMargin" step="0.05" min="1" max="5" title="… đồng thời phải ≥ số này × sức mạnh của người đứng thứ 2"> × người đứng thứ 2</div>
+        <div class="cfg-line">Hết bị nhắm khi sức mạnh &lt; <input type="number" data-cfg="allianceReleaseFraction" step="0.01" min="0.05" max="1" title="Kẻ thù chung được gỡ nhãn khi sức mạnh tụt dưới số này × sức mạnh lúc bị gán nhãn"> × lúc bị gán nhãn</div>
+        <div class="cfg-line">Mượn đường: tối đa <input type="number" data-cfg="allianceBorrowHops" step="1" min="0" max="99" title="Khi có kẻ thù chung, đánh được ô của họ qua chuỗi ô của người chơi khác, tối đa chừng này ô trung gian. 0 = tắt."> ô trung gian <span class="cfg-sub">(0 = tắt)</span></div>
+        <div class="cfg-line cfg-sub">Chỉ áp dụng cho ván tạo sau khi đổi. Cần bật “Liên minh” khi tạo ván.</div>
+      </section>
+      <section class="cfg-card">
+        <h3>🐞 Debug</h3>
+        <div class="cfg-line"><label class="switch-row"><input type="checkbox" data-cfg="debugMode"> Bật chế độ debug</label></div>
+        <div class="cfg-line cfg-sub">Mở một số tính năng thử nghiệm / chẩn đoán (sẽ bổ sung dần).</div>
       </section>
     </div>
     <div class="cfg-foot">
@@ -964,6 +999,19 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <div id="turnIntroCard">
       <div id="turnIntroLabel">Lượt của</div>
       <div id="turnIntroName"></div>
+    </div>
+  </div>
+
+  <!-- Shown when the alliance marks a player as the common enemy ("kẻ thù chung") or lets the mark
+       go: that player's name, why, and every player's power. Freezes the game (AI turns wait) and
+       closes itself after 4 seconds, or on a tap — see showCommonEnemyOverlay() in
+       06-render-game.js. -->
+  <div id="enemyOverlay" hidden>
+    <div id="enemyCard" role="dialog" aria-live="polite">
+      <div id="enemyTitle"></div>
+      <div id="enemySub"></div>
+      <div id="enemyPowers"></div>
+      <div id="enemyBar"><i></i></div>
     </div>
   </div>
 
@@ -1073,6 +1121,7 @@ const GAME_CONFIG = {
   "allianceLeaderMargin": 1.5,
   "allianceReleaseFraction": 0.5,
   "allianceBorrowHops": 2,
+  "debugMode": false,
   "powerWeightArmies": 2,
   "powerWeightTerritories": 1,
   "powerWeightReinforcements": 6,
@@ -1118,6 +1167,7 @@ const host = {
   // plays the attack animation, then calls onDone — with nothing to show, straight away
   startAttackAnim(info, onDone){ if(onDone) onDone(); },
   onGameInit(){},      // a new game object was just created (reset view state)
+  onCommonEnemyChange(){}, // the alliance marked / released its common enemy; gets {kind, pid, powers, …}, see announceCommonEnemy() in 05-ai.js
   beforeEndTurn(){},   // called with the player whose turn is ending, before anything changes
   schedule: null,      // (fn, delayMs) — replaces the default pausable setTimeout in aiSchedule()
   random: null,        // () => float in [0,1) — replaces the seeded generator (see random())
@@ -1406,20 +1456,30 @@ function aiDelay(base){ return spectatorMode ? RUNTIME_CONFIG.spectatorModeDelay
    timer fires, the step is stashed (not run) instead, and setAIPaused(false) runs it
    immediately — so resuming continues the exact same chain rather than restarting it. */
 let aiPaused = false;
+let aiHold = 0; // > 0 while an overlay (e.g. the common-enemy one) freezes the game; independent of ⏸️
 let pendingAIResume = null;
+function aiBlocked(){ return aiPaused || aiHold>0; }
 function aiSchedule(fn, delay){
   if(host.schedule){ host.schedule(fn, delay); return; } // e.g. the server: no real waiting
   setTimeout(()=>{
-    if(aiPaused){ pendingAIResume = fn; return; }
+    if(aiBlocked()){ pendingAIResume = fn; return; }
     fn();
   }, delay);
 }
+function resumeAIIfFree(){
+  if(aiBlocked() || !pendingAIResume) return;
+  const fn = pendingAIResume; pendingAIResume = null;
+  if(game && !game.over) fn();
+}
 function setAIPaused(paused){
   aiPaused = paused;
-  if(!paused && pendingAIResume){
-    const fn = pendingAIResume; pendingAIResume = null;
-    if(game && !game.over) fn();
-  }
+  if(!paused) resumeAIIfFree();
+}
+// Freezes (on=true) or releases (on=false) the AI chain for an overlay, without touching the ⏸️
+// state: if the player had paused by hand, releasing the hold leaves it paused.
+function holdAI(on){
+  aiHold = Math.max(0, aiHold + (on ? 1 : -1));
+  if(!on) resumeAIIfFree();
 }
 
 function newMap(cols, rows, name){
@@ -3463,7 +3523,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
   if(seed==null) seed = newRandomSeed();
   game = { rng: seedRng(seed) }; // live from here on, so the shuffles below already use it
   spectatorMode = !!spectator;
-  aiPaused = false; pendingAIResume = null;
+  aiPaused = false; aiHold = 0; pendingAIResume = null;
   host.onGameInit(); // the browser resets zoom and leftover fades/tweens from the last game
   const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
@@ -4280,11 +4340,37 @@ function updateCommonEnemy(){
     const pl = game.players[ce.id];
     if(pl && pl.alive && evaluatePlayerPower(ce.id) >= ce.startPower*RUNTIME_CONFIG.allianceReleaseFraction) return ce.id;
     game.commonEnemy = null;
+    announceCommonEnemy('released', ce.id, pl && pl.alive ? 'weakened' : 'eliminated', ce.startPower);
   }
   const leaderId = findAllianceLeader();
   if(leaderId==null) return null;
   game.commonEnemy = { id:leaderId, startPower:evaluatePlayerPower(leaderId) };
+  announceCommonEnemy('marked', leaderId);
   return leaderId;
+}
+
+// Tells the host (the UI shows an overlay, the server records an event) that the common enemy was
+// just marked or released, with every living player's power at that moment and the numbers the
+// leader gates compare. Only fires on a real change, never changes the game, and uses no randomness.
+function announceCommonEnemy(kind, pid, reason, startPower){
+  if(!game || game.over) return;
+  const subject = game.players[pid];
+  if(!subject) return;
+  const powers = game.players.filter(pl=> pl.alive || pl.id===pid)
+    .map(pl=>({id:pl.id, name:pl.name, color:pl.color, alive:pl.alive, power: pl.alive ? Math.round(evaluatePlayerPower(pl.id)) : 0}))
+    .sort((a,b)=> b.power-a.power);
+  const others = powers.filter(x=> x.id!==pid && x.alive);
+  const me = powers.find(x=> x.id===pid);
+  host.onCommonEnemyChange({
+    kind, pid, name:subject.name, color:subject.color, reason: reason||null,
+    startPower: startPower!=null ? Math.round(startPower) : null,
+    power: me ? me.power : 0,
+    restTotal: others.reduce((s,x)=> s+x.power, 0),
+    second: others.length ? Math.max(...others.map(x=>x.power)) : 0,
+    vsField: RUNTIME_CONFIG.allianceLeaderVsField, margin: RUNTIME_CONFIG.allianceLeaderMargin,
+    releaseFraction: RUNTIME_CONFIG.allianceReleaseFraction,
+    powers,
+  });
 }
 
 function difficultyProfile(diff, personality){
@@ -7004,6 +7090,80 @@ function showTurnIntro(player){
   }, TURN_INTRO_SHOW_MS);
 }
 
+/* ---------------- Common-enemy overlay ----------------
+   When the alliance marks a player as the common enemy or lets the mark go (updateCommonEnemy() in
+   05-ai.js -> host.onCommonEnemyChange), this shows who, why, and every player's power. The game is
+   frozen while it is up (holdAI(): AI turns wait, nothing else is touched, and a ⏸️ the player set
+   by hand stays as it was), it closes itself after ENEMY_OVERLAY_MS or on a tap, and several events
+   in a row play one after the other. `onDone` runs after it closes (the online event player uses it
+   to carry on); opts.hold=false skips the freeze (online: the events themselves are what waits). */
+const ENEMY_OVERLAY_MS = 4000;
+let enemyOverlayQueue = [], enemyOverlayActive = null, enemyOverlayTimer = null;
+function fmtRatio(x){ return (Math.round(x*100)/100).toString(); }
+function renderEnemyOverlay(info){
+  const overlay = $('enemyOverlay');
+  overlay.style.setProperty('--enemy-color', info.color);
+  overlay.style.setProperty('--enemy-ms', ENEMY_OVERLAY_MS+'ms');
+  const marked = info.kind==='marked';
+  $('enemyTitle').textContent = marked ? '🎯 '+info.name+' trở thành kẻ thù chung' : '✅ '+info.name+' không còn là kẻ thù chung';
+  let sub;
+  if(marked){
+    const r1 = info.restTotal>0 ? info.power/info.restTotal : Infinity, r2 = info.second>0 ? info.power/info.second : Infinity;
+    sub = `Sức mạnh ${info.power}: ×${fmtRatio(r1)} tổng người khác (cần ≥ ×${fmtRatio(info.vsField)}), ×${fmtRatio(r2)} người thứ 2 (cần ≥ ×${fmtRatio(info.margin)})`;
+  } else if(info.reason==='eliminated'){
+    sub = 'Đã bị loại khỏi ván';
+  } else {
+    sub = `Sức mạnh còn ${info.power}, dưới ×${fmtRatio(info.releaseFraction)} lúc bị gán nhãn (${info.startPower})`;
+  }
+  $('enemySub').textContent = sub;
+  const box = $('enemyPowers'); box.innerHTML = '';
+  const max = Math.max(1, ...info.powers.map(x=>x.power));
+  info.powers.forEach(x=>{
+    const row = el('div','enemy-row'+(x.id===info.pid?' subject':'')+(x.alive?'':' dead'));
+    const bar = el('span','bar'); bar.style.width = Math.round(x.power/max*100)+'%'; bar.style.background = x.color;
+    const dot = el('span','dot'); dot.style.background = x.color;
+    const nm = el('span','nm'); nm.textContent = x.name + (x.alive ? '' : ' (bị loại)');
+    const pw = el('span','pw'); pw.textContent = x.power+' ⚡';
+    row.append(bar, dot, nm, pw);
+    box.appendChild(row);
+  });
+}
+function playNextEnemyOverlay(){
+  const overlay = $('enemyOverlay'), item = enemyOverlayQueue.shift();
+  if(!item || !overlay){ enemyOverlayActive = null; return; }
+  enemyOverlayActive = item;
+  if(item.hold) holdAI(true);
+  renderEnemyOverlay(item.info);
+  overlay.hidden = false;
+  overlay.classList.remove('show'); void overlay.offsetWidth; overlay.classList.add('show');
+  const bar = overlay.querySelector('#enemyBar i');
+  bar.classList.remove('run'); void bar.offsetWidth; bar.classList.add('run');
+  clearTimeout(enemyOverlayTimer);
+  enemyOverlayTimer = setTimeout(closeEnemyOverlay, ENEMY_OVERLAY_MS);
+}
+function closeEnemyOverlay(){
+  const item = enemyOverlayActive;
+  if(!item) return;
+  clearTimeout(enemyOverlayTimer);
+  enemyOverlayActive = null;
+  if(enemyOverlayQueue.length) playNextEnemyOverlay(); // takes its own hold first, so the AI never slips through in between
+  else { const o = $('enemyOverlay'); o.classList.remove('show'); o.hidden = true; }
+  if(item.hold) holdAI(false);
+  if(item.onDone) item.onDone();
+}
+function showCommonEnemyOverlay(info, onDone, opts){
+  if(!$('enemyOverlay')){ if(onDone) onDone(); return; }
+  enemyOverlayQueue.push({info, onDone, hold: !(opts && opts.hold===false)});
+  if(!enemyOverlayActive) playNextEnemyOverlay();
+}
+// A new game / a loaded save: drop whatever was showing. (The freeze itself is reset with aiHold.)
+function resetCommonEnemyOverlay(){
+  clearTimeout(enemyOverlayTimer);
+  enemyOverlayQueue = []; enemyOverlayActive = null;
+  const o = document.getElementById('enemyOverlay');
+  if(o){ o.classList.remove('show'); o.hidden = true; }
+}
+
 function positionFloatingAttackButtons(){
   const wrap = $('floatingAttackButtons');
   if(wrap.hidden) return;
@@ -7748,7 +7908,8 @@ function importGameJSON(obj){
   mapData = mapFromPlainObject(obj.mapData);
   game = obj.game;
   spectatorMode = !!obj.spectatorMode;
-  aiPaused = false; pendingAIResume = null;
+  aiPaused = false; aiHold = 0; pendingAIResume = null;
+  if(typeof resetCommonEnemyOverlay==='function') resetCommonEnemyOverlay();
   gameZoom = 1;
   resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');
@@ -7860,7 +8021,8 @@ function renderMapGallery(){
 Object.assign(host, {
   renderGame, renderCombatLog, setActionHint, showDice, showTurnIntro, openCardsModal,
   showGameOver, startAttackAnim,
-  onGameInit(){ leaveOnlineGame(); gameZoom = 1; playerListExpanded = false; resetRenderAnimState(); },
+  onCommonEnemyChange(info){ showCommonEnemyOverlay(info); },
+  onGameInit(){ leaveOnlineGame(); gameZoom = 1; playerListExpanded = false; resetRenderAnimState(); resetCommonEnemyOverlay(); },
 });
 
 // A clicked <button> keeps keyboard focus afterward (standard browser behavior) — left alone,
@@ -8476,6 +8638,9 @@ $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });
 
+// Tap anywhere on the common-enemy overlay to close it before its 4 seconds are up.
+$('enemyOverlay').addEventListener('click', closeEnemyOverlay);
+
 // Pause/resume the current AI's turn (disabled during a human turn — see renderTopbar()).
 $('btnPauseAI').addEventListener('click', ()=>{
   setAIPaused(!aiPaused);
@@ -8789,6 +8954,7 @@ function playOnlineEvents(events, onSync, onDone){
         case 'hint': setActionHint(ev.msg); break;
         case 'dice': showDice(ev.ad, ev.dd, ev.results); break;
         case 'turn': showTurnIntro(game.players[ev.pid]); break;
+        case 'enemy': reachedSync(); showCommonEnemyOverlay(ev.info, next, {hold:false}); return;
         case 'cards': openCardsModal(ev.forced); break;
         case 'over': showGameOver(ev.winnerId!=null ? game.players[ev.winnerId] : undefined); break;
         case 'anim': reachedSync(); startAttackAnim(ev.info, next); renderGame(); return;
@@ -8805,7 +8971,7 @@ function playOnlineEvents(events, onSync, onDone){
 function showOnlineGame(id, version, map, state, log){
   mapData = mapFromPlainObject(map);
   spectatorMode = false;
-  aiPaused = false; pendingAIResume = null;
+  aiPaused = false; aiHold = 0; pendingAIResume = null;
   host.onGameInit();
   game = state;
   game.log = log || [];

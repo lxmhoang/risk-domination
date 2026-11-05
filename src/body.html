@@ -223,7 +223,7 @@
   <div class="cfg-wrap">
     <div class="cfg-head">
       <h2>⚙️ Cấu hình</h2>
-      <span class="cfg-note">Tự lưu trong trình duyệt này. Ô viền vàng = khác mặc định. Rê chuột vào ô để xem giải thích. Cấu hình AI/cân bằng (độ khó, tính cách, thẻ bài, tăng viện…) đã dời sang <code>/admin</code> cho ván online — ván offline luôn dùng giá trị mặc định.</span>
+      <span class="cfg-note">Tự lưu trong trình duyệt này. Ô viền vàng = khác mặc định. Rê chuột vào ô để xem giải thích. Cấu hình AI/cân bằng (độ khó, tính cách, thẻ bài, tăng viện…) đã dời sang <code>/admin</code> cho ván online — ván offline dùng giá trị mặc định, trừ thẻ 🤝 Liên minh bên dưới.</span>
     </div>
     <div class="cfg-grid">
       <section class="cfg-card">
@@ -236,6 +236,19 @@
         </div>
         <div class="cfg-line"><label class="switch-row"><input type="checkbox" data-cfg="manualInitialPlacement"> Đặt quân thủ công lúc đầu ván</label></div>
         <div class="cfg-line">Độ trễ khi xem AI đấu: <input type="number" data-cfg="spectatorModeDelayMs" step="50" min="0" max="10000" title="Mili-giây giữa mỗi hành động khi xem AI đấu với nhau"> ms</div>
+      </section>
+      <section class="cfg-card">
+        <h3>🤝 Liên minh <span class="cfg-sub">ván offline — ván online chỉnh ở /admin</span></h3>
+        <div class="cfg-line">Thành leader khi sức mạnh ≥ <input type="number" data-cfg="allianceLeaderVsField" step="0.05" min="0" max="5" title="Sức mạnh của người dẫn đầu phải ≥ số này × tổng sức mạnh của tất cả người còn lại"> × tổng những người còn lại</div>
+        <div class="cfg-line">… và ≥ <input type="number" data-cfg="allianceLeaderMargin" step="0.05" min="1" max="5" title="… đồng thời phải ≥ số này × sức mạnh của người đứng thứ 2"> × người đứng thứ 2</div>
+        <div class="cfg-line">Hết bị nhắm khi sức mạnh &lt; <input type="number" data-cfg="allianceReleaseFraction" step="0.01" min="0.05" max="1" title="Kẻ thù chung được gỡ nhãn khi sức mạnh tụt dưới số này × sức mạnh lúc bị gán nhãn"> × lúc bị gán nhãn</div>
+        <div class="cfg-line">Mượn đường: tối đa <input type="number" data-cfg="allianceBorrowHops" step="1" min="0" max="99" title="Khi có kẻ thù chung, đánh được ô của họ qua chuỗi ô của người chơi khác, tối đa chừng này ô trung gian. 0 = tắt."> ô trung gian <span class="cfg-sub">(0 = tắt)</span></div>
+        <div class="cfg-line cfg-sub">Chỉ áp dụng cho ván tạo sau khi đổi. Cần bật “Liên minh” khi tạo ván.</div>
+      </section>
+      <section class="cfg-card">
+        <h3>🐞 Debug</h3>
+        <div class="cfg-line"><label class="switch-row"><input type="checkbox" data-cfg="debugMode"> Bật chế độ debug</label></div>
+        <div class="cfg-line cfg-sub">Mở một số tính năng thử nghiệm / chẩn đoán (sẽ bổ sung dần).</div>
       </section>
     </div>
     <div class="cfg-foot">
@@ -273,6 +286,19 @@
     <div id="turnIntroCard">
       <div id="turnIntroLabel">Lượt của</div>
       <div id="turnIntroName"></div>
+    </div>
+  </div>
+
+  <!-- Shown when the alliance marks a player as the common enemy ("kẻ thù chung") or lets the mark
+       go: that player's name, why, and every player's power. Freezes the game (AI turns wait) and
+       closes itself after 4 seconds, or on a tap — see showCommonEnemyOverlay() in
+       06-render-game.js. -->
+  <div id="enemyOverlay" hidden>
+    <div id="enemyCard" role="dialog" aria-live="polite">
+      <div id="enemyTitle"></div>
+      <div id="enemySub"></div>
+      <div id="enemyPowers"></div>
+      <div id="enemyBar"><i></i></div>
     </div>
   </div>
 

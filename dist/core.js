@@ -20,6 +20,7 @@ const host = {
   // plays the attack animation, then calls onDone — with nothing to show, straight away
   startAttackAnim(info, onDone){ if(onDone) onDone(); },
   onGameInit(){},      // a new game object was just created (reset view state)
+  onCommonEnemyChange(){}, // the alliance marked / released its common enemy; gets {kind, pid, powers, …}, see announceCommonEnemy() in 05-ai.js
   beforeEndTurn(){},   // called with the player whose turn is ending, before anything changes
   schedule: null,      // (fn, delayMs) — replaces the default pausable setTimeout in aiSchedule()
   random: null,        // () => float in [0,1) — replaces the seeded generator (see random())
@@ -176,20 +177,30 @@ function aiDelay(base){ return spectatorMode ? RUNTIME_CONFIG.spectatorModeDelay
    timer fires, the step is stashed (not run) instead, and setAIPaused(false) runs it
    immediately — so resuming continues the exact same chain rather than restarting it. */
 let aiPaused = false;
+let aiHold = 0; // > 0 while an overlay (e.g. the common-enemy one) freezes the game; independent of ⏸️
 let pendingAIResume = null;
+function aiBlocked(){ return aiPaused || aiHold>0; }
 function aiSchedule(fn, delay){
   if(host.schedule){ host.schedule(fn, delay); return; } // e.g. the server: no real waiting
   setTimeout(()=>{
-    if(aiPaused){ pendingAIResume = fn; return; }
+    if(aiBlocked()){ pendingAIResume = fn; return; }
     fn();
   }, delay);
 }
+function resumeAIIfFree(){
+  if(aiBlocked() || !pendingAIResume) return;
+  const fn = pendingAIResume; pendingAIResume = null;
+  if(game && !game.over) fn();
+}
 function setAIPaused(paused){
   aiPaused = paused;
-  if(!paused && pendingAIResume){
-    const fn = pendingAIResume; pendingAIResume = null;
-    if(game && !game.over) fn();
-  }
+  if(!paused) resumeAIIfFree();
+}
+// Freezes (on=true) or releases (on=false) the AI chain for an overlay, without touching the ⏸️
+// state: if the player had paused by hand, releasing the hold leaves it paused.
+function holdAI(on){
+  aiHold = Math.max(0, aiHold + (on ? 1 : -1));
+  if(!on) resumeAIIfFree();
 }
 
 function newMap(cols, rows, name){
@@ -1902,7 +1913,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
   if(seed==null) seed = newRandomSeed();
   game = { rng: seedRng(seed) }; // live from here on, so the shuffles below already use it
   spectatorMode = !!spectator;
-  aiPaused = false; pendingAIResume = null;
+  aiPaused = false; aiHold = 0; pendingAIResume = null;
   host.onGameInit(); // the browser resets zoom and leftover fades/tweens from the last game
   const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike
@@ -2719,11 +2730,37 @@ function updateCommonEnemy(){
     const pl = game.players[ce.id];
     if(pl && pl.alive && evaluatePlayerPower(ce.id) >= ce.startPower*RUNTIME_CONFIG.allianceReleaseFraction) return ce.id;
     game.commonEnemy = null;
+    announceCommonEnemy('released', ce.id, pl && pl.alive ? 'weakened' : 'eliminated', ce.startPower);
   }
   const leaderId = findAllianceLeader();
   if(leaderId==null) return null;
   game.commonEnemy = { id:leaderId, startPower:evaluatePlayerPower(leaderId) };
+  announceCommonEnemy('marked', leaderId);
   return leaderId;
+}
+
+// Tells the host (the UI shows an overlay, the server records an event) that the common enemy was
+// just marked or released, with every living player's power at that moment and the numbers the
+// leader gates compare. Only fires on a real change, never changes the game, and uses no randomness.
+function announceCommonEnemy(kind, pid, reason, startPower){
+  if(!game || game.over) return;
+  const subject = game.players[pid];
+  if(!subject) return;
+  const powers = game.players.filter(pl=> pl.alive || pl.id===pid)
+    .map(pl=>({id:pl.id, name:pl.name, color:pl.color, alive:pl.alive, power: pl.alive ? Math.round(evaluatePlayerPower(pl.id)) : 0}))
+    .sort((a,b)=> b.power-a.power);
+  const others = powers.filter(x=> x.id!==pid && x.alive);
+  const me = powers.find(x=> x.id===pid);
+  host.onCommonEnemyChange({
+    kind, pid, name:subject.name, color:subject.color, reason: reason||null,
+    startPower: startPower!=null ? Math.round(startPower) : null,
+    power: me ? me.power : 0,
+    restTotal: others.reduce((s,x)=> s+x.power, 0),
+    second: others.length ? Math.max(...others.map(x=>x.power)) : 0,
+    vsField: RUNTIME_CONFIG.allianceLeaderVsField, margin: RUNTIME_CONFIG.allianceLeaderMargin,
+    releaseFraction: RUNTIME_CONFIG.allianceReleaseFraction,
+    powers,
+  });
 }
 
 function difficultyProfile(diff, personality){
@@ -3890,8 +3927,11 @@ return {
   defaultTerrName,
   defaultContName,
   aiDelay,
+  aiBlocked,
   aiSchedule,
+  resumeAIIfFree,
   setAIPaused,
+  holdAI,
   newMap,
   mapToPlainObject,
   rleEncode,
@@ -4005,6 +4045,7 @@ return {
   captureRatioThreshold,
   findAllianceLeader,
   updateCommonEnemy,
+  announceCommonEnemy,
   difficultyProfile,
   difficultyThreshold,
   evaluatePlayerPower,
@@ -4068,6 +4109,7 @@ return {
   get mapData(){ return mapData; }, set mapData(v){ mapData = v; },
   get spectatorMode(){ return spectatorMode; }, set spectatorMode(v){ spectatorMode = v; },
   get aiPaused(){ return aiPaused; }, set aiPaused(v){ aiPaused = v; },
+  get aiHold(){ return aiHold; }, set aiHold(v){ aiHold = v; },
   get pendingAIResume(){ return pendingAIResume; }, set pendingAIResume(v){ pendingAIResume = v; },
   get game(){ return game; }, set game(v){ game = v; },
   get showContinentsGame(){ return showContinentsGame; }, set showContinentsGame(v){ showContinentsGame = v; },

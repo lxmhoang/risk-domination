@@ -1570,6 +1570,80 @@ function showTurnIntro(player){
   }, TURN_INTRO_SHOW_MS);
 }
 
+/* ---------------- Common-enemy overlay ----------------
+   When the alliance marks a player as the common enemy or lets the mark go (updateCommonEnemy() in
+   05-ai.js -> host.onCommonEnemyChange), this shows who, why, and every player's power. The game is
+   frozen while it is up (holdAI(): AI turns wait, nothing else is touched, and a ⏸️ the player set
+   by hand stays as it was), it closes itself after ENEMY_OVERLAY_MS or on a tap, and several events
+   in a row play one after the other. `onDone` runs after it closes (the online event player uses it
+   to carry on); opts.hold=false skips the freeze (online: the events themselves are what waits). */
+const ENEMY_OVERLAY_MS = 4000;
+let enemyOverlayQueue = [], enemyOverlayActive = null, enemyOverlayTimer = null;
+function fmtRatio(x){ return (Math.round(x*100)/100).toString(); }
+function renderEnemyOverlay(info){
+  const overlay = $('enemyOverlay');
+  overlay.style.setProperty('--enemy-color', info.color);
+  overlay.style.setProperty('--enemy-ms', ENEMY_OVERLAY_MS+'ms');
+  const marked = info.kind==='marked';
+  $('enemyTitle').textContent = marked ? '🎯 '+info.name+' trở thành kẻ thù chung' : '✅ '+info.name+' không còn là kẻ thù chung';
+  let sub;
+  if(marked){
+    const r1 = info.restTotal>0 ? info.power/info.restTotal : Infinity, r2 = info.second>0 ? info.power/info.second : Infinity;
+    sub = `Sức mạnh ${info.power}: ×${fmtRatio(r1)} tổng người khác (cần ≥ ×${fmtRatio(info.vsField)}), ×${fmtRatio(r2)} người thứ 2 (cần ≥ ×${fmtRatio(info.margin)})`;
+  } else if(info.reason==='eliminated'){
+    sub = 'Đã bị loại khỏi ván';
+  } else {
+    sub = `Sức mạnh còn ${info.power}, dưới ×${fmtRatio(info.releaseFraction)} lúc bị gán nhãn (${info.startPower})`;
+  }
+  $('enemySub').textContent = sub;
+  const box = $('enemyPowers'); box.innerHTML = '';
+  const max = Math.max(1, ...info.powers.map(x=>x.power));
+  info.powers.forEach(x=>{
+    const row = el('div','enemy-row'+(x.id===info.pid?' subject':'')+(x.alive?'':' dead'));
+    const bar = el('span','bar'); bar.style.width = Math.round(x.power/max*100)+'%'; bar.style.background = x.color;
+    const dot = el('span','dot'); dot.style.background = x.color;
+    const nm = el('span','nm'); nm.textContent = x.name + (x.alive ? '' : ' (bị loại)');
+    const pw = el('span','pw'); pw.textContent = x.power+' ⚡';
+    row.append(bar, dot, nm, pw);
+    box.appendChild(row);
+  });
+}
+function playNextEnemyOverlay(){
+  const overlay = $('enemyOverlay'), item = enemyOverlayQueue.shift();
+  if(!item || !overlay){ enemyOverlayActive = null; return; }
+  enemyOverlayActive = item;
+  if(item.hold) holdAI(true);
+  renderEnemyOverlay(item.info);
+  overlay.hidden = false;
+  overlay.classList.remove('show'); void overlay.offsetWidth; overlay.classList.add('show');
+  const bar = overlay.querySelector('#enemyBar i');
+  bar.classList.remove('run'); void bar.offsetWidth; bar.classList.add('run');
+  clearTimeout(enemyOverlayTimer);
+  enemyOverlayTimer = setTimeout(closeEnemyOverlay, ENEMY_OVERLAY_MS);
+}
+function closeEnemyOverlay(){
+  const item = enemyOverlayActive;
+  if(!item) return;
+  clearTimeout(enemyOverlayTimer);
+  enemyOverlayActive = null;
+  if(enemyOverlayQueue.length) playNextEnemyOverlay(); // takes its own hold first, so the AI never slips through in between
+  else { const o = $('enemyOverlay'); o.classList.remove('show'); o.hidden = true; }
+  if(item.hold) holdAI(false);
+  if(item.onDone) item.onDone();
+}
+function showCommonEnemyOverlay(info, onDone, opts){
+  if(!$('enemyOverlay')){ if(onDone) onDone(); return; }
+  enemyOverlayQueue.push({info, onDone, hold: !(opts && opts.hold===false)});
+  if(!enemyOverlayActive) playNextEnemyOverlay();
+}
+// A new game / a loaded save: drop whatever was showing. (The freeze itself is reset with aiHold.)
+function resetCommonEnemyOverlay(){
+  clearTimeout(enemyOverlayTimer);
+  enemyOverlayQueue = []; enemyOverlayActive = null;
+  const o = document.getElementById('enemyOverlay');
+  if(o){ o.classList.remove('show'); o.hidden = true; }
+}
+
 function positionFloatingAttackButtons(){
   const wrap = $('floatingAttackButtons');
   if(wrap.hidden) return;

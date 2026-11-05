@@ -79,6 +79,7 @@ function playOnlineEvents(events, onSync, onDone){
         case 'hint': setActionHint(ev.msg); break;
         case 'dice': showDice(ev.ad, ev.dd, ev.results); break;
         case 'turn': showTurnIntro(game.players[ev.pid]); break;
+        case 'enemy': reachedSync(); showCommonEnemyOverlay(ev.info, next, {hold:false}); return;
         case 'cards': openCardsModal(ev.forced); break;
         case 'over': showGameOver(ev.winnerId!=null ? game.players[ev.winnerId] : undefined); break;
         case 'anim': reachedSync(); startAttackAnim(ev.info, next); renderGame(); return;
@@ -95,7 +96,7 @@ function playOnlineEvents(events, onSync, onDone){
 function showOnlineGame(id, version, map, state, log){
   mapData = mapFromPlainObject(map);
   spectatorMode = false;
-  aiPaused = false; pendingAIResume = null;
+  aiPaused = false; aiHold = 0; pendingAIResume = null;
   host.onGameInit();
   game = state;
   game.log = log || [];

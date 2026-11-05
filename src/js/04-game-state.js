@@ -52,7 +52,7 @@ function initGame(playerConfigs, difficulty, spectator, allianceEnabled, tradeRu
   if(seed==null) seed = newRandomSeed();
   game = { rng: seedRng(seed) }; // live from here on, so the shuffles below already use it
   spectatorMode = !!spectator;
-  aiPaused = false; pendingAIResume = null;
+  aiPaused = false; aiHold = 0; pendingAIResume = null;
   host.onGameInit(); // the browser resets zoom and leftover fades/tweens from the last game
   const startArmies = standardStartingArmies(playerConfigs.length);
   // totalReinforced/totalKills are cumulative since game start (shown in the topbar), unlike

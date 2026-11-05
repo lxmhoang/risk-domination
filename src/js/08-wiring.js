@@ -6,7 +6,8 @@
 Object.assign(host, {
   renderGame, renderCombatLog, setActionHint, showDice, showTurnIntro, openCardsModal,
   showGameOver, startAttackAnim,
-  onGameInit(){ leaveOnlineGame(); gameZoom = 1; playerListExpanded = false; resetRenderAnimState(); },
+  onCommonEnemyChange(info){ showCommonEnemyOverlay(info); },
+  onGameInit(){ leaveOnlineGame(); gameZoom = 1; playerListExpanded = false; resetRenderAnimState(); resetCommonEnemyOverlay(); },
 });
 
 // A clicked <button> keeps keyboard focus afterward (standard browser behavior) — left alone,
@@ -621,6 +622,9 @@ $('gameCanvasWrap').addEventListener('pointermove', (e)=>{
 $('btnQuitGame').addEventListener('click', ()=>{
   if(confirm('Thoát ván chơi hiện tại về menu chính?')) showScreen('screen-menu');
 });
+
+// Tap anywhere on the common-enemy overlay to close it before its 4 seconds are up.
+$('enemyOverlay').addEventListener('click', closeEnemyOverlay);
 
 // Pause/resume the current AI's turn (disabled during a human turn — see renderTopbar()).
 $('btnPauseAI').addEventListener('click', ()=>{
