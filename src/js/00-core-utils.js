@@ -15,6 +15,7 @@ const host = {
   // plays the attack animation, then calls onDone — with nothing to show, straight away
   startAttackAnim(info, onDone){ if(onDone) onDone(); },
   onGameInit(){},      // a new game object was just created (reset view state)
+  onCommonEnemyChange(){}, // the alliance marked / released its common enemy; gets {kind, pid, powers, …}, see announceCommonEnemy() in 05-ai.js
   beforeEndTurn(){},   // called with the player whose turn is ending, before anything changes
   schedule: null,      // (fn, delayMs) — replaces the default pausable setTimeout in aiSchedule()
   random: null,        // () => float in [0,1) — replaces the seeded generator (see random())

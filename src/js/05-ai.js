@@ -202,11 +202,37 @@ function updateCommonEnemy(){
     const pl = game.players[ce.id];
     if(pl && pl.alive && evaluatePlayerPower(ce.id) >= ce.startPower*RUNTIME_CONFIG.allianceReleaseFraction) return ce.id;
     game.commonEnemy = null;
+    announceCommonEnemy('released', ce.id, pl && pl.alive ? 'weakened' : 'eliminated', ce.startPower);
   }
   const leaderId = findAllianceLeader();
   if(leaderId==null) return null;
   game.commonEnemy = { id:leaderId, startPower:evaluatePlayerPower(leaderId) };
+  announceCommonEnemy('marked', leaderId);
   return leaderId;
+}
+
+// Tells the host (the UI shows an overlay, the server records an event) that the common enemy was
+// just marked or released, with every living player's power at that moment and the numbers the
+// leader gates compare. Only fires on a real change, never changes the game, and uses no randomness.
+function announceCommonEnemy(kind, pid, reason, startPower){
+  if(!game || game.over) return;
+  const subject = game.players[pid];
+  if(!subject) return;
+  const powers = game.players.filter(pl=> pl.alive || pl.id===pid)
+    .map(pl=>({id:pl.id, name:pl.name, color:pl.color, alive:pl.alive, power: pl.alive ? Math.round(evaluatePlayerPower(pl.id)) : 0}))
+    .sort((a,b)=> b.power-a.power);
+  const others = powers.filter(x=> x.id!==pid && x.alive);
+  const me = powers.find(x=> x.id===pid);
+  host.onCommonEnemyChange({
+    kind, pid, name:subject.name, color:subject.color, reason: reason||null,
+    startPower: startPower!=null ? Math.round(startPower) : null,
+    power: me ? me.power : 0,
+    restTotal: others.reduce((s,x)=> s+x.power, 0),
+    second: others.length ? Math.max(...others.map(x=>x.power)) : 0,
+    vsField: RUNTIME_CONFIG.allianceLeaderVsField, margin: RUNTIME_CONFIG.allianceLeaderMargin,
+    releaseFraction: RUNTIME_CONFIG.allianceReleaseFraction,
+    powers,
+  });
 }
 
 function difficultyProfile(diff, personality){

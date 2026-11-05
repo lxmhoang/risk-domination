@@ -173,7 +173,8 @@ function importGameJSON(obj){
   mapData = mapFromPlainObject(obj.mapData);
   game = obj.game;
   spectatorMode = !!obj.spectatorMode;
-  aiPaused = false; pendingAIResume = null;
+  aiPaused = false; aiHold = 0; pendingAIResume = null;
+  if(typeof resetCommonEnemyOverlay==='function') resetCommonEnemyOverlay();
   gameZoom = 1;
   resetRenderAnimState(); // no leftover fades/tweens from whatever was on screen before loading
   showScreen('screen-game');

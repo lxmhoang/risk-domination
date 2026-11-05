@@ -14,20 +14,30 @@ function aiDelay(base){ return spectatorMode ? RUNTIME_CONFIG.spectatorModeDelay
    timer fires, the step is stashed (not run) instead, and setAIPaused(false) runs it
    immediately — so resuming continues the exact same chain rather than restarting it. */
 let aiPaused = false;
+let aiHold = 0; // > 0 while an overlay (e.g. the common-enemy one) freezes the game; independent of ⏸️
 let pendingAIResume = null;
+function aiBlocked(){ return aiPaused || aiHold>0; }
 function aiSchedule(fn, delay){
   if(host.schedule){ host.schedule(fn, delay); return; } // e.g. the server: no real waiting
   setTimeout(()=>{
-    if(aiPaused){ pendingAIResume = fn; return; }
+    if(aiBlocked()){ pendingAIResume = fn; return; }
     fn();
   }, delay);
 }
+function resumeAIIfFree(){
+  if(aiBlocked() || !pendingAIResume) return;
+  const fn = pendingAIResume; pendingAIResume = null;
+  if(game && !game.over) fn();
+}
 function setAIPaused(paused){
   aiPaused = paused;
-  if(!paused && pendingAIResume){
-    const fn = pendingAIResume; pendingAIResume = null;
-    if(game && !game.over) fn();
-  }
+  if(!paused) resumeAIIfFree();
+}
+// Freezes (on=true) or releases (on=false) the AI chain for an overlay, without touching the ⏸️
+// state: if the player had paused by hand, releasing the hold leaves it paused.
+function holdAI(on){
+  aiHold = Math.max(0, aiHold + (on ? 1 : -1));
+  if(!on) resumeAIIfFree();
 }
 
 function newMap(cols, rows, name){

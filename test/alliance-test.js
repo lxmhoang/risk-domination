@@ -11,7 +11,8 @@
 const fs = require('fs'), path = require('path');
 const createCore = require(path.join(__dirname, '..', 'dist', 'core.js'));
 const CONFIG = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'config.json'), 'utf8'));
-const core = createCore(CONFIG, {});
+const announced = []; // what host.onCommonEnemyChange() was told
+const core = createCore(CONFIG, { onCommonEnemyChange(info){ announced.push(info); } });
 // 4 players; each owns 6 territories of a 24-territory line-up (adjacency irrelevant here)
 const map = core.newMap(24, 1, 't');
 for(let i=1;i<=24;i++) map.territories[i] = {id:i, name:'T'+i, continentId:1, color:'#fff', cells:[], neighbors:new Set(), centroid:{x:i,y:0}};
@@ -42,4 +43,10 @@ check(core.evaluatePlayerPower(0) < start*CONFIG.allianceReleaseFraction, 'P0 fe
 check(core.updateCommonEnemy()===1 && g.commonEnemy.id===1, 'mark released; the leader P1 becomes the new common enemy');
 g.players[1].alive = false;
 check(core.updateCommonEnemy()!==1, 'an eliminated mark is dropped');
+// the host hears about every mark / release, once each, with the players' powers
+const kinds = announced.map(a=> a.kind+':'+a.pid);
+check(JSON.stringify(kinds)==='["marked:0","released:0","marked:1","released:1"]', 'host told: P0 marked, P0 released, P1 marked, P1 released (got '+kinds.join(',')+')');
+const m0 = announced[0];
+check(m0.powers.length===4 && m0.powers[0].id===0 && m0.restTotal>0 && m0.power>=m0.restTotal*CONFIG.allianceLeaderVsField, 'the mark event carries every player\'s power and numbers that clear the gate');
+check(announced[1].reason==='weakened' && announced[3].reason==='eliminated', 'release reasons: weakened, then eliminated');
 process.exit(bad?1:0);
