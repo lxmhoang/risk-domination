@@ -1487,10 +1487,9 @@ function humanAttack(allOut){
       fromCountBefore:r.fromCountBefore, toCountBefore:r.toCountBefore,
       fromCountAfter:r.fromCountAfter, toCountAfter:r.toCountAfter, attackerColor, defenderColor,
     }, ()=>{
-      // A kill that pushes the hand to 5+ cards takes priority over the optional "move extra
-      // troops in" dialog below — the guaranteed minimum already moved, so skipping the optional
-      // split is a fine tradeoff for forcing the trade down immediately instead of waiting for
-      // the player to eventually click "Kết thúc tấn công".
+      // A kill that pushes the hand to 5+ cards: with troops still to move into the captured
+      // territory, that dialog comes first and the forced trade follows once it is confirmed (see
+      // showCaptureMoveModal()); with nothing to move (mustTrade) the trade opens right away.
       if(r.mustTrade && !game.over){ showForcedCardTrade(); return; }
       if(r.extraMax>0) showCaptureMoveModal(fromId, toId, r.moved, r.moved+r.extraMax);
     });

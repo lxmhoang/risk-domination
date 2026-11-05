@@ -163,4 +163,50 @@ for(const seed of [1, 2, 3]){
   refuse(core, 0, {type:'endTurn'}, 'game_over');
   checks++;
 }
+// ---- eliminating a player hands over their cards: troops are placed first, THEN the forced trade ----
+{
+  const core = newGame(7);
+  const g = ()=> core.game;
+  const front = mine(core).find(id=> enemyNeighbors(core, id).length);
+  const target = enemyNeighbors(core, front)[0];
+  const defId = g().owner[target];
+  const third = g().players.find(pl=> pl.alive && pl.id!==0 && pl.id!==defId).id;
+  // the defender's other territories go to a third player, so `target` is their last one
+  core.ownedTerritories(defId).filter(id=> id!==target).forEach(id=>{ g().owner[id] = third; });
+  const reset = frontArmies=>{
+    g().phase = 'attack'; g().over = false; g().pendingCapture = null;
+    g().owner[target] = defId; g().armies[target] = 1; g().armies[front] = frontArmies;
+    g().players[defId].alive = true; g().players[defId].cards = ['cavalry','cavalry'];
+    g().players[0].cards = ['infantry','artillery','cavalry','infantry'];
+  };
+
+  // armies to spare: the capture's troop move comes first, the trade only after it
+  reset(30);
+  const a = accept(core, {type:'attack', from:front, to:target, allOut:true});
+  assert.ok(a.captured && !g().players[defId].alive, 'the defender is eliminated');
+  assert.strictEqual(g().players[0].cards.length, 6, 'their cards came over');
+  assert.ok(a.extraMax>0 && !a.mustTrade && a.tradeAfterMove, 'troops to move: no trade yet');
+  assert.strictEqual(g().phase, 'attack', 'still in the attack phase');
+  assert.ok(g().pendingCapture, 'the capture is still open for moving troops');
+  assert.ok(g().armies[front]>=20, 'the extra troops have not been auto-moved');
+  const m = accept(core, {type:'moveAfterCapture', count:a.extraMax});
+  assert.ok(m.mustTrade, 'the trade starts once the troops are placed');
+  assert.strictEqual(g().phase, 'reinforce', 'forced-trade mini-phase');
+  assert.strictEqual(g().pendingCapture, null);
+  assert.strictEqual(g().armies[front], 1);
+  refuse(core, 0, {type:'place', terrId:target}, 'must_trade_first');
+  accept(core, {type:'trade', cards:[0,1,2]});
+  assert.strictEqual(g().players[0].cards.length, 3, 'traded down');
+
+  // nothing to move (the minimum already took every spare army): the trade starts right away
+  let b = null;
+  for(let i=0; i<300 && !(b && b.captured); i++){
+    reset(2);
+    b = accept(core, {type:'attack', from:front, to:target, allOut:true});
+  }
+  assert.ok(b && b.captured, 'captured within 300 tries');
+  assert.ok(b.extraMax===0 && b.mustTrade && !b.tradeAfterMove, 'no troops to move: trade right away');
+  assert.strictEqual(g().phase, 'reinforce');
+  checks++;
+}
 console.log(`Actions: legal moves applied, illegal ones refused without side effects (${checks} games).`);

@@ -633,6 +633,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 /* Common-enemy overlay (mark / release): a compact card, like the turn banner but with the powers.
    Dims the map a little, blocks input behind it, closes on tap. */
 #enemyOverlay{position:absolute;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(4,7,14,0);transition:background .25s ease;cursor:pointer;}
+/* [hidden] must really hide it: display:flex above would otherwise keep a transparent layer over the whole game that swallows every tap */
+#enemyOverlay[hidden]{display:none;}
 #enemyOverlay.show{background:rgba(4,7,14,.4);}
 #enemyCard{width:min(300px,100%);max-height:calc(100% - 24px);overflow:auto;background:var(--panel);border:1.5px solid var(--enemy-color,#fff);border-radius:12px;padding:9px 11px 0;box-shadow:0 6px 24px rgba(0,0,0,.55);opacity:0;transform:scale(.92);transition:opacity .25s ease,transform .25s cubic-bezier(.2,.9,.3,1.3);}
 #enemyOverlay.show #enemyCard{opacity:1;transform:scale(1);}
@@ -757,7 +759,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <input type="file" id="loadGameInput" accept=".json" class="hidden">
   </div>
   <!-- Which version of the game this page is (number + hash of the sources, set by build.js). -->
-  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #1 · 51afe2e</div>
+  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #7 · 2949bb6</div>
 </div>
 
 <!-- ============ EDITOR ============ -->
@@ -4041,13 +4043,17 @@ function performAttack(p, fromId, toId, allOut){
   // next action. The rule's minimum has already moved (see doBattle()).
   const extraMax = captured && !game.over ? lastRes.maxMovable-lastRes.moving : 0;
   game.pendingCapture = extraMax>0 ? {from:fromId, to:toId} : null;
-  // Eliminating someone hands over their cards — a hand of 5+ has to be traded down right away.
-  const mustTrade = !game.over && p.cards.length>=FORCED_TRADE_HAND;
+  // Eliminating someone hands over their cards — a hand of 5+ has to be traded down. If armies can
+  // still be sent into the captured territory, that comes FIRST (the game stays in the attack phase
+  // with the capture pending, and the trade starts once moveAfterCapture is done — see below);
+  // with nothing left to move the trade starts right away.
+  const handTooBig = !game.over && p.cards.length>=FORCED_TRADE_HAND;
+  const mustTrade = handTooBig && extraMax<=0;
   if(mustTrade) bounceToForcedTrade();
   return {
     fromId, toId, defenderId, rounds, attLoss, defLoss, captured,
     fromCountBefore, toCountBefore, fromCountAfter: game.armies[fromId], toCountAfter: game.armies[toId],
-    moved: captured ? lastRes.moving : 0, extraMax: mustTrade ? 0 : extraMax, mustTrade, over: game.over,
+    moved: captured ? lastRes.moving : 0, extraMax, mustTrade, tradeAfterMove: handTooBig && extraMax>0, over: game.over,
   };
 }
 
@@ -4096,6 +4102,9 @@ function runAction(pid, action){
       if(game.phase!=='attack') return fail('wrong_phase');
       const {from, to} = action;
       if(!isTerritoryId(from) || !isTerritoryId(to) || !canAttack(from, to, pid)) return fail('illegal_attack');
+      // a hand of 5+ here means a kill just handed over cards and the capture's troop move is
+      // still pending: finish that (moveAfterCapture), which starts the forced trade
+      if(p.cards.length>=FORCED_TRADE_HAND) return fail('must_trade_first');
       return {ok:true, result: performAttack(p, from, to, !!action.allOut)};
     }
     case 'moveAfterCapture': {
@@ -4105,8 +4114,12 @@ function runAction(pid, action){
       if(!Number.isInteger(count) || count<0 || count>game.armies[pc.from]-1) return fail('bad_count');
       game.armies[pc.from] -= count; game.armies[pc.to] += count;
       game.pendingCapture = null;
+      // the kill that earned this capture may have pushed the hand to 5+: trade it down now that
+      // the troops are placed
+      const mustTrade = p.cards.length>=FORCED_TRADE_HAND;
+      if(mustTrade) bounceToForcedTrade();
       host.renderGame();
-      return {ok:true, result:{from:pc.from, to:pc.to, count}};
+      return {ok:true, result:{from:pc.from, to:pc.to, count, mustTrade}};
     }
     case 'endAttack': {
       if(game.phase!=='attack') return fail('wrong_phase');
@@ -7010,10 +7023,9 @@ function humanAttack(allOut){
       fromCountBefore:r.fromCountBefore, toCountBefore:r.toCountBefore,
       fromCountAfter:r.fromCountAfter, toCountAfter:r.toCountAfter, attackerColor, defenderColor,
     }, ()=>{
-      // A kill that pushes the hand to 5+ cards takes priority over the optional "move extra
-      // troops in" dialog below — the guaranteed minimum already moved, so skipping the optional
-      // split is a fine tradeoff for forcing the trade down immediately instead of waiting for
-      // the player to eventually click "Kết thúc tấn công".
+      // A kill that pushes the hand to 5+ cards: with troops still to move into the captured
+      // territory, that dialog comes first and the forced trade follows once it is confirmed (see
+      // showCaptureMoveModal()); with nothing to move (mustTrade) the trade opens right away.
       if(r.mustTrade && !game.over){ showForcedCardTrade(); return; }
       if(r.extraMax>0) showCaptureMoveModal(fromId, toId, r.moved, r.moved+r.extraMax);
     });
@@ -7858,10 +7870,12 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
     const extra = appliedExtra;
     game.armies[fromId] += extra; game.armies[toId] -= extra; // undo the preview
     close();
-    dispatch({type:'moveAfterCapture', count:extra}, ()=>{
+    dispatch({type:'moveAfterCapture', count:extra}, res=>{
       lastDrawnArmies[fromId] = game.armies[fromId];
       lastDrawnArmies[toId] = game.armies[toId];
       renderGame();
+      // the troops are placed — now the forced card trade, if the kill pushed the hand to 5+
+      if(res && res.ok && res.result && res.result.mustTrade && !game.over) showForcedCardTrade();
     });
   });
   btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);
