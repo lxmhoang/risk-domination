@@ -120,10 +120,12 @@ function showCaptureMoveModal(fromId, toId, moving, maxMovable){
     const extra = appliedExtra;
     game.armies[fromId] += extra; game.armies[toId] -= extra; // undo the preview
     close();
-    dispatch({type:'moveAfterCapture', count:extra}, ()=>{
+    dispatch({type:'moveAfterCapture', count:extra}, res=>{
       lastDrawnArmies[fromId] = game.armies[fromId];
       lastDrawnArmies[toId] = game.armies[toId];
       renderGame();
+      // the troops are placed — now the forced card trade, if the kill pushed the hand to 5+
+      if(res && res.ok && res.result && res.result.mustTrade && !game.over) showForcedCardTrade();
     });
   });
   btnRow.appendChild(quickMin); btnRow.appendChild(quickMax); btnRow.appendChild(confirmBtn);

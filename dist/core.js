@@ -2428,13 +2428,17 @@ function performAttack(p, fromId, toId, allOut){
   // next action. The rule's minimum has already moved (see doBattle()).
   const extraMax = captured && !game.over ? lastRes.maxMovable-lastRes.moving : 0;
   game.pendingCapture = extraMax>0 ? {from:fromId, to:toId} : null;
-  // Eliminating someone hands over their cards — a hand of 5+ has to be traded down right away.
-  const mustTrade = !game.over && p.cards.length>=FORCED_TRADE_HAND;
+  // Eliminating someone hands over their cards — a hand of 5+ has to be traded down. If armies can
+  // still be sent into the captured territory, that comes FIRST (the game stays in the attack phase
+  // with the capture pending, and the trade starts once moveAfterCapture is done — see below);
+  // with nothing left to move the trade starts right away.
+  const handTooBig = !game.over && p.cards.length>=FORCED_TRADE_HAND;
+  const mustTrade = handTooBig && extraMax<=0;
   if(mustTrade) bounceToForcedTrade();
   return {
     fromId, toId, defenderId, rounds, attLoss, defLoss, captured,
     fromCountBefore, toCountBefore, fromCountAfter: game.armies[fromId], toCountAfter: game.armies[toId],
-    moved: captured ? lastRes.moving : 0, extraMax: mustTrade ? 0 : extraMax, mustTrade, over: game.over,
+    moved: captured ? lastRes.moving : 0, extraMax, mustTrade, tradeAfterMove: handTooBig && extraMax>0, over: game.over,
   };
 }
 
@@ -2483,6 +2487,9 @@ function runAction(pid, action){
       if(game.phase!=='attack') return fail('wrong_phase');
       const {from, to} = action;
       if(!isTerritoryId(from) || !isTerritoryId(to) || !canAttack(from, to, pid)) return fail('illegal_attack');
+      // a hand of 5+ here means a kill just handed over cards and the capture's troop move is
+      // still pending: finish that (moveAfterCapture), which starts the forced trade
+      if(p.cards.length>=FORCED_TRADE_HAND) return fail('must_trade_first');
       return {ok:true, result: performAttack(p, from, to, !!action.allOut)};
     }
     case 'moveAfterCapture': {
@@ -2492,8 +2499,12 @@ function runAction(pid, action){
       if(!Number.isInteger(count) || count<0 || count>game.armies[pc.from]-1) return fail('bad_count');
       game.armies[pc.from] -= count; game.armies[pc.to] += count;
       game.pendingCapture = null;
+      // the kill that earned this capture may have pushed the hand to 5+: trade it down now that
+      // the troops are placed
+      const mustTrade = p.cards.length>=FORCED_TRADE_HAND;
+      if(mustTrade) bounceToForcedTrade();
       host.renderGame();
-      return {ok:true, result:{from:pc.from, to:pc.to, count}};
+      return {ok:true, result:{from:pc.from, to:pc.to, count, mustTrade}};
     }
     case 'endAttack': {
       if(game.phase!=='attack') return fail('wrong_phase');
