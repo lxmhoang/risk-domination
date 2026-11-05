@@ -1589,12 +1589,11 @@ function renderEnemyOverlay(info){
   let sub;
   if(marked){
     const r1 = info.restTotal>0 ? info.power/info.restTotal : Infinity, r2 = info.second>0 ? info.power/info.second : Infinity;
-    sub = `Sức mạnh ${info.power} = ×${fmtRatio(r1)} tổng những người còn lại (${info.restTotal}, cần ≥ ×${fmtRatio(info.vsField)})`
-      + ` và ×${fmtRatio(r2)} người đứng thứ 2 (${info.second}, cần ≥ ×${fmtRatio(info.margin)}). Các AI khác sẽ cùng đánh ${info.name}.`;
+    sub = `Sức mạnh ${info.power}: ×${fmtRatio(r1)} tổng người khác (cần ≥ ×${fmtRatio(info.vsField)}), ×${fmtRatio(r2)} người thứ 2 (cần ≥ ×${fmtRatio(info.margin)})`;
   } else if(info.reason==='eliminated'){
-    sub = info.name+' đã bị loại khỏi ván.';
+    sub = 'Đã bị loại khỏi ván';
   } else {
-    sub = `Sức mạnh còn ${info.power}, dưới ×${fmtRatio(info.releaseFraction)} mức lúc bị gán nhãn (${info.startPower}).`;
+    sub = `Sức mạnh còn ${info.power}, dưới ×${fmtRatio(info.releaseFraction)} lúc bị gán nhãn (${info.startPower})`;
   }
   $('enemySub').textContent = sub;
   const box = $('enemyPowers'); box.innerHTML = '';
