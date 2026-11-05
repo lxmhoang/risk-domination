@@ -83,6 +83,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 /* ---------- Menu ---------- */
 #screen-menu{align-items:center;justify-content:center;padding:40px 20px;}
 .menu-wrap{max-width:720px;width:100%;text-align:center;}
+.build-info{position:fixed;right:10px;bottom:6px;z-index:5;font-size:10.5px;color:var(--muted);opacity:.6;user-select:text;}
 .menu-wrap p.sub{color:var(--muted);margin-bottom:32px;font-size:15px;}
 .menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 @media (max-width:600px){.menu-grid{grid-template-columns:1fr;}}

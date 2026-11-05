@@ -124,9 +124,26 @@ const script = [configScript, galleryScript].concat(jsFiles.map(f => {
 try { new (require('vm').Script)('(function(){"use strict";\n' + script + '\n})', { filename: 'bundle.js' }); }
 catch (e) { console.error('Syntax error in the bundled script: ' + e.message + '\n' + String(e.stack).split('\n').slice(0, 4).join('\n')); process.exit(1); }
 
+// ---- Build number ----
+// Shown in the corner of the landing screen so you can tell which version a page is running (a
+// stale cached copy shows an old number). The hash covers every input of the page, so it only
+// changes when the source does; build-info.json (committed) keeps the running number and bumps it
+// exactly when the hash changes — rebuilding unchanged sources leaves both, and the output, as is.
+const BUILD_FILE = path.join(__dirname, 'build-info.json');
+const buildHash = require('crypto').createHash('sha1')
+  .update([shell, style, body, JSON.stringify(config), JSON.stringify(galleryMaps), script].join('\n\0\n'))
+  .digest('hex').slice(0, 7);
+let buildInfo = { number: 0, hash: '' };
+try { buildInfo = JSON.parse(read(BUILD_FILE)); } catch (e) { /* first build */ }
+if (buildInfo.hash !== buildHash) {
+  buildInfo = { number: (Number(buildInfo.number) || 0) + 1, hash: buildHash };
+  fs.writeFileSync(BUILD_FILE, JSON.stringify(buildInfo, null, 2) + '\n', 'utf8');
+}
+const buildLabel = `build #${buildInfo.number} · ${buildInfo.hash}`;
+
 let out = shell
   .replace('__STYLE__', () => style.replace(/\s+$/, ''))
-  .replace('__BODY__', () => body.replace(/\s+$/, ''))
+  .replace('__BODY__', () => body.replace(/\s+$/, '').replace('__BUILD__', () => buildLabel))
   .replace('__SCRIPT__', () => script);
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
