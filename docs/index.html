@@ -633,6 +633,8 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
 /* Common-enemy overlay (mark / release): a compact card, like the turn banner but with the powers.
    Dims the map a little, blocks input behind it, closes on tap. */
 #enemyOverlay{position:absolute;inset:0;z-index:55;display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(4,7,14,0);transition:background .25s ease;cursor:pointer;}
+/* [hidden] must really hide it: display:flex above would otherwise keep a transparent layer over the whole game that swallows every tap */
+#enemyOverlay[hidden]{display:none;}
 #enemyOverlay.show{background:rgba(4,7,14,.4);}
 #enemyCard{width:min(300px,100%);max-height:calc(100% - 24px);overflow:auto;background:var(--panel);border:1.5px solid var(--enemy-color,#fff);border-radius:12px;padding:9px 11px 0;box-shadow:0 6px 24px rgba(0,0,0,.55);opacity:0;transform:scale(.92);transition:opacity .25s ease,transform .25s cubic-bezier(.2,.9,.3,1.3);}
 #enemyOverlay.show #enemyCard{opacity:1;transform:scale(1);}
@@ -757,7 +759,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <input type="file" id="loadGameInput" accept=".json" class="hidden">
   </div>
   <!-- Which version of the game this page is (number + hash of the sources, set by build.js). -->
-  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #4 · 3db3abc</div>
+  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #7 · 2949bb6</div>
 </div>
 
 <!-- ============ EDITOR ============ -->
