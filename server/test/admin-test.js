@@ -79,16 +79,16 @@ async function main(){
 
   // ---- a saved change reaches new games, not existing ones ----
   const before = (await call('POST', '/api/games', guest, OPTIONS)).json;
-  const saved = await call('PUT', '/api/admin/config', admin, {values:{...cfg.defaults, reinforceMin:9, cardAwardEvent:'on_turn_end'}});
+  const saved = await call('PUT', '/api/admin/config', admin, {values:{...cfg.defaults, reinforceMin:20, cardAwardEvent:'on_turn_end'}});
   assert.strictEqual(saved.status, 200);
-  assert.strictEqual(saved.json.values.reinforceMin, 9);
-  assert.deepStrictEqual(await store.getSetting('game_config'), {reinforceMin:9, cardAwardEvent:'on_turn_end'}, 'only the differences are stored');
+  assert.strictEqual(saved.json.values.reinforceMin, 20);
+  assert.deepStrictEqual(await store.getSetting('game_config'), {reinforceMin:20, cardAwardEvent:'on_turn_end'}, 'only the differences are stored');
   const after = (await call('POST', '/api/games', guest, OPTIONS)).json;
   assert.strictEqual((await store.getGame(before.id)).config.reinforceMin, CONFIG.reinforceMin);
-  assert.strictEqual((await store.getGame(after.id)).config.reinforceMin, 9);
-  // 2 players on ~39 territories: the base income is well under 9, so the new minimum is what shows
-  assert.ok(before.state.reinforceRemaining<9, 'old default in the earlier game');
-  assert.ok(after.state.reinforceRemaining>=9, 'new minimum in the later game');
+  assert.strictEqual((await store.getGame(after.id)).config.reinforceMin, 20);
+  // 20 is the admin maximum, above any natural 2-player income whatever the generated map, so the new minimum is what shows
+  assert.ok(before.state.reinforceRemaining<20, 'old default in the earlier game');
+  assert.ok(after.state.reinforceRemaining>=20, 'new minimum in the later game');
   // the earlier game keeps playing under its own settings
   const mine = Number(Object.keys(before.state.owner).find(t=> before.state.owner[t]===0));
   assert.strictEqual((await call('POST', '/api/games/'+before.id+'/actions', guest, {version:0, action:{type:'place', terrId:mine}})).status, 200);
