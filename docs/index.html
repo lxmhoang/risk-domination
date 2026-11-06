@@ -770,7 +770,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <input type="file" id="loadGameInput" accept=".json" class="hidden">
   </div>
   <!-- Which version of the game this page is (number + hash of the sources, set by build.js). -->
-  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #12 · 59c3f1d</div>
+  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #14 · 2716928</div>
 </div>
 
 <!-- ============ EDITOR ============ -->
@@ -5688,12 +5688,13 @@ function scheduleAnimFrame(){
 // else moves. Repainting the whole map at the screen's refresh rate (60/s) for it made phones run
 // hot and lag after a while, so that case redraws at ~9 frames/s instead, and not at all while the
 // page is hidden (the visibilitychange listener in 08-wiring.js restarts it).
-const PULSE_FRAME_MS = 110;
+const PULSE_FRAME_MS = 110;      // only the selection glow pulses
+const ARC_FRAME_MS = 50;         // target arcs flow too (~20 frames/s keeps the dashes moving smoothly)
 const MAP_DPR_MAX = 2;
 let pulseTimer = null;
-function schedulePulseFrame(){
+function schedulePulseFrame(ms){
   if(pulseTimer || animFrameQueued) return;
-  pulseTimer = setTimeout(()=>{ pulseTimer = null; if(game && !document.hidden) drawGameCanvas(); }, PULSE_FRAME_MS);
+  pulseTimer = setTimeout(()=>{ pulseTimer = null; if(game && !document.hidden) drawGameCanvas(); }, ms || PULSE_FRAME_MS);
 }
 // Called whenever a fresh `game` starts being drawn for the first time (new game, replay,
 // loaded save) so leftover animation state from whatever was on screen before doesn't bleed
@@ -6306,6 +6307,55 @@ function drawFlowLine(ctx, from, to, now, opts){
   ctx.restore();
 }
 
+// Attack-phase "where can I hit from here" hint: an arched arrow (a rainbow-shaped arc) in the
+// player's own color from the selected territory to a possible target. Deliberately unlike the
+// other two arrows so they are never mistaken for each other: those are straight lines that GROW
+// once per cycle (the attack arrow is rainbow-colored and solid, the fortify one white and dashed),
+// this one is curved, thinner, drawn in the player's color and its dashes keep FLOWING toward the
+// target. `a`->`b` is one segment from flowSegsFor(); `still` (reduced motion) freezes the flow.
+const TARGET_ARC_DASH = [10, 8];
+function drawTargetArc(ctx, a, b, now, color, still){
+  const gap = 15;
+  const dx=b.x-a.x, dy=b.y-a.y, dist=Math.hypot(dx,dy);
+  if(dist < gap*2+10) return;
+  const ux=dx/dist, uy=dy/dist;
+  const sx=a.x+ux*gap, sy=a.y+uy*gap, tx=b.x-ux*gap, ty=b.y-uy*gap;
+  // arch: the control point sits to the side of the chord, on the side that points up the screen
+  let nx=-uy, ny=ux;
+  if(ny>0){ nx=-nx; ny=-ny; }
+  const bulge = Math.min(76, dist*0.34);
+  const cx=(sx+tx)/2+nx*bulge, cy=(sy+ty)/2+ny*bulge;
+  const phase = still ? 0 : now*0.035; // px/ms of dash travel
+  ctx.save();
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.setLineDash(TARGET_ARC_DASH); ctx.lineDashOffset = -phase;
+  ctx.beginPath(); ctx.moveTo(sx,sy); ctx.quadraticCurveTo(cx,cy,tx,ty);
+  ctx.strokeStyle='rgba(0,0,0,0.55)'; ctx.lineWidth=7; ctx.stroke();   // dark underlay keeps it readable on any territory color
+  ctx.strokeStyle=color; ctx.lineWidth=4; ctx.stroke();
+  // arrowhead at the target end, pointing along the curve's tangent there; breathes a little
+  ctx.setLineDash([]);
+  const ang = Math.atan2(ty-cy, tx-cx);
+  const k = still ? 1 : 1+0.18*Math.sin(now/190);
+  const head = 15*k;
+  ctx.beginPath();
+  ctx.moveTo(tx,ty);
+  ctx.lineTo(tx-head*Math.cos(ang-Math.PI/6), ty-head*Math.sin(ang-Math.PI/6));
+  ctx.lineTo(tx-head*Math.cos(ang+Math.PI/6), ty-head*Math.sin(ang+Math.PI/6));
+  ctx.closePath();
+  ctx.fillStyle=color; ctx.strokeStyle='rgba(0,0,0,0.6)'; ctx.lineWidth=2;
+  ctx.stroke(); ctx.fill();
+  ctx.restore();
+}
+// The from->to connection as drawable segments: one, or — across the seam on a single fixed copy
+// of the map (wrapDisplay 'seam') — two halves, the second arriving through the opposite edge.
+function flowSegsFor(fromId, toId, wrapping){
+  const from = territoryAnchor(mapData.territories[fromId]);
+  const to = territoryAnchor(mapData.territories[toId]), sh = wrapShift(from, to);
+  const segs = [[from, {x:to.x+sh.x, y:to.y+sh.y}]];
+  if(!wrapping && (sh.x || sh.y)) segs.push([{x:from.x-sh.x, y:from.y-sh.y}, to]);
+  return segs;
+}
+
 // Converts a point in map-native pixel space (e.g. a territory's centroid) to actual on-screen
 // coordinates — used to position the floating attack-action buttons (DOM elements) over the
 // canvas-drawn arrow above. Mirrors getTerritoryFromCanvasEvent()'s screen->bitmap transform in
@@ -6751,6 +6801,13 @@ function drawGameCanvas(){
     mapData.territories[game.selectedFrom] && mapData.territories[game.selectedTo] &&
     canAttack(game.selectedFrom, game.selectedTo, currentPlayerId());
   const showFortifyLine = game.phase==='fortify' && game.selectedFrom!=null && game.selectedTo!=null && canFortifyNow(currentPlayer());
+  // Possible targets of the territory the human has picked to attack from (≥2 armies): drawn as
+  // arched arrows in their color (drawTargetArc). The target already chosen has the main arrow.
+  const arcPlayer = currentPlayer();
+  const arcTargets = (inAttackPhase && !attackAnim && !game.over && arcPlayer && arcPlayer.isHuman &&
+    game.selectedFrom!=null && mapData.territories[game.selectedFrom] &&
+    game.owner[game.selectedFrom]===arcPlayer.id && game.armies[game.selectedFrom]>=2)
+    ? attackTargetsFrom(game.selectedFrom, arcPlayer.id).filter(id=> id!==game.selectedTo).slice(0, 12) : [];
   // The arrow/line target, on the same side of the seam as the source on a wrapping map.
   const selFromPos = game.selectedFrom!=null && mapData.territories[game.selectedFrom] ? territoryAnchor(mapData.territories[game.selectedFrom]) : null;
   const selToPos = (()=>{
@@ -6787,6 +6844,7 @@ function drawGameCanvas(){
       });
     }
   });
+  arcTargets.forEach(id=> flowSegsFor(game.selectedFrom, id, wrapping).forEach(([a,b])=> drawTargetArc(ctx, a, b, now, arcPlayer.color, reducedMotion)));
   if(showArrow) flowSegs.forEach(([a,b])=> drawFlowLine(ctx, a, b, now, {rainbow:true, cycleMs:1350, gap:16}));
   // Fortify-phase indicator: same idea, styled as a white dashed line instead of a solid
   // rainbow arrow so the two phases don't look like the same action.
@@ -6918,7 +6976,7 @@ function drawGameCanvas(){
     captureParticles.length>0 || !!attackAnim;
   const pulseOnly = !reducedMotion && (game.selectedFrom!=null || game.selectedTo!=null);
   if(needsSmoothFrames) scheduleAnimFrame();
-  else if(pulseOnly) schedulePulseFrame();
+  else if(pulseOnly) schedulePulseFrame(arcTargets.length && !reducedMotion ? ARC_FRAME_MS : PULSE_FRAME_MS);
   if(inAttackPhase) positionFloatingAttackButtons();
   if(game.phase==='fortify') positionFloatingFortifyButton();
 }
