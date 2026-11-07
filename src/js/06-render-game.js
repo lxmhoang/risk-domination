@@ -778,7 +778,7 @@ function drawTargetArc(ctx, a, b, now, color, still){
   // arch: the control point sits to the side of the chord, on the side that points up the screen
   let nx=-uy, ny=ux;
   if(ny>0){ nx=-nx; ny=-ny; }
-  const bulge = Math.min(76, dist*0.34);
+  const bulge = Math.min(38, dist*0.17); // a low arch: still clearly curved, less crowding around the source
   const cx=(sx+tx)/2+nx*bulge, cy=(sy+ty)/2+ny*bulge;
   const phase = still ? 0 : now*0.035; // px/ms of dash travel
   ctx.save();
