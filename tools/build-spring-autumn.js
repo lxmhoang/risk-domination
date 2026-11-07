@@ -4,7 +4,8 @@
    Builds src/maps/spring-autumn.json — China in the Spring and Autumn period (~550 BC: Tấn and Sở
    contend for hegemony, Ngô and Việt rising in the south-east, Nhung/Địch peoples in the north).
    Same land, mountain ranges, passes and rivers as tools/build-warring-states.js; only the
-   territories and their grouping into states differ.
+   territories and their grouping into states differ. The Bách Việt south is not playable: its
+   seed points (OUTSIDE below) only bound the states' borders and its land becomes wilderness.
    ---------------------------------------------------------------------
    Coastline, lakes and rivers come from Natural Earth (public domain, 1:50m). Download these
    three files into one folder first:
@@ -25,9 +26,10 @@ if(!neDir){ console.error('usage: node tools/build-spring-autumn.js <natural-ear
 const core = require(path.join(repo, 'dist', 'core.js'))(JSON.parse(fs.readFileSync(path.join(repo, 'src', 'config.json'), 'utf8')), {});
 
 // ---------------- grid / projection ----------------
-const LON0 = 99.0, LON1 = 124.5, LAT0 = 20.0, LAT1 = 44.0;
-const K = Math.cos(33*Math.PI/180);
-const ROWS = 470, CELL_DEG = (LAT1-LAT0)/ROWS;
+// the far south (Bách Việt) is cropped away
+const LON0 = 100.0, LON1 = 124.5, LAT0 = 25.0, LAT1 = 44.0;
+const K = Math.cos(34*Math.PI/180);
+const ROWS = 400, CELL_DEG = (LAT1-LAT0)/ROWS;
 const COLS = Math.round((LON1-LON0)*K/CELL_DEG);
 const CELL_SIZE = 2;
 const proj = ([lon,lat])=> [(lon-LON0)*K/CELL_DEG, (LAT1-lat)/CELL_DEG];
@@ -159,8 +161,10 @@ for(let i=0;i<N;i++) if(!land[i]) mountain[i] = 0;
 const CONTS = [
   ['Tấn', '#d35454'], ['Sở', '#2e9e5b'], ['Tề', '#e8b931'], ['Tần', '#5d6b85'], ['Yên', '#4a90d9'],
   ['Chu Trịnh', '#e07ac0'], ['Tống Lỗ', '#9b5de5'], ['Ngô', '#26a69a'], ['Việt', '#ef6c00'],
-  ['Ba Thục', '#8d6e63'], ['Bách Việt', '#ff8c42'], ['Nhung', '#b08d57'], ['Địch', '#8fae3e'], ['Đông Hồ', '#4fc3f7'],
+  ['Ba Thục', '#8d6e63'], ['Nhung', '#b08d57'], ['Địch', '#8fae3e'], ['Đông Hồ', '#4fc3f7'],
 ];
+// bonus armies per turn for holding the whole region; the rest use the usual size-based value
+const BONUS = { 'Nhung': 2, 'Địch': 2, 'Đông Hồ': 2 };
 const T = [
   // Tấn — the northern hegemon (Shanxi, reaching across the Yellow River and the Taihang)
   ['Tân Điền',111.35,35.62,'Tấn'], ['Bồ',110.45,34.95,'Tấn'], ['Ôn',113.45,35.3,'Tấn'],
@@ -188,9 +192,6 @@ const T = [
   ['Cối Kê',120.6,30.0,'Việt'], ['Cô Mạt',119.6,29.1,'Việt'], ['Đông Âu',120.6,28.0,'Việt'], ['Mân Việt',119.3,26.1,'Việt'],
   // Ba & Thục
   ['Thục',104.0,30.6,'Ba Thục'], ['Ba',106.5,29.6,'Ba Thục'], ['Hán Trung',107.0,33.1,'Ba Thục'], ['Dung',110.3,32.3,'Ba Thục'],
-  // Bách Việt — the peoples of the far south (Văn Lang of the Hùng kings in the Red River delta)
-  ['Can Việt',115.9,28.4,'Bách Việt'], ['Dương Việt',112.9,28.2,'Bách Việt'], ['Tây Âu',109.8,24.0,'Bách Việt'],
-  ['Nam Việt',113.5,23.4,'Bách Việt'], ['Dạ Lang',106.7,26.6,'Bách Việt'], ['Văn Lang',105.85,21.1,'Bách Việt'],
   // Nhung — the western peoples
   ['Khương',101.6,38.0,'Nhung'], ['Nghĩa Cừ',107.4,36.4,'Nhung'], ['Hà Sáo',108.8,39.0,'Nhung'], ['Âm Sơn',107.8,40.9,'Nhung'],
   // Địch — the northern peoples (Bạch Địch, Lâu Phiền, Lâm Hồ, Tiên Ngu …)
@@ -199,10 +200,16 @@ const T = [
   // Đông Hồ — the north-east
   ['Đông Hồ',118.6,42.8,'Đông Hồ'], ['Liêu Tây',120.8,41.4,'Đông Hồ'], ['Liêu Đông',122.9,41.0,'Đông Hồ'], ['Ô Hoàn',121.8,43.2,'Đông Hồ'],
 ];
+// Not playable: the Bách Việt peoples of the south. Their seed points only bound the states'
+// territories; the land they take becomes wilderness. [name, lon, lat]
+const OUTSIDE = [
+  ['Can Việt',115.9,28.4], ['Dương Việt',112.9,28.2], ['Dạ Lang',106.7,26.6],
+  ['Tây Âu',110.2,25.4], ['Nam Việt',113.6,25.3], ['Lĩnh Nam',116.5,25.6],
+].filter(([,lon,lat])=> lon>LON0 && lon<LON1 && lat>LAT0 && lat<LAT1);
 const playable = new Uint8Array(N);
 for(let i=0;i<N;i++) playable[i] = land[i] && !mountain[i] ? 1 : 0;
 // seeds: the city's cell, or the nearest playable cell to it
-const seeds = T.map(([name,lon,lat])=>{
+const seeds = T.concat(OUTSIDE).map(([name,lon,lat])=>{
   const [x,y] = proj([lon,lat]);
   let c0 = Math.floor(x), r0 = Math.floor(y), best = -1, bd = Infinity;
   for(let r=r0-25;r<=r0+25;r++) for(let c=c0-25;c<=c0+25;c++){
@@ -219,6 +226,8 @@ const weight = core.makeNoiseWeight(COLS, ROWS, 12, 0.35, false);
 const label = core.weightedVoronoi(COLS, ROWS, playable, seeds, weight, null, false);
 const landIdxs = []; for(let i=0;i<N;i++) if(playable[i]) landIdxs.push(i);
 core.enforceConnectedRegions(COLS, ROWS, landIdxs, label, false);
+// the Bách Việt south: its land becomes wilderness
+for(const i of landIdxs) if(label[i]>=T.length){ mountain[i] = 1; playable[i] = 0; label[i] = -1; }
 // land no territory reached (islands like Taiwan, pockets walled in by mountains): big pieces turn
 // to highland, small ones are dropped into the sea
 {
@@ -272,7 +281,7 @@ const obj = {
   // the game's naming convention: territories in lower case, continents in upper case (as the
   // editor would store them, see finalizeTerrName()/finalizeContName())
   territories: T.map(([name,,,cont],i)=>({ id:i+1, name: core.finalizeTerrName(name), continentId: contId[cont], color: core.PALETTE_TERR[i % core.PALETTE_TERR.length] })),
-  continents: CONTS.map(([name,color],i)=>({ id:i+1, name: core.finalizeContName(name), color, bonus: Math.max(2, Math.round(terrCount[name]/2)+1) })),
+  continents: CONTS.map(([name,color],i)=>({ id:i+1, name: core.finalizeContName(name), color, bonus: BONUS[name]!=null ? BONUS[name] : Math.max(2, Math.round(terrCount[name]/2)+1) })),
   nextTerrId: T.length+1, nextContId: CONTS.length+1,
   wrapX: false, wrapY: false,
   // sea lane across the Bohai strait (Lai – Liêu Đông)
