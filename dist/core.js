@@ -2115,13 +2115,19 @@ function placeReinforcement(terrId){
   game.armies[terrId]++;
   game.reinforceRemaining--;
   host.renderGame();
-  // Auto-advances once every troop is placed — unlike attack/fortify, there's no real decision
-  // left to make in reinforce once the pool hits 0, so a manual "kết thúc" click here would just
-  // be a needless extra tap. (If the player has 5+ cards, the forced-trade modal blocks placing
-  // the LAST troops until they trade down — see startReinforce()/endAttackPhase() — so this only
-  // ever fires once that's already resolved.)
+  // Auto-advances once every troop is placed — there's normally no decision left to make in
+  // reinforce once the pool hits 0, so a manual "kết thúc" click would be a needless extra tap.
+  // The exception: a human who still holds a set of cards that can be traded for more armies stays
+  // in reinforce, so that trade is theirs to make (or skip) — they leave with {type:'endReinforce'}.
+  // (If the player has 5+ cards, the forced-trade modal blocks placing the LAST troops until they
+  // trade down — see startReinforce()/endAttackPhase() — so this only ever fires once that's
+  // already resolved.)
   if(game.reinforceRemaining<=0){
-    beginAttackPhase();
+    if(p.isHuman && findTradeCombo(p.cards)){
+      host.setActionHint('Bạn còn bộ thẻ đổi được thành quân: đổi thẻ rồi đặt quân, hoặc bấm "Kết thúc tăng viện" để sang tấn công.');
+    } else {
+      beginAttackPhase();
+    }
   } else {
     host.setActionHint('Còn lại: '+game.reinforceRemaining+' quân để đặt.');
   }
@@ -2378,6 +2384,8 @@ function endTurn(){
    Actions:
      {type:'place', terrId}                 one army: initial placement or reinforcement
      {type:'trade', cards:[i,j,k]}          trade in three cards (positions in the hand)
+     {type:'endReinforce'}                  leave reinforce once every army is placed (only offered
+                                            while the hand still holds a tradeable set)
      {type:'attack', from, to, allOut}      one dice round, or keep rolling until it ends
      {type:'moveAfterCapture', count}       extra armies into the territory just captured
      {type:'endAttack'}
@@ -2482,6 +2490,13 @@ function runAction(pid, action){
       const before = game.reinforceRemaining;
       tradeCards(p, idx);
       return {ok:true, result:{armies: game.reinforceRemaining-before, mustTrade: p.cards.length>=FORCED_TRADE_HAND}};
+    }
+    case 'endReinforce': {
+      if(game.phase!=='reinforce') return fail('wrong_phase');
+      if(game.reinforceRemaining>0) return fail('armies_left');
+      if(p.cards.length>=FORCED_TRADE_HAND) return fail('must_trade_first');
+      beginAttackPhase();
+      return {ok:true, result:{}};
     }
     case 'attack': {
       if(game.phase!=='attack') return fail('wrong_phase');

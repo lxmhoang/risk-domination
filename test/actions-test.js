@@ -209,4 +209,46 @@ for(const seed of [1, 2, 3]){
   assert.strictEqual(g().phase, 'reinforce');
   checks++;
 }
+// ---- reinforce: leaving it after the last army depends on whether cards can still be traded ----
+for(const [label, cards, auto] of [
+  ['a tradeable set in hand', ['infantry','infantry','infantry'], false],
+  ['cards but no set', ['infantry','cavalry'], true],
+  ['no cards', [], true],
+]){
+  const core = newGame(11);
+  const g = ()=> core.game;
+  assert.strictEqual(g().phase, 'reinforce');
+  g().players[0].cards = cards.slice();
+  const t = mine(core)[0];
+  refuse(core, 0, {type:'endReinforce'}, 'armies_left');            // armies still to place
+  while(g().reinforceRemaining>1) accept(core, {type:'place', terrId:t});
+  assert.strictEqual(g().phase, 'reinforce');
+  accept(core, {type:'place', terrId:t});                            // the last army
+  assert.strictEqual(g().reinforceRemaining, 0);
+  if(auto){
+    assert.strictEqual(g().phase, 'attack', label+': goes straight to attack');
+    refuse(core, 0, {type:'endReinforce'}, 'wrong_phase');
+  } else {
+    assert.strictEqual(g().phase, 'reinforce', label+': stays in reinforce');
+    refuse(core, 0, {type:'place', terrId:t}, 'nothing_to_place');
+    // trading still works and hands out armies to place, after which it is the same choice again
+    const tr = accept(core, {type:'trade', cards:[0,1,2]});
+    assert.ok(tr.armies>0 && g().reinforceRemaining===tr.armies && g().phase==='reinforce');
+    while(g().reinforceRemaining>0) accept(core, {type:'place', terrId:t});
+    assert.strictEqual(g().phase, 'attack', 'set traded away: auto-advance again');
+  }
+  checks++;
+}
+{
+  const core = newGame(12);
+  const g = ()=> core.game;
+  g().players[0].cards = ['cavalry','cavalry','cavalry'];
+  const t = mine(core)[0];
+  while(g().reinforceRemaining>0) accept(core, {type:'place', terrId:t});
+  assert.strictEqual(g().phase, 'reinforce');
+  accept(core, {type:'endReinforce'});                               // the player declines to trade
+  assert.strictEqual(g().phase, 'attack');
+  assert.strictEqual(g().players[0].cards.length, 3, 'cards kept');
+  checks++;
+}
 console.log(`Actions: legal moves applied, illegal ones refused without side effects (${checks} games).`);

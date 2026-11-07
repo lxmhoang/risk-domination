@@ -254,13 +254,19 @@ function placeReinforcement(terrId){
   game.armies[terrId]++;
   game.reinforceRemaining--;
   host.renderGame();
-  // Auto-advances once every troop is placed — unlike attack/fortify, there's no real decision
-  // left to make in reinforce once the pool hits 0, so a manual "kết thúc" click here would just
-  // be a needless extra tap. (If the player has 5+ cards, the forced-trade modal blocks placing
-  // the LAST troops until they trade down — see startReinforce()/endAttackPhase() — so this only
-  // ever fires once that's already resolved.)
+  // Auto-advances once every troop is placed — there's normally no decision left to make in
+  // reinforce once the pool hits 0, so a manual "kết thúc" click would be a needless extra tap.
+  // The exception: a human who still holds a set of cards that can be traded for more armies stays
+  // in reinforce, so that trade is theirs to make (or skip) — they leave with {type:'endReinforce'}.
+  // (If the player has 5+ cards, the forced-trade modal blocks placing the LAST troops until they
+  // trade down — see startReinforce()/endAttackPhase() — so this only ever fires once that's
+  // already resolved.)
   if(game.reinforceRemaining<=0){
-    beginAttackPhase();
+    if(p.isHuman && findTradeCombo(p.cards)){
+      host.setActionHint('Bạn còn bộ thẻ đổi được thành quân: đổi thẻ rồi đặt quân, hoặc bấm "Kết thúc tăng viện" để sang tấn công.');
+    } else {
+      beginAttackPhase();
+    }
   } else {
     host.setActionHint('Còn lại: '+game.reinforceRemaining+' quân để đặt.');
   }

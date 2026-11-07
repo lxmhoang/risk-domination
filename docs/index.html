@@ -770,7 +770,7 @@ h1,h2,h3,h4{margin:0 0 4px 0;font-weight:700;}
     <input type="file" id="loadGameInput" accept=".json" class="hidden">
   </div>
   <!-- Which version of the game this page is (number + hash of the sources, set by build.js). -->
-  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #21 · 506a440</div>
+  <div class="build-info" title="Số build — đổi mỗi khi mã nguồn thay đổi">build #22 · ac5a346</div>
 </div>
 
 <!-- ============ EDITOR ============ -->
@@ -3741,13 +3741,19 @@ function placeReinforcement(terrId){
   game.armies[terrId]++;
   game.reinforceRemaining--;
   host.renderGame();
-  // Auto-advances once every troop is placed — unlike attack/fortify, there's no real decision
-  // left to make in reinforce once the pool hits 0, so a manual "kết thúc" click here would just
-  // be a needless extra tap. (If the player has 5+ cards, the forced-trade modal blocks placing
-  // the LAST troops until they trade down — see startReinforce()/endAttackPhase() — so this only
-  // ever fires once that's already resolved.)
+  // Auto-advances once every troop is placed — there's normally no decision left to make in
+  // reinforce once the pool hits 0, so a manual "kết thúc" click would be a needless extra tap.
+  // The exception: a human who still holds a set of cards that can be traded for more armies stays
+  // in reinforce, so that trade is theirs to make (or skip) — they leave with {type:'endReinforce'}.
+  // (If the player has 5+ cards, the forced-trade modal blocks placing the LAST troops until they
+  // trade down — see startReinforce()/endAttackPhase() — so this only ever fires once that's
+  // already resolved.)
   if(game.reinforceRemaining<=0){
-    beginAttackPhase();
+    if(p.isHuman && findTradeCombo(p.cards)){
+      host.setActionHint('Bạn còn bộ thẻ đổi được thành quân: đổi thẻ rồi đặt quân, hoặc bấm "Kết thúc tăng viện" để sang tấn công.');
+    } else {
+      beginAttackPhase();
+    }
   } else {
     host.setActionHint('Còn lại: '+game.reinforceRemaining+' quân để đặt.');
   }
@@ -4004,6 +4010,8 @@ function endTurn(){
    Actions:
      {type:'place', terrId}                 one army: initial placement or reinforcement
      {type:'trade', cards:[i,j,k]}          trade in three cards (positions in the hand)
+     {type:'endReinforce'}                  leave reinforce once every army is placed (only offered
+                                            while the hand still holds a tradeable set)
      {type:'attack', from, to, allOut}      one dice round, or keep rolling until it ends
      {type:'moveAfterCapture', count}       extra armies into the territory just captured
      {type:'endAttack'}
@@ -4108,6 +4116,13 @@ function runAction(pid, action){
       const before = game.reinforceRemaining;
       tradeCards(p, idx);
       return {ok:true, result:{armies: game.reinforceRemaining-before, mustTrade: p.cards.length>=FORCED_TRADE_HAND}};
+    }
+    case 'endReinforce': {
+      if(game.phase!=='reinforce') return fail('wrong_phase');
+      if(game.reinforceRemaining>0) return fail('armies_left');
+      if(p.cards.length>=FORCED_TRADE_HAND) return fail('must_trade_first');
+      beginAttackPhase();
+      return {ok:true, result:{}};
     }
     case 'attack': {
       if(game.phase!=='attack') return fail('wrong_phase');
@@ -7321,6 +7336,13 @@ function showForcedCardTrade(){
   openCardsModal(true);
   setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
 }
+// Every army placed, a tradeable set still in hand, and not yet forced to trade (5+ cards).
+function canEndReinforce(p){
+  return game.phase==='reinforce' && game.reinforceRemaining<=0 && p.cards.length<FORCED_TRADE_HAND && !!findTradeCombo(p.cards);
+}
+function endReinforcePhase(){
+  dispatch({type:'endReinforce'}, ()=>renderGame());
+}
 function endAttackPhase(){
   dispatch({type:'endAttack'}, res=>{ if(res.ok && res.result.mustTrade) showForcedCardTrade(); });
 }
@@ -7354,14 +7376,24 @@ function renderPhaseActions(){
   const p = currentPlayer();
   if(!p.isHuman) return;
   if(game.phase==='setup-place') return;
-  // Reinforce has no real "end phase" action — placeReinforcement() auto-advances to attack once
-  // every troop is placed (see there), so clicking an end button here would never do anything.
-  // Shown anyway, disabled, just to surface "Quân cần đặt: X" where the phase-info pill used to.
+  // Reinforce normally has no "end phase" action — placeReinforcement() auto-advances to attack
+  // once every troop is placed — so the button is disabled and just surfaces "Quân cần đặt: X"
+  // where the phase-info pill used to. The exception: everything is placed but the hand still
+  // holds a set that can be traded for armies (the core stays in reinforce then, see
+  // placeReinforcement()): the button turns into "Kết thúc tăng viện" to move on to attack.
   if(game.phase==='reinforce'){
     endBtn.hidden = false;
-    endBtn.disabled = true;
-    endBtn.className = 'phase-end-reinforce';
-    endBtn.textContent = 'Quân cần đặt: '+game.reinforceRemaining;
+    if(canEndReinforce(p)){
+      endBtn.disabled = false;
+      endBtn.className = 'phase-end-attack';
+      endBtn.textContent = withShortcut('Kết thúc tăng viện','V');
+      endBtn.title = 'Phím tắt: V — bạn vẫn còn thẻ đổi được thành quân (bấm nút thẻ bài)';
+      endBtn.onclick = ()=> endReinforcePhase();
+    } else {
+      endBtn.disabled = true;
+      endBtn.className = 'phase-end-reinforce';
+      endBtn.textContent = 'Quân cần đặt: '+game.reinforceRemaining;
+    }
     return;
   }
   if(game.phase==='attack'){
@@ -8854,7 +8886,9 @@ window.addEventListener('keydown', (e)=>{
   const p = currentPlayer();
   if(!p.isHuman) return;
   const key = e.key.toLowerCase();
-  if(game.phase==='attack'){
+  if(game.phase==='reinforce'){
+    if(key==='v' && canEndReinforce(p)){ e.preventDefault(); endReinforcePhase(); }
+  } else if(game.phase==='attack'){
     if(key==='d'){ e.preventDefault(); allOutAttack(); }
     else if(key==='a'){ e.preventDefault(); doSingleAttack(); }
     else if(key==='v'){ e.preventDefault(); endAttackPhase(); }
