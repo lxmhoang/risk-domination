@@ -11,6 +11,8 @@
    Actions:
      {type:'place', terrId}                 one army: initial placement or reinforcement
      {type:'trade', cards:[i,j,k]}          trade in three cards (positions in the hand)
+     {type:'endReinforce'}                  leave reinforce once every army is placed (only offered
+                                            while the hand still holds a tradeable set)
      {type:'attack', from, to, allOut}      one dice round, or keep rolling until it ends
      {type:'moveAfterCapture', count}       extra armies into the territory just captured
      {type:'endAttack'}
@@ -115,6 +117,13 @@ function runAction(pid, action){
       const before = game.reinforceRemaining;
       tradeCards(p, idx);
       return {ok:true, result:{armies: game.reinforceRemaining-before, mustTrade: p.cards.length>=FORCED_TRADE_HAND}};
+    }
+    case 'endReinforce': {
+      if(game.phase!=='reinforce') return fail('wrong_phase');
+      if(game.reinforceRemaining>0) return fail('armies_left');
+      if(p.cards.length>=FORCED_TRADE_HAND) return fail('must_trade_first');
+      beginAttackPhase();
+      return {ok:true, result:{}};
     }
     case 'attack': {
       if(game.phase!=='attack') return fail('wrong_phase');

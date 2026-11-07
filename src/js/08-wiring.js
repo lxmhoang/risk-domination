@@ -737,7 +737,9 @@ window.addEventListener('keydown', (e)=>{
   const p = currentPlayer();
   if(!p.isHuman) return;
   const key = e.key.toLowerCase();
-  if(game.phase==='attack'){
+  if(game.phase==='reinforce'){
+    if(key==='v' && canEndReinforce(p)){ e.preventDefault(); endReinforcePhase(); }
+  } else if(game.phase==='attack'){
     if(key==='d'){ e.preventDefault(); allOutAttack(); }
     else if(key==='a'){ e.preventDefault(); doSingleAttack(); }
     else if(key==='v'){ e.preventDefault(); endAttackPhase(); }

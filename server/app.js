@@ -32,7 +32,7 @@ const int = {type:'integer', minimum:0, maximum:100000};
 const actionSchema = {
   type:'object', required:['type'], additionalProperties:false,
   properties:{
-    type:{enum:['place','trade','attack','moveAfterCapture','endAttack','fortify','endTurn']},
+    type:{enum:['place','trade','endReinforce','attack','moveAfterCapture','endAttack','fortify','endTurn']},
     terrId:int, from:int, to:int, count:int, allOut:{type:'boolean'},
     cards:{type:'array', items:{type:'integer', minimum:0, maximum:200}, minItems:3, maxItems:3},
   },

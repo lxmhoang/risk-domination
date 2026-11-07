@@ -1774,6 +1774,13 @@ function showForcedCardTrade(){
   openCardsModal(true);
   setActionHint('Bạn có quá nhiều thẻ bài, phải đổi bớt trước khi tiếp tục.');
 }
+// Every army placed, a tradeable set still in hand, and not yet forced to trade (5+ cards).
+function canEndReinforce(p){
+  return game.phase==='reinforce' && game.reinforceRemaining<=0 && p.cards.length<FORCED_TRADE_HAND && !!findTradeCombo(p.cards);
+}
+function endReinforcePhase(){
+  dispatch({type:'endReinforce'}, ()=>renderGame());
+}
 function endAttackPhase(){
   dispatch({type:'endAttack'}, res=>{ if(res.ok && res.result.mustTrade) showForcedCardTrade(); });
 }
@@ -1807,14 +1814,24 @@ function renderPhaseActions(){
   const p = currentPlayer();
   if(!p.isHuman) return;
   if(game.phase==='setup-place') return;
-  // Reinforce has no real "end phase" action — placeReinforcement() auto-advances to attack once
-  // every troop is placed (see there), so clicking an end button here would never do anything.
-  // Shown anyway, disabled, just to surface "Quân cần đặt: X" where the phase-info pill used to.
+  // Reinforce normally has no "end phase" action — placeReinforcement() auto-advances to attack
+  // once every troop is placed — so the button is disabled and just surfaces "Quân cần đặt: X"
+  // where the phase-info pill used to. The exception: everything is placed but the hand still
+  // holds a set that can be traded for armies (the core stays in reinforce then, see
+  // placeReinforcement()): the button turns into "Kết thúc tăng viện" to move on to attack.
   if(game.phase==='reinforce'){
     endBtn.hidden = false;
-    endBtn.disabled = true;
-    endBtn.className = 'phase-end-reinforce';
-    endBtn.textContent = 'Quân cần đặt: '+game.reinforceRemaining;
+    if(canEndReinforce(p)){
+      endBtn.disabled = false;
+      endBtn.className = 'phase-end-attack';
+      endBtn.textContent = withShortcut('Kết thúc tăng viện','V');
+      endBtn.title = 'Phím tắt: V — bạn vẫn còn thẻ đổi được thành quân (bấm nút thẻ bài)';
+      endBtn.onclick = ()=> endReinforcePhase();
+    } else {
+      endBtn.disabled = true;
+      endBtn.className = 'phase-end-reinforce';
+      endBtn.textContent = 'Quân cần đặt: '+game.reinforceRemaining;
+    }
     return;
   }
   if(game.phase==='attack'){
