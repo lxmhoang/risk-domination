@@ -10,6 +10,10 @@
      https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_rivers_lake_centerlines.geojson
    then: node build.js && node tools/build-warring-states.js <that folder>
 
+   Only the seven warring states (Thất hùng) are playable. The steppe peoples and the Bách Việt
+   south still have seed points (OUTSIDE below) so the states' borders stop where those peoples'
+   lands begin, but their land is turned into impassable wilderness.
+
    Territories are the cells nearest each city's seed point (noise-weighted, through land only, so
    mountain ranges and the highlands steer the borders); a territory's continent is its state.
    Mountains (map.mountain) are impassable: the highlands/deserts around the playable world, plus
@@ -22,9 +26,10 @@ if(!neDir){ console.error('usage: node tools/build-warring-states.js <natural-ea
 const core = require(path.join(repo, 'dist', 'core.js'))(JSON.parse(fs.readFileSync(path.join(repo, 'src', 'config.json'), 'utf8')), {});
 
 // ---------------- grid / projection ----------------
-const LON0 = 99.0, LON1 = 124.5, LAT0 = 20.0, LAT1 = 44.0;
-const K = Math.cos(33*Math.PI/180);
-const ROWS = 470, CELL_DEG = (LAT1-LAT0)/ROWS;
+// framed around the seven states (the steppe and the far south are cropped away)
+const LON0 = 102.0, LON1 = 124.5, LAT0 = 26.5, LAT1 = 43.0;
+const K = Math.cos(35*Math.PI/180);
+const ROWS = 420, CELL_DEG = (LAT1-LAT0)/ROWS;
 const COLS = Math.round((LON1-LON0)*K/CELL_DEG);
 const CELL_SIZE = 2;
 const proj = ([lon,lat])=> [(lon-LON0)*K/CELL_DEG, (LAT1-lat)/CELL_DEG];
@@ -155,7 +160,7 @@ for(let i=0;i<N;i++) if(!land[i]) mountain[i] = 0;
 // [name, lon, lat, continent]
 const CONTS = [
   ['Tần',  '#5d6b85'], ['Sở', '#2e9e5b'], ['Tề', '#e8b931'], ['Yên', '#4a90d9'], ['Triệu', '#d35454'],
-  ['Ngụy', '#9b5de5'], ['Hàn', '#e07ac0'], ['Thảo Nguyên', '#8fae3e'], ['Bách Việt', '#ff8c42'],
+  ['Ngụy', '#9b5de5'], ['Hàn', '#e07ac0'],
 ];
 const T = [
   // Tần
@@ -183,18 +188,19 @@ const T = [
   ['Quảng Lăng',119.4,32.6,'Sở'], ['Ngô',120.6,31.3,'Sở'], ['Cối Kê',120.6,29.9,'Sở'],
   ['Giang Hạ',114.4,30.6,'Sở'], ['Trường Sa',112.9,28.0,'Sở'], ['Kiềm Trung',110.0,28.4,'Sở'],
   ['Dự Chương',115.9,28.4,'Sở'],
-  // Thảo Nguyên (Hung Nô, Đông Hồ & the steppe)
-  ['Nguyệt Thị',101.3,38.7,'Thảo Nguyên'], ['Hà Sáo',108.8,39.0,'Thảo Nguyên'], ['Âm Sơn',107.8,40.9,'Thảo Nguyên'],
-  ['Mạc Nam',110.8,42.4,'Thảo Nguyên'], ['Sơn Nhung',115.5,42.3,'Thảo Nguyên'], ['Đông Hồ',118.6,42.8,'Thảo Nguyên'],
-  ['Ô Hoàn',121.8,43.2,'Thảo Nguyên'],
-  // Bách Việt
-  ['Mân Việt',119.0,26.2,'Bách Việt'], ['Đông Âu',120.4,28.2,'Bách Việt'], ['Nam Việt',113.5,23.4,'Bách Việt'],
-  ['Tây Âu',109.8,24.0,'Bách Việt'], ['Dạ Lang',106.7,26.6,'Bách Việt'], ['Âu Lạc',105.85,21.1,'Bách Việt'],
 ];
+// Not playable: the steppe peoples (Hung Nô, Đông Hồ …) and the Bách Việt. Their seed points only
+// bound the states' territories; the land they take becomes wilderness. [name, lon, lat]
+const OUTSIDE = [
+  ['Nguyệt Thị',101.3,38.7], ['Hà Sáo',108.8,39.0], ['Âm Sơn',107.8,40.9], ['Mạc Nam',110.8,42.4],
+  ['Sơn Nhung',115.5,42.3], ['Đông Hồ',118.6,42.8], ['Ô Hoàn',121.8,43.2],
+  ['Mân Việt',119.0,26.2], ['Đông Âu',120.4,28.2], ['Nam Việt',113.5,23.4], ['Tây Âu',109.8,24.0],
+  ['Dạ Lang',106.7,26.6], ['Âu Lạc',105.85,21.1],
+].filter(([,lon,lat])=> lon>LON0 && lon<LON1 && lat>LAT0 && lat<LAT1);
 const playable = new Uint8Array(N);
 for(let i=0;i<N;i++) playable[i] = land[i] && !mountain[i] ? 1 : 0;
 // seeds: the city's cell, or the nearest playable cell to it
-const seeds = T.map(([name,lon,lat])=>{
+const seeds = T.concat(OUTSIDE).map(([name,lon,lat])=>{
   const [x,y] = proj([lon,lat]);
   let c0 = Math.floor(x), r0 = Math.floor(y), best = -1, bd = Infinity;
   for(let r=r0-25;r<=r0+25;r++) for(let c=c0-25;c<=c0+25;c++){
@@ -211,6 +217,8 @@ const weight = core.makeNoiseWeight(COLS, ROWS, 12, 0.35, false);
 const label = core.weightedVoronoi(COLS, ROWS, playable, seeds, weight, null, false);
 const landIdxs = []; for(let i=0;i<N;i++) if(playable[i]) landIdxs.push(i);
 core.enforceConnectedRegions(COLS, ROWS, landIdxs, label, false);
+// the peoples outside the seven states: their land becomes wilderness
+for(const i of landIdxs) if(label[i]>=T.length){ mountain[i] = 1; playable[i] = 0; label[i] = -1; }
 // land no territory reached (islands like Taiwan, pockets walled in by mountains): big pieces turn
 // to highland, small ones are dropped into the sea
 {

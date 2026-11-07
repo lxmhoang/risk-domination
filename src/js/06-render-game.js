@@ -715,10 +715,11 @@ function drawRivers(ctx, map, width){
 
 function drawFlowLine(ctx, from, to, now, opts){
   opts = opts || {};
-  const gap = opts.gap!=null ? opts.gap : 16;
   const dx=to.x-from.x, dy=to.y-from.y;
   const dist = Math.hypot(dx,dy);
-  if(dist < gap*2+4) return; // territories too close together for a gapped line to mean anything
+  if(dist < 6) return;
+  // inset off both badges, shrunk for close neighbors so their arrow still shows
+  const gap = Math.min(opts.gap!=null ? opts.gap : 16, dist*0.28);
   const ux=dx/dist, uy=dy/dist;
   const sx=from.x+ux*gap, sy=from.y+uy*gap;
   const tx=to.x-ux*gap, ty=to.y-uy*gap;
@@ -748,7 +749,7 @@ function drawFlowLine(ctx, from, to, now, opts){
   if(opts.arrowHead!==false){
     ctx.setLineDash([]); // arrowhead itself always solid, even on an otherwise-dashed line
     const ang = Math.atan2(ty-sy, tx-sx);
-    const headLen = opts.headLen || 11;
+    const headLen = Math.min(opts.headLen || 11, dist*0.35);
     ctx.beginPath();
     ctx.moveTo(ex,ey);
     ctx.lineTo(ex-headLen*Math.cos(ang-Math.PI/7), ey-headLen*Math.sin(ang-Math.PI/7));
@@ -768,15 +769,16 @@ function drawFlowLine(ctx, from, to, now, opts){
 // target. `a`->`b` is one segment from flowSegsFor(); `still` (reduced motion) freezes the flow.
 const TARGET_ARC_DASH = [10, 8];
 function drawTargetArc(ctx, a, b, now, color, still){
-  const gap = 15;
   const dx=b.x-a.x, dy=b.y-a.y, dist=Math.hypot(dx,dy);
-  if(dist < gap*2+10) return;
+  if(dist < 6) return;
+  // the gap off each badge shrinks for close neighbors instead of dropping their arrow
+  const gap = Math.min(15, dist*0.28);
   const ux=dx/dist, uy=dy/dist;
   const sx=a.x+ux*gap, sy=a.y+uy*gap, tx=b.x-ux*gap, ty=b.y-uy*gap;
   // arch: the control point sits to the side of the chord, on the side that points up the screen
   let nx=-uy, ny=ux;
   if(ny>0){ nx=-nx; ny=-ny; }
-  const bulge = Math.min(76, dist*0.34);
+  const bulge = Math.min(38, dist*0.17); // a low arch: still clearly curved, less crowding around the source
   const cx=(sx+tx)/2+nx*bulge, cy=(sy+ty)/2+ny*bulge;
   const phase = still ? 0 : now*0.035; // px/ms of dash travel
   ctx.save();
@@ -789,7 +791,7 @@ function drawTargetArc(ctx, a, b, now, color, still){
   ctx.setLineDash([]);
   const ang = Math.atan2(ty-cy, tx-cx);
   const k = still ? 1 : 1+0.18*Math.sin(now/190);
-  const head = 15*k;
+  const head = Math.min(15, dist*0.4)*k;
   ctx.beginPath();
   ctx.moveTo(tx,ty);
   ctx.lineTo(tx-head*Math.cos(ang-Math.PI/6), ty-head*Math.sin(ang-Math.PI/6));
